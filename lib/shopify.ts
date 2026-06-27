@@ -2,24 +2,63 @@
 // Reads credentials from environment variables (see .env.example).
 
 const DOMAIN = process.env.SHOPIFY_STORE_DOMAIN ?? "";
-const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN ?? "";
+const STATIC_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN ?? "";
+const CLIENT_ID = process.env.SHOPIFY_CLIENT_ID ?? "";
+const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET ?? "";
 const VERSION = process.env.SHOPIFY_API_VERSION ?? "2025-10";
 
-export function shopifyConfigured(): boolean {
-  return Boolean(DOMAIN && TOKEN && !TOKEN.startsWith("PASTE_"));
+export class ShopifyError extends Error {}
+
+function hasStaticToken(): boolean {
+  return Boolean(STATIC_TOKEN && STATIC_TOKEN.startsWith("shpat_"));
+}
+function hasClientCreds(): boolean {
+  return Boolean(CLIENT_ID && CLIENT_SECRET && !CLIENT_SECRET.startsWith("PASTE_"));
 }
 
-export class ShopifyError extends Error {}
+export function shopifyConfigured(): boolean {
+  return Boolean(DOMAIN && (hasStaticToken() || hasClientCreds()));
+}
+
+// Cache the client-credentials token in module memory (valid ~24h).
+let cachedToken = "";
+let cachedExpiry = 0;
+
+async function getAccessToken(): Promise<string> {
+  if (hasStaticToken()) return STATIC_TOKEN;
+  if (!hasClientCreds()) {
+    throw new ShopifyError(
+      "Shopify is not configured. Add SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET to .env.local.",
+    );
+  }
+  const now = Date.now();
+  if (cachedToken && now < cachedExpiry - 60_000) return cachedToken;
+
+  const res = await fetch(`https://${DOMAIN}/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new ShopifyError(`Auth failed (${res.status}): ${t.slice(0, 250)}`);
+  }
+  const json = (await res.json()) as { access_token: string; expires_in?: number };
+  cachedToken = json.access_token;
+  cachedExpiry = now + (json.expires_in ?? 3600) * 1000;
+  return cachedToken;
+}
 
 export async function adminGraphQL<T = unknown>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  if (!shopifyConfigured()) {
-    throw new ShopifyError(
-      "Shopify is not configured. Add SHOPIFY_ADMIN_TOKEN to .env.local.",
-    );
-  }
+  const token = await getAccessToken();
 
   const res = await fetch(
     `https://${DOMAIN}/admin/api/${VERSION}/graphql.json`,
@@ -27,7 +66,7 @@ export async function adminGraphQL<T = unknown>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Shopify-Access-Token": TOKEN,
+        "X-Shopify-Access-Token": token,
       },
       body: JSON.stringify({ query, variables }),
       cache: "no-store",
