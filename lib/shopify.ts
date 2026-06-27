@@ -239,3 +239,34 @@ export async function setAvailable(
   const errs = data.inventorySetQuantities.userErrors;
   if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
 }
+
+// ---------------- Dashboard stats ----------------
+
+export type DashboardStats = {
+  products: number;
+  outOfStock: number;
+  lowStock: number;
+  collections: number;
+};
+
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const data = await adminGraphQL<{
+    products: { count: number };
+    out: { count: number };
+    low: { count: number };
+    collections: { count: number };
+  }>(`
+    query {
+      products: productsCount { count }
+      out: productsCount(query: "inventory_total:0") { count }
+      low: productsCount(query: "inventory_total:>0 inventory_total:<=5") { count }
+      collections: collectionsCount { count }
+    }
+  `);
+  return {
+    products: data.products.count,
+    outOfStock: data.out.count,
+    lowStock: data.low.count,
+    collections: data.collections.count,
+  };
+}

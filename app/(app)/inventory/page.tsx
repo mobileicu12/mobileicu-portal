@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Topbar from "@/components/Topbar";
 import type { ProductRow, Location } from "@/lib/shopify";
 
 const LOW_STOCK_DEFAULT = 5;
@@ -40,7 +39,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
   return out;
 }
 
-export default function Dashboard() {
+export default function InventoryPage() {
   const [rows, setRows] = useState<FlatRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<string>("");
@@ -83,7 +82,6 @@ export default function Dashboard() {
     [],
   );
 
-  // Initial load + locations
   useEffect(() => {
     fetch("/api/locations")
       .then((r) => r.json())
@@ -96,7 +94,6 @@ export default function Dashboard() {
     load("", null, false);
   }, [load]);
 
-  // Debounced search
   function onSearch(value: string) {
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -125,141 +122,126 @@ export default function Dashboard() {
 
   if (notConfigured) {
     return (
-      <>
-        <Topbar />
-        <main className="mx-auto max-w-2xl px-6 py-16">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8">
-            <h2 className="text-lg font-semibold text-neutral-900">
-              Almost ready — connect Shopify
-            </h2>
-            <p className="mt-2 text-sm text-neutral-700">
-              The portal is running, but it needs your Shopify Admin API token to
-              read your stock. Paste your <code>shpat_…</code> token into{" "}
-              <code className="rounded bg-white px-1">.env.local</code> as{" "}
-              <code className="rounded bg-white px-1">SHOPIFY_ADMIN_TOKEN</code>,
-              then restart the dev server.
-            </p>
-          </div>
-        </main>
-      </>
+      <div className="px-8 py-7">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8">
+          <h2 className="text-lg font-semibold text-neutral-900">Connect Shopify</h2>
+          <p className="mt-2 text-sm text-neutral-700">
+            Add your <code>shpat_…</code> token to <code>.env.local</code> as{" "}
+            <code>SHOPIFY_ADMIN_TOKEN</code>, then restart the dev server.
+          </p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <>
-      <Topbar />
-      <main className="mx-auto max-w-7xl px-6 py-6">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-neutral-900">Inventory</h1>
-            <p className="text-sm text-neutral-500">
-              {stats.total} variants loaded ·{" "}
-              <span className="text-amber-600">{stats.low} low</span> ·{" "}
-              <span className="text-red-600">{stats.out} out of stock</span>
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {locations.length > 1 && (
-              <select
-                value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
-                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-              >
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <label className="flex items-center gap-2 text-sm text-neutral-600">
-              Low ≤
-              <input
-                type="number"
-                value={lowStock}
-                min={0}
-                onChange={(e) => setLowStock(Number(e.target.value))}
-                className="w-16 rounded-lg border border-neutral-300 px-2 py-2 text-sm"
-              />
-            </label>
-            <input
-              value={query}
-              onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search product or SKU…"
-              className="w-64 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-            />
-          </div>
-        </div>
-
-        {error && (
-          <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
-            {error}
+    <div className="px-8 py-7">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900">Inventory</h1>
+          <p className="text-sm text-neutral-500">
+            {stats.total} variants loaded ·{" "}
+            <span className="text-amber-600">{stats.low} low</span> ·{" "}
+            <span className="text-red-600">{stats.out} out of stock</span>
           </p>
-        )}
-
-        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Product</th>
-                <th className="px-4 py-3 font-medium">SKU</th>
-                <th className="px-4 py-3 font-medium">Price</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 text-right font-medium">Available</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {rows.map((row) => (
-                <StockRow
-                  key={row.key}
-                  row={row}
-                  available={availableAt(row)}
-                  locationId={locationId}
-                  lowStock={lowStock}
-                  onSaved={(qty) => {
-                    setRows((prev) =>
-                      prev.map((r) =>
-                        r.key === row.key
-                          ? {
-                              ...r,
-                              levels: r.levels.map((l) =>
-                                l.locationId === locationId
-                                  ? { ...l, available: qty }
-                                  : l,
-                              ),
-                            }
-                          : r,
-                      ),
-                    );
-                  }}
-                />
-              ))}
-              {rows.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-neutral-400">
-                    No products found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </div>
-
-        <div className="mt-5 flex justify-center">
-          {hasNext ? (
-            <button
-              onClick={() => load(query, cursor, true)}
-              disabled={loading}
-              className="rounded-lg border border-neutral-300 px-5 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-60"
+        <div className="flex flex-wrap items-center gap-3">
+          {locations.length > 1 && (
+            <select
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
             >
-              {loading ? "Loading…" : "Load more"}
-            </button>
-          ) : (
-            loading && <p className="text-sm text-neutral-400">Loading…</p>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
           )}
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            Low ≤
+            <input
+              type="number"
+              value={lowStock}
+              min={0}
+              onChange={(e) => setLowStock(Number(e.target.value))}
+              className="w-16 rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+            />
+          </label>
+          <input
+            value={query}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search product or SKU…"
+            className="w-64 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+          />
         </div>
-      </main>
-    </>
+      </div>
+
+      {error && (
+        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
+      )}
+
+      <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+            <tr>
+              <th className="px-4 py-3 font-medium">Product</th>
+              <th className="px-4 py-3 font-medium">SKU</th>
+              <th className="px-4 py-3 font-medium">Price</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 text-right font-medium">Available</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {rows.map((row) => (
+              <StockRow
+                key={row.key}
+                row={row}
+                available={availableAt(row)}
+                locationId={locationId}
+                lowStock={lowStock}
+                onSaved={(qty) => {
+                  setRows((prev) =>
+                    prev.map((r) =>
+                      r.key === row.key
+                        ? {
+                            ...r,
+                            levels: r.levels.map((l) =>
+                              l.locationId === locationId ? { ...l, available: qty } : l,
+                            ),
+                          }
+                        : r,
+                    ),
+                  );
+                }}
+              />
+            ))}
+            {rows.length === 0 && !loading && (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-neutral-400">
+                  No products found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-5 flex justify-center">
+        {hasNext ? (
+          <button
+            onClick={() => load(query, cursor, true)}
+            disabled={loading}
+            className="rounded-lg border border-neutral-300 px-5 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-60"
+          >
+            {loading ? "Loading…" : "Load more"}
+          </button>
+        ) : (
+          loading && <p className="text-sm text-neutral-400">Loading…</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -295,11 +277,7 @@ function StockRow({
       const res = await fetch("/api/inventory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inventoryItemId: row.inventoryItemId,
-          locationId,
-          quantity: qty,
-        }),
+        body: JSON.stringify({ inventoryItemId: row.inventoryItemId, locationId, quantity: qty }),
       });
       if (res.ok) {
         onSaved(qty);
@@ -326,9 +304,7 @@ function StockRow({
           )}
           <div>
             <p className="font-medium text-neutral-900">{row.productTitle}</p>
-            {row.variantTitle && (
-              <p className="text-xs text-neutral-500">{row.variantTitle}</p>
-            )}
+            {row.variantTitle && <p className="text-xs text-neutral-500">{row.variantTitle}</p>}
           </div>
         </div>
       </td>
