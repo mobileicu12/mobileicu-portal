@@ -68,6 +68,7 @@ export type CreateBillInput = {
   lines: BillLine[];
   vat: boolean;
   email?: string;
+  customerId?: string;
   note?: string;
   discountPercent?: number;
   complete?: boolean; // POS: complete immediately (creates order, deducts stock)
@@ -92,7 +93,8 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
     note: input.note || undefined,
     tags: ["portal-billing"],
   };
-  if (input.email?.trim()) draftInput.email = input.email.trim();
+  if (input.customerId?.trim()) draftInput.purchasingEntity = { customerId: input.customerId.trim() };
+  else if (input.email?.trim()) draftInput.email = input.email.trim();
   if (input.discountPercent && input.discountPercent > 0) {
     draftInput.appliedDiscount = {
       valueType: "PERCENTAGE",

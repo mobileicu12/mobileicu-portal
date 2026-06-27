@@ -37,6 +37,41 @@ export default function BillingPage() {
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
 
+  const [customerId, setCustomerId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [custQ, setCustQ] = useState("");
+  const [custHits, setCustHits] = useState<{ id: string; name: string; company: string }[]>([]);
+  const custDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Pre-fill customer from ?customer=<id> (e.g. coming from a customer page).
+  useEffect(() => {
+    const cid = new URLSearchParams(window.location.search).get("customer");
+    if (!cid) return;
+    fetch(`/api/customers/${cid}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.customer) {
+          setCustomerId(d.customer.id);
+          setCustomerName(d.customer.company ? `${d.customer.name} (${d.customer.company})` : d.customer.name);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function onCustSearch(v: string) {
+    setCustQ(v);
+    if (custDebounce.current) clearTimeout(custDebounce.current);
+    if (!v.trim()) {
+      setCustHits([]);
+      return;
+    }
+    custDebounce.current = setTimeout(async () => {
+      const res = await fetch(`/api/customers?q=${encodeURIComponent(v)}`);
+      const d = await res.json();
+      setCustHits((d.customers ?? []).map((c: { id: string; name: string; company: string }) => ({ id: c.id, name: c.name, company: c.company })));
+    }, 300);
+  }
+
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -116,6 +151,7 @@ export default function BillingPage() {
           lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.qty })),
           vat,
           email,
+          customerId,
           note,
           discountPercent: discount,
           complete: mode === "pos",
@@ -275,18 +311,57 @@ export default function BillingPage() {
             />
           </label>
 
-          {mode === "invoice" && (
-            <label className="mt-3 block text-sm">
-              <span className="font-medium text-neutral-700">Customer email (optional)</span>
+          <div className="mt-3 text-sm">
+            <span className="font-medium text-neutral-700">Customer</span>
+            {customerId ? (
+              <div className="mt-1 flex items-center justify-between rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2">
+                <span className="text-neutral-800">{customerName}</span>
+                <button
+                  onClick={() => { setCustomerId(""); setCustomerName(""); setCustQ(""); }}
+                  className="text-xs text-neutral-400 hover:text-red-600"
+                >
+                  change
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  value={custQ}
+                  onChange={(e) => onCustSearch(e.target.value)}
+                  placeholder="Search a registered customer…"
+                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                />
+                {custHits.length > 0 && (
+                  <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+                    {custHits.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setCustomerId(c.id);
+                          setCustomerName(c.company ? `${c.name} (${c.company})` : c.name);
+                          setCustHits([]);
+                          setCustQ("");
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-neutral-50"
+                      >
+                        <span className="font-medium text-neutral-900">{c.name || "(no name)"}</span>
+                        {c.company && <span className="text-neutral-500"> · {c.company}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {mode === "invoice" && !customerId && (
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="customer@email.com"
-                className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                placeholder="…or just an email for a one-off"
+                className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
               />
-            </label>
-          )}
+            )}
+          </div>
 
           <label className="mt-3 block text-sm">
             <span className="font-medium text-neutral-700">Note (optional)</span>
