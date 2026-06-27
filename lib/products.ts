@@ -253,6 +253,57 @@ export async function importRows(rows: ImportRow[]): Promise<UpsertResult[]> {
   return results;
 }
 
+// ---------------- Bulk actions ----------------
+
+export async function bulkSetStatus(
+  ids: string[],
+  status: "ACTIVE" | "DRAFT",
+): Promise<{ ok: number; failed: number }> {
+  let ok = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const d = await adminGraphQL<{
+        productUpdate: { userErrors: { message: string }[] };
+      }>(
+        `mutation($id: ID!, $status: ProductStatus!) {
+          productUpdate(product: { id: $id, status: $status }) { userErrors { field message } }
+        }`,
+        { id, status },
+      );
+      if (d.productUpdate.userErrors.length) failed++;
+      else ok++;
+    } catch {
+      failed++;
+    }
+  }
+  return { ok, failed };
+}
+
+export async function bulkDelete(
+  ids: string[],
+): Promise<{ ok: number; failed: number }> {
+  let ok = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const d = await adminGraphQL<{
+        productDelete: { deletedProductId: string | null; userErrors: { message: string }[] };
+      }>(
+        `mutation($id: ID!) {
+          productDelete(input: { id: $id }) { deletedProductId userErrors { field message } }
+        }`,
+        { id },
+      );
+      if (d.productDelete.userErrors.length) failed++;
+      else ok++;
+    } catch {
+      failed++;
+    }
+  }
+  return { ok, failed };
+}
+
 // ---------------- Collections (for filters / pickers) ----------------
 
 export async function getCollectionsList(): Promise<{ id: string; title: string; handle: string }[]> {

@@ -7,6 +7,7 @@ const LOW_STOCK_DEFAULT = 5;
 
 type FlatRow = {
   key: string;
+  productId: string;
   productTitle: string;
   image: string | null;
   variantTitle: string;
@@ -14,6 +15,7 @@ type FlatRow = {
   price: string;
   inventoryItemId: string | null;
   tracked: boolean;
+  status: string;
   levels: { locationId: string; locationName: string; available: number }[];
   totalAvailable: number;
 };
@@ -24,6 +26,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
     for (const v of p.variants) {
       out.push({
         key: v.variantId,
+        productId: p.productId,
         productTitle: p.title,
         image: p.image,
         variantTitle: v.variantTitle === "Default Title" ? "" : v.variantTitle,
@@ -31,6 +34,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
         price: v.price,
         inventoryItemId: v.inventoryItemId,
         tracked: v.tracked,
+        status: p.status,
         levels: v.levels,
         totalAvailable: v.available,
       });
@@ -50,6 +54,9 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notConfigured, setNotConfigured] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [flash, setFlash] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
@@ -120,14 +127,58 @@ export default function InventoryPage() {
     return { total: rows.length, low, out };
   }, [rows, lowStock, availableAt]);
 
+  // selection helpers
+  const allSelected = rows.length > 0 && selected.size === rows.length;
+  function toggleRow(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.key)));
+  }
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  async function runBulk(action: "activate" | "draft" | "delete") {
+    const ids = Array.from(
+      new Set(rows.filter((r) => selected.has(r.key)).map((r) => r.productId)),
+    );
+    if (ids.length === 0) return;
+    if (action === "delete" && !confirm(`Delete ${ids.length} product(s)? This cannot be undone.`)) {
+      return;
+    }
+    setBulkBusy(true);
+    setFlash("");
+    try {
+      const res = await fetch("/api/products/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ids }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Bulk action failed");
+      setFlash(`Done: ${d.ok} updated${d.failed ? `, ${d.failed} failed` : ""}.`);
+      clearSelection();
+      load(query, null, false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Bulk action failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   if (notConfigured) {
     return (
       <div className="px-8 py-7">
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8">
           <h2 className="text-lg font-semibold text-neutral-900">Connect Shopify</h2>
           <p className="mt-2 text-sm text-neutral-700">
-            Add your <code>shpat_…</code> token to <code>.env.local</code> as{" "}
-            <code>SHOPIFY_ADMIN_TOKEN</code>, then restart the dev server.
+            Add your credentials to <code>.env.local</code>, then restart the dev server.
           </p>
         </div>
       </div>
@@ -135,57 +186,60 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="px-8 py-7">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-neutral-900">Inventory</h1>
-          <p className="text-sm text-neutral-500">
-            {stats.total} variants loaded ·{" "}
-            <span className="text-amber-600">{stats.low} low</span> ·{" "}
-            <span className="text-red-600">{stats.out} out of stock</span>
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {locations.length > 1 && (
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-            >
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
-            Low ≤
+    <div className="px-8 py-7 pb-24">
+      {/* Sticky toolbar */}
+      <div className="sticky top-14 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-neutral-50/95 px-8 py-3 backdrop-blur">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-neutral-900">Inventory</h1>
+            <p className="text-sm text-neutral-500">
+              {stats.total} variants loaded ·{" "}
+              <span className="text-amber-600">{stats.low} low</span> ·{" "}
+              <span className="text-red-600">{stats.out} out of stock</span>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {locations.length > 1 && (
+              <select
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+              >
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+            )}
+            <label className="flex items-center gap-2 text-sm text-neutral-600">
+              Low ≤
+              <input
+                type="number"
+                value={lowStock}
+                min={0}
+                onChange={(e) => setLowStock(Number(e.target.value))}
+                className="w-16 rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+              />
+            </label>
             <input
-              type="number"
-              value={lowStock}
-              min={0}
-              onChange={(e) => setLowStock(Number(e.target.value))}
-              className="w-16 rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+              value={query}
+              onChange={(e) => onSearch(e.target.value)}
+              placeholder="Search product or SKU…"
+              className="w-64 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
             />
-          </label>
-          <input
-            value={query}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Search product or SKU…"
-            className="w-64 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-          />
+          </div>
         </div>
       </div>
 
-      {error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
-      )}
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+      {flash && <p className="mb-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
 
       <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
             <tr>
+              <th className="px-4 py-3 w-10">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4" />
+              </th>
               <th className="px-4 py-3 font-medium">Product</th>
               <th className="px-4 py-3 font-medium">SKU</th>
               <th className="px-4 py-3 font-medium">Price</th>
@@ -201,16 +255,13 @@ export default function InventoryPage() {
                 available={availableAt(row)}
                 locationId={locationId}
                 lowStock={lowStock}
+                checked={selected.has(row.key)}
+                onToggle={() => toggleRow(row.key)}
                 onSaved={(qty) => {
                   setRows((prev) =>
                     prev.map((r) =>
                       r.key === row.key
-                        ? {
-                            ...r,
-                            levels: r.levels.map((l) =>
-                              l.locationId === locationId ? { ...l, available: qty } : l,
-                            ),
-                          }
+                        ? { ...r, levels: r.levels.map((l) => (l.locationId === locationId ? { ...l, available: qty } : l)) }
                         : r,
                     ),
                   );
@@ -218,11 +269,7 @@ export default function InventoryPage() {
               />
             ))}
             {rows.length === 0 && !loading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-neutral-400">
-                  No products found.
-                </td>
-              </tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-neutral-400">No products found.</td></tr>
             )}
           </tbody>
         </table>
@@ -241,6 +288,19 @@ export default function InventoryPage() {
           loading && <p className="text-sm text-neutral-400">Loading…</p>
         )}
       </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-xl">
+          <span className="font-medium">{selected.size} selected</span>
+          <span className="h-4 w-px bg-neutral-600" />
+          <button disabled={bulkBusy} onClick={() => runBulk("activate")} className="rounded-full px-3 py-1 hover:bg-neutral-700 disabled:opacity-50">Activate</button>
+          <button disabled={bulkBusy} onClick={() => runBulk("draft")} className="rounded-full px-3 py-1 hover:bg-neutral-700 disabled:opacity-50">Set draft</button>
+          <button disabled={bulkBusy} onClick={() => runBulk("delete")} className="rounded-full px-3 py-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
+          <span className="h-4 w-px bg-neutral-600" />
+          <button onClick={clearSelection} className="rounded-full px-2 py-1 text-neutral-400 hover:text-white">✕</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -250,12 +310,16 @@ function StockRow({
   available,
   locationId,
   lowStock,
+  checked,
+  onToggle,
   onSaved,
 }: {
   row: FlatRow;
   available: number;
   locationId: string;
   lowStock: number;
+  checked: boolean;
+  onToggle: () => void;
   onSaved: (qty: number) => void;
 }) {
   const [value, setValue] = useState(String(available));
@@ -289,22 +353,24 @@ function StockRow({
   }
 
   return (
-    <tr className="hover:bg-neutral-50">
+    <tr className={checked ? "bg-amber-50/60" : "hover:bg-neutral-50"}>
+      <td className="px-4 py-3">
+        <input type="checkbox" checked={checked} onChange={onToggle} className="h-4 w-4" />
+      </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
           {row.image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={row.image}
-              alt=""
-              className="h-10 w-10 rounded-md border border-neutral-200 object-cover"
-            />
+            <img src={row.image} alt="" className="h-10 w-10 rounded-md border border-neutral-200 object-cover" />
           ) : (
             <div className="h-10 w-10 rounded-md bg-neutral-100" />
           )}
           <div>
             <p className="font-medium text-neutral-900">{row.productTitle}</p>
-            {row.variantTitle && <p className="text-xs text-neutral-500">{row.variantTitle}</p>}
+            <p className="text-xs text-neutral-500">
+              {row.variantTitle && <span>{row.variantTitle} · </span>}
+              <span className={row.status === "ACTIVE" ? "text-emerald-600" : "text-neutral-400"}>{row.status}</span>
+            </p>
           </div>
         </div>
       </td>
@@ -312,21 +378,13 @@ function StockRow({
       <td className="px-4 py-3 text-neutral-700">£{row.price}</td>
       <td className="px-4 py-3">
         {!row.tracked ? (
-          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-500">
-            Not tracked
-          </span>
+          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-500">Not tracked</span>
         ) : status === "out" ? (
-          <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
-            Out of stock
-          </span>
+          <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">Out of stock</span>
         ) : status === "low" ? (
-          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-            Low
-          </span>
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">Low</span>
         ) : (
-          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-            In stock
-          </span>
+          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">In stock</span>
         )}
       </td>
       <td className="px-4 py-3">
@@ -335,18 +393,11 @@ function StockRow({
             type="number"
             value={value}
             disabled={!row.tracked || !row.inventoryItemId}
-            onChange={(e) => {
-              setValue(e.target.value);
-              setDirty(true);
-            }}
+            onChange={(e) => { setValue(e.target.value); setDirty(true); }}
             className="w-20 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm disabled:bg-neutral-50 disabled:text-neutral-400"
           />
           {dirty && (
-            <button
-              onClick={save}
-              disabled={saving}
-              className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60"
-            >
+            <button onClick={save} disabled={saving} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">
               {saving ? "…" : "Save"}
             </button>
           )}
