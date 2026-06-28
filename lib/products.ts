@@ -304,6 +304,138 @@ export async function bulkDelete(
   return { ok, failed };
 }
 
+export async function bulkSetPrice(
+  variants: { id: string; productId: string }[],
+  price: number,
+): Promise<{ ok: number; failed: number }> {
+  // group variant ids by product
+  const byProduct = new Map<string, string[]>();
+  for (const v of variants) {
+    const arr = byProduct.get(v.productId) ?? [];
+    arr.push(v.id);
+    byProduct.set(v.productId, arr);
+  }
+  let ok = 0;
+  let failed = 0;
+  for (const [productId, ids] of byProduct) {
+    try {
+      const d = await adminGraphQL<{
+        productVariantsBulkUpdate: { userErrors: { message: string }[] };
+      }>(
+        `mutation($pid: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $pid, variants: $variants) { userErrors { field message } }
+        }`,
+        { pid: productId, variants: ids.map((id) => ({ id, price: String(price) })) },
+      );
+      if (d.productVariantsBulkUpdate.userErrors.length) failed += ids.length;
+      else ok += ids.length;
+    } catch {
+      failed += ids.length;
+    }
+  }
+  return { ok, failed };
+}
+
+export async function bulkSetStock(
+  inventoryItemIds: string[],
+  locationId: string,
+  quantity: number,
+): Promise<{ ok: number; failed: number }> {
+  let ok = 0;
+  let failed = 0;
+  for (const id of inventoryItemIds) {
+    try {
+      await setAvailable(id, locationId, Math.max(0, Math.round(quantity)));
+      ok++;
+    } catch {
+      failed++;
+    }
+  }
+  return { ok, failed };
+}
+
+export async function bulkAddToCollection(
+  productIds: string[],
+  collectionId: string,
+): Promise<{ ok: number; failed: number }> {
+  try {
+    const d = await adminGraphQL<{
+      collectionAddProductsV2: { job: { id: string } | null; userErrors: { message: string }[] };
+    }>(
+      `mutation($id: ID!, $pids: [ID!]!) {
+        collectionAddProductsV2(id: $id, productIds: $pids) { job { id } userErrors { field message } }
+      }`,
+      { id: collectionId, pids: productIds },
+    );
+    if (d.collectionAddProductsV2.userErrors.length) {
+      return { ok: 0, failed: productIds.length };
+    }
+    return { ok: productIds.length, failed: 0 };
+  } catch {
+    return { ok: 0, failed: productIds.length };
+  }
+}
+
+// ---------------- Collections ----------------
+
+export type CollectionRecord = {
+  id: string;
+  title: string;
+  handle: string;
+  products: number;
+  smart: boolean;
+  image: string | null;
+};
+
+export async function getCollectionsDetailed(): Promise<CollectionRecord[]> {
+  const out: CollectionRecord[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < 5; page++) {
+    const data: {
+      collections: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        edges: {
+          node: {
+            id: string;
+            title: string;
+            handle: string;
+            productsCount: { count: number } | null;
+            ruleSet: { rules: unknown[] } | null;
+            image: { url: string } | null;
+          };
+        }[];
+      };
+    } = await adminGraphQL(
+      `query($after: String) {
+        collections(first: 100, after: $after, sortKey: TITLE) {
+          pageInfo { hasNextPage endCursor }
+          edges { node { id title handle productsCount { count } ruleSet { rules { column } } image { url } } }
+        }
+      }`,
+      { after },
+    );
+    for (const e of data.collections.edges) {
+      out.push({
+        id: e.node.id,
+        title: e.node.title,
+        handle: e.node.handle,
+        products: e.node.productsCount?.count ?? 0,
+        smart: Boolean(e.node.ruleSet),
+        image: e.node.image?.url ?? null,
+      });
+    }
+    if (!data.collections.pageInfo.hasNextPage) break;
+    after = data.collections.pageInfo.endCursor;
+  }
+  return out;
+}
+
+export async function getManualCollections(): Promise<{ id: string; title: string }[]> {
+  return (await getCollectionsDetailed())
+    .filter((c) => !c.smart)
+    .map((c) => ({ id: c.id, title: c.title }));
+}
+
 // ---------------- Collections (for filters / pickers) ----------------
 
 export async function getCollectionsList(): Promise<{ id: string; title: string; handle: string }[]> {

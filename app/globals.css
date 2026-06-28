@@ -1,26 +1,81 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accentfg: var(--accentfg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --bg: #f6f6f8;
+  --surface: #ffffff;
+  --subtle: #f1f1f4;
+  --line: #e5e5ea;
+  --ink: #16161a;
+  --muted: #6b7280;
+  --accent: #c9a227;
+  --accentfg: #1a1407;
+  color-scheme: light;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.dark {
+  --bg: #0a0a0c;
+  --surface: #151518;
+  --subtle: #1d1d22;
+  --line: #2a2a31;
+  --ink: #f3f3f5;
+  --muted: #9b9ba6;
+  --accent: #dcb73f;
+  --accentfg: #16120a;
+  color-scheme: dark;
 }
+
+html { background: var(--bg); }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Modern scrollbar */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* Smooth theme transition */
+.theme-anim, .theme-anim * { transition: background-color .2s ease, border-color .2s ease, color .15s ease; }
+
+/* Brand gradient accent */
+.brand-mark {
+  background: linear-gradient(135deg, var(--accent), #8a6f15);
+}
+
+/* ---- Dark-mode adaptation for pages still using default utilities ---- */
+.dark .bg-white { background-color: var(--surface) !important; }
+.dark .bg-neutral-50 { background-color: var(--subtle) !important; }
+.dark .bg-neutral-100 { background-color: var(--subtle) !important; }
+.dark .border-neutral-200 { border-color: var(--line) !important; }
+.dark .border-neutral-300 { border-color: var(--line) !important; }
+.dark .text-neutral-900 { color: var(--ink) !important; }
+.dark .text-neutral-800 { color: var(--ink) !important; }
+.dark .text-neutral-700 { color: #d4d4d8 !important; }
+.dark .text-neutral-600 { color: var(--muted) !important; }
+.dark .text-neutral-500 { color: var(--muted) !important; }
+.dark .text-neutral-400 { color: #7c7c87 !important; }
+.dark .divide-neutral-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--line) !important; }
+.dark .hover\:bg-neutral-50:hover { background-color: var(--subtle) !important; }
+.dark .hover\:bg-neutral-100:hover { background-color: var(--subtle) !important; }
+.dark .hover\:border-neutral-900:hover { border-color: var(--accent) !important; }
+/* Primary dark buttons stay visible on dark bg */
+.dark .bg-neutral-900 { background-color: #2f2f37 !important; }
+.dark .file\:bg-neutral-100::file-selector-button { background-color: var(--subtle) !important; color: var(--ink) !important; }
