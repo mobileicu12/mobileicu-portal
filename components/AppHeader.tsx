@@ -12,6 +12,7 @@ const LABELS: { match: (p: string) => boolean; label: string }[] = [
   { match: (p) => p.startsWith("/import-export"), label: "Import / Export" },
   { match: (p) => p.startsWith("/billing"), label: "Billing / POS" },
   { match: (p) => p.startsWith("/invoices"), label: "Invoices" },
+  { match: (p) => p.startsWith("/channels"), label: "Channels" },
 ];
 
 export default function AppHeader() {
