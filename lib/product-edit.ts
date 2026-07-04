@@ -82,7 +82,7 @@ export type ProductEditInput = {
 export async function updateFullProduct(id: string, f: ProductEditInput): Promise<void> {
   // 1) core product fields
   const input: Record<string, unknown> = { id };
-  if (f.title !== undefined) input.title = f.title;
+  if (f.title !== undefined && f.title.trim()) input.title = f.title.trim();
   if (f.descriptionHtml !== undefined) input.descriptionHtml = f.descriptionHtml;
   if (f.status !== undefined) input.status = f.status.toUpperCase();
   if (f.vendor !== undefined) input.vendor = f.vendor;
@@ -95,13 +95,16 @@ export async function updateFullProduct(id: string, f: ProductEditInput): Promis
   );
   if (up.productUpdate.userErrors.length) throw new ShopifyError(up.productUpdate.userErrors.map((e) => e.message).join("; "));
 
-  // 2) metafields (brand / type / model)
+  // 2) metafields (brand / type / model) — Shopify rejects empty values, so only set non-empty ones.
   const mfs: { ownerId: string; namespace: string; key: string; type: string; value: string }[] = [];
-  if (f.brand !== undefined) mfs.push({ ownerId: id, namespace: "custom", key: "brand", type: "single_line_text_field", value: f.brand });
-  if (f.type !== undefined && f.type) mfs.push({ ownerId: id, namespace: "custom", key: "product_type", type: "single_line_text_field", value: f.type });
+  if (f.brand !== undefined && f.brand.trim())
+    mfs.push({ ownerId: id, namespace: "custom", key: "brand", type: "single_line_text_field", value: f.brand.trim() });
+  if (f.type !== undefined && f.type.trim())
+    mfs.push({ ownerId: id, namespace: "custom", key: "product_type", type: "single_line_text_field", value: f.type.trim() });
   if (f.model !== undefined) {
     const models = f.model.split(",").map((m) => m.trim()).filter(Boolean);
-    mfs.push({ ownerId: id, namespace: "custom", key: "product_model", type: "list.single_line_text_field", value: JSON.stringify(models) });
+    if (models.length)
+      mfs.push({ ownerId: id, namespace: "custom", key: "product_model", type: "list.single_line_text_field", value: JSON.stringify(models) });
   }
   if (mfs.length) {
     const mr = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
