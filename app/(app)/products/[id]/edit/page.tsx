@@ -25,6 +25,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const [saving, setSaving] = useState(false);
   const [f, setF] = useState<Record<string, string>>({});
   const [newImg, setNewImg] = useState("");
+  const [descPreview, setDescPreview] = useState(false);
 
   function load() {
     fetch(`/api/products/${id}`).then((r) => r.json()).then((d) => {
@@ -32,7 +33,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       const pr: Product = d.product;
       setP(pr);
       setF({
-        title: pr.title, status: pr.status, descriptionHtml: pr.descriptionHtml.replace(/<[^>]+>/g, "").trim(),
+        title: pr.title, status: pr.status, descriptionHtml: pr.descriptionHtml,
         brand: pr.brand, type: pr.type, model: pr.model, productType: pr.productType, vendor: pr.vendor,
         tags: pr.tags.join(", "), price: pr.price, compareAt: pr.compareAt, sku: pr.sku, barcode: pr.barcode,
         stock: String(pr.available),
@@ -52,7 +53,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         body: JSON.stringify({
           action: "update", variantId: p.variantId,
           title: f.title, status: f.status,
-          descriptionHtml: f.descriptionHtml ? `<p>${f.descriptionHtml.replace(/\n/g, "<br>")}</p>` : "",
+          descriptionHtml: f.descriptionHtml ?? "",
           brand: f.brand, type: f.type, model: f.model, productType: f.productType, vendor: f.vendor, tags: f.tags,
           price: f.price, compareAt: f.compareAt, sku: f.sku, barcode: f.barcode, stock: f.stock,
         }),
@@ -106,7 +107,20 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         <div className="space-y-5 lg:col-span-2">
           <Card title="Basics">
             <Field label="Title"><input className={input} value={f.title} onChange={(e) => set("title", e.target.value)} /></Field>
-            <Field label="Description"><textarea rows={5} className={input} value={f.descriptionHtml} onChange={(e) => set("descriptionHtml", e.target.value)} /></Field>
+            <div className="block text-sm">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-muted">Description (HTML supported)</span>
+                <div className="flex overflow-hidden rounded-lg border border-line text-xs">
+                  <button type="button" onClick={() => setDescPreview(false)} className={`px-2.5 py-1 ${!descPreview ? "bg-ink text-bg" : "text-muted"}`}>HTML</button>
+                  <button type="button" onClick={() => setDescPreview(true)} className={`px-2.5 py-1 ${descPreview ? "bg-ink text-bg" : "text-muted"}`}>Preview</button>
+                </div>
+              </div>
+              {descPreview ? (
+                <div className="prose-sm min-h-40 rounded-lg border border-line bg-surface p-3 text-sm text-ink [&_a]:text-accent [&_a]:underline [&_h1]:font-semibold [&_h2]:font-semibold [&_img]:max-w-full [&_ul]:list-disc [&_ul]:pl-5" dangerouslySetInnerHTML={{ __html: f.descriptionHtml || "<p class='text-muted'>Nothing yet…</p>" }} />
+              ) : (
+                <textarea rows={10} spellCheck={false} className={`${input} font-mono text-xs`} value={f.descriptionHtml} onChange={(e) => set("descriptionHtml", e.target.value)} placeholder="<p>Paste or write HTML here…</p>" />
+              )}
+            </div>
           </Card>
 
           <Card title="Photos">
