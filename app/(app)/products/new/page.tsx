@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 type Form = {
   title: string;
+  descriptionHtml: string;
   brand: string;
   model: string;
   type: string;
@@ -21,6 +22,7 @@ type Form = {
 
 const EMPTY: Form = {
   title: "",
+  descriptionHtml: "",
   brand: "",
   model: "",
   type: "",
@@ -41,6 +43,7 @@ export default function NewProductPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [descPreview, setDescPreview] = useState(false);
 
   function set<K extends keyof Form>(k: K, v: Form[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -92,6 +95,21 @@ export default function NewProductPage() {
         <Field label="Title *" className="lg:col-span-2">
           <input className={inputCls} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="iPhone 15 Pro LCD Screen Replacement" />
         </Field>
+
+        <div className="lg:col-span-2">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-sm font-medium text-neutral-700">Description (HTML supported)</span>
+            <div className="flex overflow-hidden rounded-lg border border-line text-xs">
+              <button type="button" onClick={() => setDescPreview(false)} className={`px-2.5 py-1 ${!descPreview ? "bg-ink text-bg" : "text-muted"}`}>HTML</button>
+              <button type="button" onClick={() => setDescPreview(true)} className={`px-2.5 py-1 ${descPreview ? "bg-ink text-bg" : "text-muted"}`}>Preview</button>
+            </div>
+          </div>
+          {descPreview ? (
+            <div className="min-h-32 rounded-lg border border-line bg-surface p-3 text-sm text-ink [&_a]:text-accent [&_a]:underline [&_img]:max-w-full [&_ul]:list-disc [&_ul]:pl-5" dangerouslySetInnerHTML={{ __html: form.descriptionHtml || "<p class='text-muted'>Nothing yet…</p>" }} />
+          ) : (
+            <textarea rows={6} spellCheck={false} className={`${inputCls} font-mono text-xs`} value={form.descriptionHtml} onChange={(e) => set("descriptionHtml", e.target.value)} placeholder="<p>Paste or write product HTML here…</p>" />
+          )}
+        </div>
 
         <Field label="Brand">
           <input className={inputCls} value={form.brand} onChange={(e) => set("brand", e.target.value)} placeholder="MobileICU / AHL / KM…" />

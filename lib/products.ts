@@ -130,6 +130,7 @@ export async function getAllProductsForExport(): Promise<ProductRecord[]> {
 export type ImportRow = {
   handle?: string;
   title: string;
+  descriptionHtml?: string;
   brand?: string;
   model?: string;
   type?: string;
@@ -206,6 +207,7 @@ export async function upsertProduct(
     metafields,
   };
   if (row.shopifyType?.trim()) input.productType = row.shopifyType.trim();
+  if (row.descriptionHtml?.trim()) input.descriptionHtml = row.descriptionHtml;
   if (row.handle?.trim()) input.handle = row.handle.trim();
   if (row.image?.trim()) input.files = [{ originalSource: row.image.trim(), contentType: "IMAGE" }];
 

@@ -28,6 +28,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
+  const [descPreview, setDescPreview] = useState(false);
 
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
@@ -41,7 +42,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
         const col: Detail = d.collection;
         setC(col);
         setTitle(col.title);
-        setDesc(col.descriptionHtml.replace(/<[^>]+>/g, "").trim());
+        setDesc(col.descriptionHtml);
         setProducts((prev) => append ? [...prev, ...col.products] : col.products);
         setCursor(col.endCursor);
         setHasNext(col.hasNextPage);
@@ -54,7 +55,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
   async function saveDetails() {
     setBusy(true); setFlash(""); setError("");
     try {
-      const res = await fetch(`/api/collections/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "update", title, descriptionHtml: desc ? `<p>${desc}</p>` : "" }) });
+      const res = await fetch(`/api/collections/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "update", title, descriptionHtml: desc ?? "" }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
       setFlash("Saved.");
@@ -120,10 +121,20 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
               <span className="text-muted">Title</span>
               <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
             </label>
-            <label className="mt-3 block text-sm">
-              <span className="text-muted">Description</span>
-              <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={4} className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
-            </label>
+            <div className="mt-3 block text-sm">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-muted">Description (HTML supported)</span>
+                <div className="flex overflow-hidden rounded-lg border border-line text-xs">
+                  <button type="button" onClick={() => setDescPreview(false)} className={`px-2.5 py-1 ${!descPreview ? "bg-ink text-bg" : "text-muted"}`}>HTML</button>
+                  <button type="button" onClick={() => setDescPreview(true)} className={`px-2.5 py-1 ${descPreview ? "bg-ink text-bg" : "text-muted"}`}>Preview</button>
+                </div>
+              </div>
+              {descPreview ? (
+                <div className="min-h-32 rounded-lg border border-line bg-surface p-3 text-sm text-ink [&_a]:text-accent [&_a]:underline [&_img]:max-w-full [&_ul]:list-disc [&_ul]:pl-5" dangerouslySetInnerHTML={{ __html: desc || "<p class='text-muted'>Nothing yet…</p>" }} />
+              ) : (
+                <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={6} spellCheck={false} className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-xs text-ink outline-none focus:border-accent" placeholder="<p>HTML here…</p>" />
+              )}
+            </div>
             <button onClick={saveDetails} disabled={busy} className="mt-3 w-full rounded-lg bg-ink px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent hover:text-accentfg disabled:opacity-60">Save details</button>
           </div>
 
