@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { ProductRow, Location } from "@/lib/shopify";
 import { CHANNELS, channelKeysFromTags } from "@/lib/channels";
 
@@ -66,6 +67,9 @@ export default function InventoryPage() {
   const [editMode, setEditMode] = useState(false);
   const [channelDraft, setChannelDraft] = useState<string[]>([]);
   const [manualCols, setManualCols] = useState<ManualCollection[]>([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [stockFilter, setStockFilter] = useState("");
+  const [channelFilter, setChannelFilter] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (q: string, after: string | null, append: boolean) => {
@@ -107,10 +111,31 @@ export default function InventoryPage() {
     load("", null, false);
   }, [load]);
 
+  function buildQuery(text: string, status: string, stock: string, channel: string): string {
+    const parts: string[] = [];
+    if (text.trim()) parts.push(text.trim());
+    if (status) parts.push(`status:${status}`);
+    if (stock === "out") parts.push("inventory_total:0");
+    else if (stock === "low") parts.push(`inventory_total:>0 inventory_total:<=${lowStock}`);
+    else if (stock === "in") parts.push(`inventory_total:>${lowStock}`);
+    if (channel) parts.push(`tag:'channel:${channel}'`);
+    return parts.join(" ");
+  }
+
   function onSearch(value: string) {
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => load(value, null, false), 350);
+    debounceRef.current = setTimeout(() => load(buildQuery(value, statusFilter, stockFilter, channelFilter), null, false), 350);
+  }
+
+  function applyFilters(next: { status?: string; stock?: string; channel?: string }) {
+    const s = next.status ?? statusFilter;
+    const st = next.stock ?? stockFilter;
+    const ch = next.channel ?? channelFilter;
+    if (next.status !== undefined) setStatusFilter(next.status);
+    if (next.stock !== undefined) setStockFilter(next.stock);
+    if (next.channel !== undefined) setChannelFilter(next.channel);
+    load(buildQuery(query, s, st, ch), null, false);
   }
 
   const availableAt = useCallback((row: FlatRow): number => {
@@ -203,6 +228,29 @@ export default function InventoryPage() {
             </label>
             <input value={query} onChange={(e) => onSearch(e.target.value)} placeholder="Search product or SKU…" className={`${inputCls} w-64`} />
           </div>
+        </div>
+        {/* Filter ribbon */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted">Filter</span>
+          <select value={statusFilter} onChange={(e) => applyFilters({ status: e.target.value })} className={inputCls}>
+            <option value="">Any status</option>
+            <option value="active">Active</option>
+            <option value="draft">Draft</option>
+            <option value="archived">Archived</option>
+          </select>
+          <select value={stockFilter} onChange={(e) => applyFilters({ stock: e.target.value })} className={inputCls}>
+            <option value="">Any stock</option>
+            <option value="in">In stock</option>
+            <option value="low">Low</option>
+            <option value="out">Out of stock</option>
+          </select>
+          <select value={channelFilter} onChange={(e) => applyFilters({ channel: e.target.value })} className={inputCls}>
+            <option value="">Any channel</option>
+            {CHANNELS.map((c) => <option key={c.key} value={c.key}>{c.short}</option>)}
+          </select>
+          {(statusFilter || stockFilter || channelFilter) && (
+            <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); load(buildQuery(query, "", "", ""), null, false); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear</button>
+          )}
         </div>
       </div>
 
@@ -354,7 +402,7 @@ function StockRow({
             <img src={row.image} alt="" className="h-10 w-10 rounded-md border border-line object-cover" />
           ) : <div className="h-10 w-10 rounded-md bg-subtle" />}
           <div>
-            <p className="font-medium text-ink">{row.productTitle}</p>
+            <Link href={`/products/${row.productId.split("/").pop()}/edit`} className="font-medium text-ink hover:text-accent">{row.productTitle}</Link>
             <p className="text-xs text-muted">
               {row.variantTitle && <span>{row.variantTitle} · </span>}
               <span className={row.status === "ACTIVE" ? "text-emerald-500" : "text-muted"}>{row.status}</span>
