@@ -70,6 +70,8 @@ export default function InventoryPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [stockFilter, setStockFilter] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
+  const [collectionFilter, setCollectionFilter] = useState("");
+  const [allCols, setAllCols] = useState<{ id: string; title: string }[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (q: string, after: string | null, append: boolean) => {
@@ -106,12 +108,14 @@ export default function InventoryPage() {
       if (locs[0]) setLocationId(locs[0].id);
     }).catch(() => {});
     fetch("/api/collections").then((r) => r.json()).then((d) => {
-      setManualCols((d.collections ?? []).filter((c: { smart: boolean }) => !c.smart).map((c: ManualCollection) => ({ id: c.id, title: c.title })));
+      const cols = d.collections ?? [];
+      setManualCols(cols.filter((c: { smart: boolean }) => !c.smart).map((c: ManualCollection) => ({ id: c.id, title: c.title })));
+      setAllCols(cols.map((c: { id: string; title: string }) => ({ id: c.id, title: c.title })).sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title)));
     }).catch(() => {});
     load("", null, false);
   }, [load]);
 
-  function buildQuery(text: string, status: string, stock: string, channel: string): string {
+  function buildQuery(text: string, status: string, stock: string, channel: string, collection: string): string {
     const parts: string[] = [];
     if (text.trim()) parts.push(text.trim());
     if (status) parts.push(`status:${status}`);
@@ -119,23 +123,26 @@ export default function InventoryPage() {
     else if (stock === "low") parts.push(`inventory_total:>0 inventory_total:<=${lowStock}`);
     else if (stock === "in") parts.push(`inventory_total:>${lowStock}`);
     if (channel) parts.push(`tag:'channel:${channel}'`);
+    if (collection) parts.push(`collection_id:${collection}`);
     return parts.join(" ");
   }
 
   function onSearch(value: string) {
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => load(buildQuery(value, statusFilter, stockFilter, channelFilter), null, false), 350);
+    debounceRef.current = setTimeout(() => load(buildQuery(value, statusFilter, stockFilter, channelFilter, collectionFilter), null, false), 350);
   }
 
-  function applyFilters(next: { status?: string; stock?: string; channel?: string }) {
+  function applyFilters(next: { status?: string; stock?: string; channel?: string; collection?: string }) {
     const s = next.status ?? statusFilter;
     const st = next.stock ?? stockFilter;
     const ch = next.channel ?? channelFilter;
+    const co = next.collection ?? collectionFilter;
     if (next.status !== undefined) setStatusFilter(next.status);
     if (next.stock !== undefined) setStockFilter(next.stock);
     if (next.channel !== undefined) setChannelFilter(next.channel);
-    load(buildQuery(query, s, st, ch), null, false);
+    if (next.collection !== undefined) setCollectionFilter(next.collection);
+    load(buildQuery(query, s, st, ch, co), null, false);
   }
 
   const availableAt = useCallback((row: FlatRow): number => {
@@ -248,8 +255,12 @@ export default function InventoryPage() {
             <option value="">Any channel</option>
             {CHANNELS.map((c) => <option key={c.key} value={c.key}>{c.short}</option>)}
           </select>
-          {(statusFilter || stockFilter || channelFilter) && (
-            <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); load(buildQuery(query, "", "", ""), null, false); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear</button>
+          <select value={collectionFilter} onChange={(e) => applyFilters({ collection: e.target.value })} className={inputCls}>
+            <option value="">Any collection</option>
+            {allCols.map((c) => <option key={c.id} value={c.id.split("/").pop()}>{c.title}</option>)}
+          </select>
+          {(statusFilter || stockFilter || channelFilter || collectionFilter) && (
+            <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); setCollectionFilter(""); load(buildQuery(query, "", "", "", ""), null, false); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear</button>
           )}
         </div>
       </div>
