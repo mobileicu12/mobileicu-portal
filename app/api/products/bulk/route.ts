@@ -5,6 +5,7 @@ import {
   bulkSetPrice,
   bulkSetStock,
   bulkAddToCollection,
+  bulkSetChannels,
 } from "@/lib/products";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -12,13 +13,15 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 type Body = {
-  action: "activate" | "draft" | "delete" | "price" | "stock" | "collection";
+  action: "activate" | "draft" | "delete" | "price" | "stock" | "collection" | "channels";
   productIds?: string[];
   variants?: { id: string; productId: string }[];
   inventoryItemIds?: string[];
   value?: number;
   collectionId?: string;
   locationId?: string;
+  addChannels?: string[];
+  removeChannels?: string[];
 };
 
 export async function POST(req: Request) {
@@ -56,6 +59,13 @@ export async function POST(req: Request) {
         if (!body.collectionId)
           return NextResponse.json({ error: "Collection required." }, { status: 400 });
         result = await bulkAddToCollection(body.productIds ?? [], body.collectionId);
+        break;
+      case "channels":
+        result = await bulkSetChannels(
+          body.productIds ?? [],
+          body.addChannels ?? [],
+          body.removeChannels ?? [],
+        );
         break;
       default:
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });

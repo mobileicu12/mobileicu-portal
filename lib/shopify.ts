@@ -113,6 +113,7 @@ export type ProductRow = {
   title: string;
   image: string | null;
   status: string;
+  tags: string[];
   variants: VariantRow[];
 };
 
@@ -142,6 +143,7 @@ const INVENTORY_QUERY = `
           id
           title
           status
+          tags
           featuredImage { url }
           variants(first: 25) {
             edges {
@@ -179,6 +181,7 @@ type RawProductsResponse = {
         id: string;
         title: string;
         status: string;
+        tags: string[];
         featuredImage: { url: string } | null;
         variants: {
           edges: {
@@ -223,6 +226,7 @@ export async function getInventory(opts: {
     title: node.title,
     image: node.featuredImage?.url ?? null,
     status: node.status,
+    tags: node.tags ?? [],
     variants: node.variants.edges.map(({ node: v }) => {
       const levels: InventoryLevel[] =
         v.inventoryItem?.inventoryLevels.edges.map((l) => ({

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductRow, Location } from "@/lib/shopify";
+import { CHANNELS, channelKeysFromTags } from "@/lib/channels";
 
 const LOW_STOCK_DEFAULT = 5;
 
@@ -16,6 +17,7 @@ type FlatRow = {
   inventoryItemId: string | null;
   tracked: boolean;
   status: string;
+  channels: string[];
   levels: { locationId: string; locationName: string; available: number }[];
   totalAvailable: number;
 };
@@ -23,6 +25,7 @@ type FlatRow = {
 function flatten(rows: ProductRow[]): FlatRow[] {
   const out: FlatRow[] = [];
   for (const p of rows) {
+    const channels = channelKeysFromTags(p.tags ?? []);
     for (const v of p.variants) {
       out.push({
         key: v.variantId,
@@ -35,6 +38,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
         inventoryItemId: v.inventoryItemId,
         tracked: v.tracked,
         status: p.status,
+        channels,
         levels: v.levels,
         totalAvailable: v.available,
       });
@@ -60,6 +64,7 @@ export default function InventoryPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [flash, setFlash] = useState("");
   const [editMode, setEditMode] = useState(false);
+  const [channelDraft, setChannelDraft] = useState<string[]>([]);
   const [manualCols, setManualCols] = useState<ManualCollection[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -128,7 +133,7 @@ export default function InventoryPage() {
     setSelected((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
   function toggleAll() { setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.key))); }
-  function clearSelection() { setSelected(new Set()); setEditMode(false); }
+  function clearSelection() { setSelected(new Set()); setEditMode(false); setChannelDraft([]); }
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.key)), [rows, selected]);
 
@@ -213,6 +218,7 @@ export default function InventoryPage() {
               <th className="px-4 py-3 font-medium">SKU</th>
               <th className="px-4 py-3 font-medium">Price (£)</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Channels</th>
               <th className="px-4 py-3 text-right font-medium">Available</th>
             </tr>
           </thead>
@@ -231,7 +237,7 @@ export default function InventoryPage() {
               />
             ))}
             {rows.length === 0 && !loading && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-muted">No products found.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">No products found.</td></tr>
             )}
           </tbody>
         </table>
@@ -249,15 +255,30 @@ export default function InventoryPage() {
       {selected.size > 0 && (
         <div className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2">
           {editMode && (
-            <div className="mb-2 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface p-3 shadow-2xl">
-              <BulkValue label="Set price £" placeholder="9.99" onApply={(v) => runBulk("price", { value: Number(v) })} disabled={bulkBusy} />
-              <BulkValue label="Set stock" placeholder="25" onApply={(v) => runBulk("stock", { value: Number(v) })} disabled={bulkBusy} />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted">Add to collection</span>
-                <select disabled={bulkBusy} onChange={(e) => e.target.value && runBulk("collection", { collectionId: e.target.value })} className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink" defaultValue="">
-                  <option value="" disabled>Choose…</option>
-                  {manualCols.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-                </select>
+            <div className="mb-2 max-w-[92vw] rounded-2xl border border-line bg-surface p-3 shadow-2xl">
+              <div className="flex flex-wrap items-center gap-3">
+                <BulkValue label="Set price £" placeholder="9.99" onApply={(v) => runBulk("price", { value: Number(v) })} disabled={bulkBusy} />
+                <BulkValue label="Set stock" placeholder="25" onApply={(v) => runBulk("stock", { value: Number(v) })} disabled={bulkBusy} />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted">Add to collection</span>
+                  <select disabled={bulkBusy} onChange={(e) => e.target.value && runBulk("collection", { collectionId: e.target.value })} className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink" defaultValue="">
+                    <option value="" disabled>Choose…</option>
+                    {manualCols.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                <span className="text-xs font-medium text-muted">Channels →</span>
+                {CHANNELS.map((c) => (
+                  <label key={c.key} className="flex items-center gap-1.5 rounded-lg border border-line px-2 py-1 text-xs text-ink">
+                    <input type="checkbox" value={c.key} onChange={(e) => {
+                      setChannelDraft((prev) => e.target.checked ? [...prev, c.key] : prev.filter((k) => k !== c.key));
+                    }} className="h-3.5 w-3.5 accent-amber-500" />
+                    {c.short}
+                  </label>
+                ))}
+                <button disabled={bulkBusy || channelDraft.length === 0} onClick={() => runBulk("channels", { addChannels: channelDraft, removeChannels: [] })} className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accentfg disabled:opacity-50">Assign</button>
+                <button disabled={bulkBusy || channelDraft.length === 0} onClick={() => runBulk("channels", { addChannels: [], removeChannels: channelDraft })} className="rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted disabled:opacity-50">Remove</button>
               </div>
             </div>
           )}
@@ -353,6 +374,18 @@ function StockRow({
           : status === "out" ? <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-500">Out</span>
           : status === "low" ? <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600">Low</span>
           : <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-600">In stock</span>}
+      </td>
+      <td className="px-4 py-3">
+        {row.channels.length === 0 ? (
+          <span className="text-xs text-muted/60">—</span>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {row.channels.map((k) => {
+              const c = CHANNELS.find((x) => x.key === k);
+              return c ? <span key={k} className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">{c.short}</span> : null;
+            })}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-2">

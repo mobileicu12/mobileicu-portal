@@ -1,5 +1,6 @@
 // Product read/write helpers for the portal (export, import, create/edit).
 import { adminGraphQL, getLocations, setAvailable, ShopifyError } from "./shopify";
+import { tagsForChannelKeys } from "./channels";
 
 export type ProductRecord = {
   handle: string;
@@ -251,6 +252,41 @@ export async function importRows(rows: ImportRow[]): Promise<UpsertResult[]> {
     results.push(await upsertProduct(row, primary));
   }
   return results;
+}
+
+// ---------------- Channels (tag-based routing) ----------------
+
+export async function bulkSetChannels(
+  productIds: string[],
+  addKeys: string[],
+  removeKeys: string[],
+): Promise<{ ok: number; failed: number }> {
+  const addTags = tagsForChannelKeys(addKeys);
+  const removeTags = tagsForChannelKeys(removeKeys);
+  let ok = 0;
+  let failed = 0;
+  for (const id of productIds) {
+    try {
+      if (addTags.length) {
+        const d = await adminGraphQL<{ tagsAdd: { userErrors: { message: string }[] } }>(
+          `mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }`,
+          { id, tags: addTags },
+        );
+        if (d.tagsAdd.userErrors.length) { failed++; continue; }
+      }
+      if (removeTags.length) {
+        const d = await adminGraphQL<{ tagsRemove: { userErrors: { message: string }[] } }>(
+          `mutation($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }`,
+          { id, tags: removeTags },
+        );
+        if (d.tagsRemove.userErrors.length) { failed++; continue; }
+      }
+      ok++;
+    } catch {
+      failed++;
+    }
+  }
+  return { ok, failed };
 }
 
 // ---------------- Bulk actions ----------------
