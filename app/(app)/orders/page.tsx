@@ -43,6 +43,7 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
   const [fulFilter, setFulFilter] = useState<"all" | "unfulfilled" | "fulfilled">("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch("/api/orders")
@@ -67,11 +68,22 @@ export default function OrdersPage() {
     });
   }, [orders, search, segFilter, fulFilter]);
 
+  const allSelected = filtered.length > 0 && filtered.every((o) => selected.has(o.id));
+  function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  function toggleAll() { setSelected(allSelected ? new Set() : new Set(filtered.map((o) => o.id))); }
+  function bulkExport() {
+    const ids = Array.from(selected).map((x) => encodeURIComponent(x)).join(",");
+    if (ids) window.location.href = `/api/orders/export?ids=${ids}`;
+  }
+
   return (
-    <div className="px-8 py-7">
-      <div>
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Orders</h1>
-        <p className="mt-1 text-sm text-neutral-500">Completed sales across all sources — store, shop, eBay &amp; Amazon.</p>
+    <div className="px-8 py-7 pb-28">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Orders</h1>
+          <p className="text-sm text-neutral-500">Completed sales across all sources — store, shop, eBay &amp; Amazon.</p>
+        </div>
+        <button onClick={() => (window.location.href = "/api/orders/export")} disabled={orders.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ Export all</button>
       </div>
 
       {stats && (
@@ -105,6 +117,7 @@ export default function OrdersPage() {
         <table className="w-full text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
+              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
               <th className="px-4 py-3">Order</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Source</th>
@@ -118,7 +131,8 @@ export default function OrdersPage() {
             {filtered.map((o) => {
               const seg = SEGMENTS.find((x) => x.key === o.segment);
               return (
-                <tr key={o.id} onClick={() => router.push(`/orders/${encodeURIComponent(o.id)}`)} className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
+                <tr key={o.id} onClick={() => router.push(`/orders/${encodeURIComponent(o.id)}`)} className={`cursor-pointer ${selected.has(o.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleRow(o.id)} className="h-4 w-4 accent-amber-500" /></td>
                   <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{o.name}<span className="ml-1 text-xs font-normal text-neutral-400">· {o.itemCount} item{o.itemCount === 1 ? "" : "s"}</span></td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{o.customer}</td>
                   <td className="px-4 py-3">{seg ? <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${seg.badge}`}>{seg.short}</span> : <span className="text-neutral-300">—</span>}</td>
@@ -130,11 +144,22 @@ export default function OrdersPage() {
               );
             })}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-neutral-400">{orders.length === 0 ? "No orders yet." : "No orders match."}</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-neutral-400">{orders.length === 0 ? "No orders yet." : "No orders match."}</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-14 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
+          <span className="font-medium">{selected.size} selected</span>
+          <span className="h-4 w-px bg-white/20" />
+          <button onClick={bulkExport} className="rounded-full px-3 py-1 hover:bg-white/10">⬇ Export selected</button>
+          <span className="h-4 w-px bg-white/20" />
+          <button onClick={() => setSelected(new Set())} className="rounded-full px-2 py-1 text-white/50 hover:text-white">✕</button>
+        </div>
+      )}
     </div>
   );
 }

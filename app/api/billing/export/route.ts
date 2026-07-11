@@ -12,7 +12,10 @@ export async function GET(req: Request) {
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }
-  const id = new URL(req.url).searchParams.get("id");
+  const sp = new URL(req.url).searchParams;
+  const id = sp.get("id");
+  const idsParam = sp.get("ids");
+  const idSet = idsParam ? new Set(idsParam.split(",").map((x) => decodeURIComponent(x))) : null;
   try {
     const wb = new ExcelJS.Workbook();
     const stamp = new Date().toISOString().slice(0, 10);
@@ -65,7 +68,8 @@ export async function GET(req: Request) {
       ]);
       headerStyle(meta, 2);
     } else {
-      const invoices = await listInvoices();
+      let invoices = await listInvoices();
+      if (idSet) { invoices = invoices.filter((inv) => idSet.has(inv.id)); filename = `mobileicu-invoices-selected-${stamp}.xlsx`; }
       const ws = wb.addWorksheet("Invoices");
       ws.columns = [
         { header: "Invoice", key: "name", width: 14 },

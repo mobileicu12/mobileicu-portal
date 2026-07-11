@@ -48,7 +48,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
           <div className="border-t border-neutral-200">
             <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4 text-xs text-neutral-400 sm:flex-row sm:justify-between sm:px-6">
               <span>© {year} MOBILE ICU. All rights reserved.</span>
-              <span>Website &amp; portal developed &amp; managed by <span className="font-medium text-neutral-600">Kuldeep J</span> · <span className="font-medium text-amber-600">RD-IT-Lab</span></span>
+              <span>Wholesale phone &amp; laptop accessories</span>
             </div>
           </div>
         </footer>
