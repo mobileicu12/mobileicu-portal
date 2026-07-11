@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { createBill, listInvoices, type CreateBillInput } from "@/lib/billing";
+import { createBill, listInvoices, summarizeInvoices, type CreateBillInput } from "@/lib/billing";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!shopifyConfigured()) return NextResponse.json({ invoices: [] });
+  if (!shopifyConfigured()) return NextResponse.json({ invoices: [], stats: null });
   try {
     const invoices = await listInvoices();
-    return NextResponse.json({ invoices });
+    return NextResponse.json({ invoices, stats: summarizeInvoices(invoices) });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to load invoices.";
-    return NextResponse.json({ error: msg, invoices: [] }, { status: 502 });
+    return NextResponse.json({ error: msg, invoices: [], stats: null }, { status: 502 });
   }
 }
 

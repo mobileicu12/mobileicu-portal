@@ -211,11 +211,13 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
 }
 
 export type InvoiceLine = {
+  variantId: string | null;
   title: string;
   sku: string;
   quantity: number;
   unitPrice: string;
   lineTotal: string;
+  image: string | null;
 };
 
 export type InvoiceDetail = {
@@ -267,6 +269,8 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
         edges: {
           node: {
             title: string; sku: string | null; quantity: number;
+            variant: { id: string; image: { url: string } | null; product: { featuredImage: { url: string } | null } | null } | null;
+            image: { url: string } | null;
             originalUnitPriceSet: { presentmentMoney: { amount: string; currencyCode: string } };
             discountedTotalSet: { presentmentMoney: { amount: string } };
           };
@@ -285,6 +289,8 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
         lineItems(first: 100) {
           edges { node {
             title sku quantity
+            variant { id image { url } product { featuredImage { url } } }
+            image { url }
             originalUnitPriceSet { presentmentMoney { amount currencyCode } }
             discountedTotalSet { presentmentMoney { amount } }
           } }
@@ -310,11 +316,13 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     customerPhone: d.customer?.phone || d.billingAddress?.phone || "",
     billingAddress: addrLines(d.billingAddress),
     lines: d.lineItems.edges.map((e) => ({
+      variantId: e.node.variant?.id ?? null,
       title: e.node.title,
       sku: e.node.sku || "",
       quantity: e.node.quantity,
       unitPrice: e.node.originalUnitPriceSet.presentmentMoney.amount,
       lineTotal: e.node.discountedTotalSet.presentmentMoney.amount,
+      image: e.node.variant?.image?.url ?? e.node.variant?.product?.featuredImage?.url ?? e.node.image?.url ?? null,
     })),
     subtotal: d.subtotalPrice,
     discount: d.totalDiscountsSet?.presentmentMoney.amount || "0.00",
@@ -322,4 +330,163 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     total: d.totalPrice,
     taxExempt: d.taxExempt,
   };
+}
+
+function toGid(id: string) {
+  return id.startsWith("gid://") ? id : `gid://shopify/DraftOrder/${id}`;
+}
+
+// ---- Edit an existing draft invoice (replaces line items + settings) ----
+export type UpdateInvoiceInput = {
+  lines: BillLine[];
+  vat: boolean;
+  customerId?: string;
+  email?: string;
+  note?: string;
+  discountPercent?: number;
+};
+
+export async function updateInvoice(id: string, input: UpdateInvoiceInput): Promise<BillResult> {
+  if (!input.lines.length) throw new ShopifyError("An invoice needs at least one product.");
+  const patch: Record<string, unknown> = {
+    lineItems: input.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
+    taxExempt: !input.vat,
+    note: input.note ?? "",
+  };
+  if (input.customerId?.trim()) patch.purchasingEntity = { customerId: input.customerId.trim() };
+  else if (input.email?.trim()) patch.email = input.email.trim();
+  patch.appliedDiscount =
+    input.discountPercent && input.discountPercent > 0
+      ? { valueType: "PERCENTAGE", value: input.discountPercent, title: "Wholesale discount" }
+      : null;
+
+  const res = await adminGraphQL<{
+    draftOrderUpdate: {
+      draftOrder: {
+        id: string; name: string; invoiceUrl: string | null;
+        subtotalPrice: string; totalTax: string; totalPrice: string;
+      } | null;
+      userErrors: { field: string[]; message: string }[];
+    };
+  }>(
+    `mutation($id: ID!, $input: DraftOrderInput!) {
+      draftOrderUpdate(id: $id, input: $input) {
+        draftOrder { id name invoiceUrl subtotalPrice totalTax totalPrice }
+        userErrors { field message }
+      }
+    }`,
+    { id: toGid(id), input: patch },
+  );
+  const errs = res.draftOrderUpdate.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  const d = res.draftOrderUpdate.draftOrder;
+  if (!d) throw new ShopifyError("Failed to update invoice.");
+  return { id: d.id, name: d.name, invoiceUrl: d.invoiceUrl, subtotal: d.subtotalPrice, tax: d.totalTax, total: d.totalPrice, completed: false };
+}
+
+// ---- Complete a draft = mark paid, create the order, deduct stock ----
+export async function completeInvoice(id: string, paymentPending = false): Promise<{ orderId: string | null }> {
+  const res = await adminGraphQL<{
+    draftOrderComplete: {
+      draftOrder: { id: string; order: { id: string } | null } | null;
+      userErrors: { field: string[]; message: string }[];
+    };
+  }>(
+    `mutation($id: ID!, $pending: Boolean!) {
+      draftOrderComplete(id: $id, paymentPending: $pending) {
+        draftOrder { id order { id } }
+        userErrors { field message }
+      }
+    }`,
+    { id: toGid(id), pending: paymentPending },
+  );
+  const errs = res.draftOrderComplete.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  return { orderId: res.draftOrderComplete.draftOrder?.order?.id ?? null };
+}
+
+// ---- Delete a draft invoice ----
+export async function deleteInvoice(id: string): Promise<void> {
+  const res = await adminGraphQL<{
+    draftOrderDelete: { deletedId: string | null; userErrors: { field: string[]; message: string }[] };
+  }>(
+    `mutation($id: ID!) {
+      draftOrderDelete(input: { id: $id }) { deletedId userErrors { field message } }
+    }`,
+    { id: toGid(id) },
+  );
+  const errs = res.draftOrderDelete.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+}
+
+// ---- Duplicate: clone an invoice into a fresh draft ----
+export async function duplicateInvoice(id: string): Promise<BillResult> {
+  const res = await adminGraphQL<{
+    draftOrderDuplicate: {
+      draftOrder: {
+        id: string; name: string; invoiceUrl: string | null;
+        subtotalPrice: string; totalTax: string; totalPrice: string;
+      } | null;
+      userErrors: { field: string[]; message: string }[];
+    };
+  }>(
+    `mutation($id: ID!) {
+      draftOrderDuplicate(id: $id) {
+        draftOrder { id name invoiceUrl subtotalPrice totalTax totalPrice }
+        userErrors { field message }
+      }
+    }`,
+    { id: toGid(id) },
+  );
+  const errs = res.draftOrderDuplicate.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  const d = res.draftOrderDuplicate.draftOrder;
+  if (!d) throw new ShopifyError("Failed to duplicate invoice.");
+  return { id: d.id, name: d.name, invoiceUrl: d.invoiceUrl, subtotal: d.subtotalPrice, tax: d.totalTax, total: d.totalPrice, completed: false };
+}
+
+// ---- Email the invoice to the customer (Shopify invoice w/ payment link) ----
+export async function sendInvoiceEmail(
+  id: string,
+  opts: { to?: string; subject?: string; message?: string } = {},
+): Promise<void> {
+  const email: Record<string, unknown> = {};
+  if (opts.to?.trim()) email.to = opts.to.trim();
+  if (opts.subject?.trim()) email.subject = opts.subject.trim();
+  if (opts.message?.trim()) email.customMessage = opts.message.trim();
+  const res = await adminGraphQL<{
+    draftOrderInvoiceSend: {
+      draftOrder: { id: string } | null;
+      userErrors: { field: string[]; message: string }[];
+    };
+  }>(
+    `mutation($id: ID!, $email: EmailInput) {
+      draftOrderInvoiceSend(id: $id, email: $email) {
+        draftOrder { id }
+        userErrors { field message }
+      }
+    }`,
+    { id: toGid(id), email: Object.keys(email).length ? email : null },
+  );
+  const errs = res.draftOrderInvoiceSend.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+}
+
+// ---- Summary stats for the invoices dashboard ----
+export type InvoiceStats = {
+  count: number;
+  outstanding: number; // £ open (draft) totals
+  paid: number; // £ completed totals
+  openCount: number;
+  paidCount: number;
+};
+
+export function summarizeInvoices(rows: InvoiceRow[]): InvoiceStats {
+  let outstanding = 0, paid = 0, openCount = 0, paidCount = 0;
+  for (const r of rows) {
+    const t = parseFloat(r.total) || 0;
+    if (r.status === "COMPLETED") { paid += t; paidCount++; }
+    else { outstanding += t; openCount++; }
+  }
+  return { count: rows.length, outstanding, paid, openCount, paidCount };
 }
