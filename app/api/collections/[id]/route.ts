@@ -4,6 +4,7 @@ import {
   updateCollection,
   deleteCollection,
   removeProductsFromCollection,
+  setCollectionParent,
 } from "@/lib/collections";
 import { bulkAddToCollection } from "@/lib/products";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
@@ -31,10 +32,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
   const body = (await req.json().catch(() => ({}))) as {
-    action: "update" | "addProducts" | "removeProducts";
+    action: "update" | "addProducts" | "removeProducts" | "setParent";
     title?: string;
     descriptionHtml?: string;
     productIds?: string[];
+    parentId?: string | null;
   };
   try {
     if (body.action === "update") {
@@ -43,6 +45,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       await bulkAddToCollection(body.productIds ?? [], gid(id));
     } else if (body.action === "removeProducts") {
       await removeProductsFromCollection(gid(id), body.productIds ?? []);
+    } else if (body.action === "setParent") {
+      await setCollectionParent(gid(id), body.parentId ? gid(body.parentId) : null);
     } else {
       return NextResponse.json({ error: "Unknown action." }, { status: 400 });
     }

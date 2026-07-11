@@ -106,6 +106,27 @@ export async function updateCollection(id: string, fields: { title?: string; des
   if (d.collectionUpdate.userErrors.length) throw new ShopifyError(d.collectionUpdate.userErrors.map((e) => e.message).join("; "));
 }
 
+// Set (or clear) a collection's parent — builds the nested hierarchy.
+// parentId = null clears it (makes the collection top-level).
+export async function setCollectionParent(id: string, parentId: string | null): Promise<void> {
+  if (parentId && parentId === id) throw new ShopifyError("A collection can't be its own parent.");
+  const d = await adminGraphQL<{ metafieldsSet: { userErrors: { field: string[]; message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $mf) { userErrors { field message } }
+    }`,
+    {
+      mf: [{
+        ownerId: id,
+        namespace: "portal",
+        key: "parent",
+        type: "single_line_text_field",
+        value: parentId ?? "",
+      }],
+    },
+  );
+  if (d.metafieldsSet.userErrors.length) throw new ShopifyError(d.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+}
+
 export async function deleteCollection(id: string): Promise<void> {
   const d = await adminGraphQL<{ collectionDelete: { deletedCollectionId: string | null; userErrors: { message: string }[] } }>(
     `mutation($input: CollectionDeleteInput!) { collectionDelete(input: $input) { deletedCollectionId userErrors { field message } } }`,

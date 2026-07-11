@@ -423,6 +423,7 @@ export type CollectionRecord = {
   products: number;
   smart: boolean;
   image: string | null;
+  parent: string | null; // parent collection GID (portal.parent metafield) or null = top-level
 };
 
 export async function getCollectionsDetailed(): Promise<CollectionRecord[]> {
@@ -440,6 +441,7 @@ export async function getCollectionsDetailed(): Promise<CollectionRecord[]> {
             productsCount: { count: number } | null;
             ruleSet: { rules: unknown[] } | null;
             image: { url: string } | null;
+            parent: { value: string } | null;
           };
         }[];
       };
@@ -447,7 +449,7 @@ export async function getCollectionsDetailed(): Promise<CollectionRecord[]> {
       `query($after: String) {
         collections(first: 100, after: $after, sortKey: TITLE) {
           pageInfo { hasNextPage endCursor }
-          edges { node { id title handle productsCount { count } ruleSet { rules { column } } image { url } } }
+          edges { node { id title handle productsCount { count } ruleSet { rules { column } } image { url } parent: metafield(namespace: "portal", key: "parent") { value } } }
         }
       }`,
       { after },
@@ -460,6 +462,7 @@ export async function getCollectionsDetailed(): Promise<CollectionRecord[]> {
         products: e.node.productsCount?.count ?? 0,
         smart: Boolean(e.node.ruleSet),
         image: e.node.image?.url ?? null,
+        parent: e.node.parent?.value || null,
       });
     }
     if (!data.collections.pageInfo.hasNextPage) break;
