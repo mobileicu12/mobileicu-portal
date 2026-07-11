@@ -89,7 +89,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="px-8 py-7 pb-24">
       {/* Ribbon */}
-      <div className="sticky top-14 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg/90 px-8 py-3 backdrop-blur">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg/90 px-8 py-3 backdrop-blur">
         <div className="flex items-center gap-3">
           <Link href="/inventory" className="text-sm text-muted hover:text-ink">← Inventory</Link>
           <h1 className="text-lg font-semibold text-ink">Edit product</h1>

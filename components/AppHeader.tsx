@@ -12,7 +12,9 @@ const LABELS: { match: (p: string) => boolean; label: string }[] = [
   { match: (p) => p.startsWith("/import-export"), label: "Import / Export" },
   { match: (p) => p.startsWith("/billing"), label: "Billing / POS" },
   { match: (p) => p.startsWith("/invoices"), label: "Invoices" },
+  { match: (p) => p.startsWith("/orders"), label: "Orders" },
   { match: (p) => p.startsWith("/channels"), label: "Channels" },
+  { match: (p) => p.startsWith("/settings"), label: "Settings" },
 ];
 
 export default function AppHeader() {
@@ -20,7 +22,7 @@ export default function AppHeader() {
   const label = LABELS.find((l) => l.match(pathname))?.label ?? "Portal";
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-surface/80 px-8 backdrop-blur-md">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-8">
       <div className="flex items-center gap-2 text-sm">
         <span className="font-semibold text-ink">MOBILE ICU</span>
         <span className="text-muted/50">/</span>

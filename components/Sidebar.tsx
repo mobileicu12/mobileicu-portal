@@ -28,8 +28,8 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-surface">
-      <div className="flex items-center gap-3 border-b border-line px-5 py-4">
+    <aside className="flex h-dvh w-60 shrink-0 flex-col border-r border-line bg-surface">
+      <div className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-4">
         <div className="brand-mark flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold text-accentfg shadow-sm">
           MI
         </div>
@@ -39,7 +39,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {NAV.map((item) => {
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (
@@ -61,7 +61,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-line p-3">
+      <div className="shrink-0 border-t border-line p-3">
         <button
           onClick={logout}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted transition hover:bg-subtle hover:text-ink"
