@@ -10,7 +10,7 @@ type Img = { id: string; url: string };
 type Product = {
   id: string; title: string; handle: string; descriptionHtml: string; status: string;
   vendor: string; productType: string; tags: string[]; brand: string; type: string; model: string;
-  images: Img[]; variantId: string; sku: string; barcode: string; price: string; compareAt: string;
+  images: Img[]; variantId: string; sku: string; barcode: string; price: string; compareAt: string; wholesalePrice: string;
   available: number; collections: { id: string; title: string }[];
 };
 
@@ -35,7 +35,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       setF({
         title: pr.title, status: pr.status, descriptionHtml: pr.descriptionHtml,
         brand: pr.brand, type: pr.type, model: pr.model, productType: pr.productType, vendor: pr.vendor,
-        tags: pr.tags.join(", "), price: pr.price, compareAt: pr.compareAt, sku: pr.sku, barcode: pr.barcode,
+        tags: pr.tags.join(", "), price: pr.price, compareAt: pr.compareAt, wholesalePrice: pr.wholesalePrice, sku: pr.sku, barcode: pr.barcode,
         stock: String(pr.available),
       });
     }).catch((e) => setError(e.message));
@@ -55,7 +55,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           title: f.title, status: f.status,
           descriptionHtml: f.descriptionHtml ?? "",
           brand: f.brand, type: f.type, model: f.model, productType: f.productType, vendor: f.vendor, tags: f.tags,
-          price: f.price, compareAt: f.compareAt, sku: f.sku, barcode: f.barcode, stock: f.stock,
+          price: f.price, compareAt: f.compareAt, wholesalePrice: f.wholesalePrice, sku: f.sku, barcode: f.barcode, stock: f.stock,
         }),
       });
       const d = await res.json();
@@ -163,6 +163,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           <Card title="Pricing & stock">
             <Field label="Price (£)"><input type="number" step="0.01" className={input} value={f.price} onChange={(e) => set("price", e.target.value)} /></Field>
             <Field label="Compare-at (£)"><input type="number" step="0.01" className={input} value={f.compareAt} onChange={(e) => set("compareAt", e.target.value)} /></Field>
+            <Field label="Wholesale / trade price (£)"><input type="number" step="0.01" className={input} value={f.wholesalePrice ?? ""} onChange={(e) => set("wholesalePrice", e.target.value)} placeholder="shown to trade-logged-in customers" /></Field>
             <Field label="SKU"><input className={input} value={f.sku} onChange={(e) => set("sku", e.target.value)} /></Field>
             <Field label="Barcode"><input className={input} value={f.barcode} onChange={(e) => set("barcode", e.target.value)} /></Field>
             <Field label="Stock"><input type="number" className={input} value={f.stock} onChange={(e) => set("stock", e.target.value)} /></Field>

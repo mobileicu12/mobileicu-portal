@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCustomer, addPayment, setCustomerSegments, type Payment } from "@/lib/customers";
+import { getCustomer, addPayment, setCustomerSegments, setTradeCode, type Payment } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -12,15 +12,19 @@ function gid(id: string) {
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => null)) as { segments?: SegmentKey[] } | null;
-  if (!body || !Array.isArray(body.segments)) {
-    return NextResponse.json({ error: "segments array required." }, { status: 400 });
-  }
+  const body = (await req.json().catch(() => null)) as { segments?: SegmentKey[]; action?: string } | null;
   try {
-    const segments = await setCustomerSegments(gid(id), body.segments);
-    return NextResponse.json({ ok: true, segments });
+    if (body?.action === "generateTradeCode") {
+      const code = await setTradeCode(gid(id));
+      return NextResponse.json({ ok: true, tradeCode: code });
+    }
+    if (body && Array.isArray(body.segments)) {
+      const segments = await setCustomerSegments(gid(id), body.segments);
+      return NextResponse.json({ ok: true, segments });
+    }
+    return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   } catch (e) {
-    const msg = e instanceof ShopifyError ? e.message : "Failed to update segments.";
+    const msg = e instanceof ShopifyError ? e.message : "Failed to update.";
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

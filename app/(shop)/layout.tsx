@@ -1,17 +1,21 @@
 import Link from "next/link";
 import { CartProvider } from "@/components/shop/cart";
 import ShopHeader from "@/components/shop/ShopHeader";
+import TradeBar from "@/components/shop/TradeBar";
 import { STORE_DOMAIN } from "@/lib/storefront";
+import { getTradeCustomerId } from "@/lib/trade";
 
 export const dynamic = "force-dynamic";
 
 export default async function ShopLayout({ children }: { children: React.ReactNode }) {
-  const loginUrl = `https://${STORE_DOMAIN}/account/login`;
+  const loginUrl = "/shop/trade-login";
   const year = new Date().getFullYear();
+  const trade = !!(await getTradeCustomerId());
 
   return (
-    <CartProvider domain={STORE_DOMAIN}>
+    <CartProvider domain={STORE_DOMAIN} trade={trade}>
       <div className="flex min-h-dvh flex-col bg-white text-neutral-900">
+        {trade && <TradeBar />}
         <ShopHeader loginUrl={loginUrl} />
         <main className="flex-1">{children}</main>
         <footer className="border-t border-neutral-200 bg-neutral-50">

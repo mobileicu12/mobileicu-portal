@@ -19,6 +19,7 @@ export type Ledger = { payments: Payment[]; creditLimit?: number };
 export type CustomerDetail = CustomerSummary & {
   note: string;
   tags: string[];
+  tradeCode: string;
   ledger: Ledger;
   invoices: {
     id: string;
@@ -73,6 +74,38 @@ export async function createCustomer(input: {
   if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
   if (!data.customerCreate.customer) throw new ShopifyError("Failed to create customer.");
   return { id: data.customerCreate.customer.id };
+}
+
+// Verify a storefront trade login: email + access code, and must be an approved
+// (seg:online) customer. Returns the customer id on success.
+export async function verifyTradeLogin(email: string, code: string): Promise<string | null> {
+  if (!email.trim() || !code.trim()) return null;
+  const d = await adminGraphQL<{
+    customers: { edges: { node: { id: string; tags: string[]; code: { value: string } | null } }[] };
+  }>(
+    `query($q: String!) {
+      customers(first: 1, query: $q) {
+        edges { node { id tags code: metafield(namespace: "portal", key: "trade_code") { value } } }
+      }
+    }`,
+    { q: `email:${email.trim()}` },
+  );
+  const node = d.customers.edges[0]?.node;
+  if (!node) return null;
+  if (!(node.tags ?? []).includes("seg:online")) return null; // must be approved
+  if (!node.code?.value || node.code.value !== code.trim()) return null;
+  return node.id;
+}
+
+// Generate & store a trade access code for a customer (portal side).
+export async function setTradeCode(customerId: string): Promise<string> {
+  const code = Array.from({ length: 8 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
+  const res = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf: [{ ownerId: customerId, namespace: "portal", key: "trade_code", type: "single_line_text_field", value: code }] },
+  );
+  if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+  return code;
 }
 
 // Public storefront trade-account registration. Creates a Shopify customer tagged
@@ -186,6 +219,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
       tags: string[];
       amountSpent: { amount: string } | null;
       company: { value: string } | null;
+      tradeCode: { value: string } | null;
       ledger: { value: string } | null;
       draftOrders: {
         edges: {
@@ -199,6 +233,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         id displayName email phone note numberOfOrders tags
         amountSpent { amount }
         company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
+        tradeCode: metafield(namespace: "${LEDGER_NS}", key: "trade_code") { value }
         ledger: metafield(namespace: "${LEDGER_NS}", key: "${LEDGER_KEY}") { value }
         draftOrders(first: 100, reverse: true) {
           edges { node { id name status totalPrice createdAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
@@ -226,6 +261,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     phone: c.phone ?? "",
     note: c.note ?? "",
     tags: c.tags ?? [],
+    tradeCode: c.tradeCode?.value ?? "",
     segments: segmentsFromTags(c.tags ?? []),
     orders: Number(c.numberOfOrders ?? 0),
     totalSpent: c.amountSpent?.amount ?? "0",

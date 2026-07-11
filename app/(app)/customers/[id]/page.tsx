@@ -18,6 +18,7 @@ type Detail = {
   orders: number;
   totalSpent: string;
   segments: SegmentKey[];
+  tradeCode: string;
   ledger: { payments: Payment[] };
   invoices: Invoice[];
 };
@@ -78,6 +79,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       </div>
 
       <SegmentEditor customerId={id} current={c.segments} onSaved={load} />
+      {c.segments.includes("online") && <TradeCodeCard customerId={id} code={c.tradeCode} onSaved={load} />}
 
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total billed" value={billed} />
@@ -182,6 +184,34 @@ function SegmentEditor({ customerId, current, onSaved }: { customerId: string; c
         </button>
       )}
       {msg && <span className="text-xs text-neutral-400">{msg}</span>}
+    </div>
+  );
+}
+
+function TradeCodeCard({ customerId, code, onSaved }: { customerId: string; code: string; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  async function generate() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/customers/${customerId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "generateTradeCode" }) });
+      if (res.ok) onSaved();
+    } finally { setBusy(false); }
+  }
+  function copy() { navigator.clipboard?.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1200); }
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/5">
+      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">🔑 Storefront trade code:</span>
+      {code ? (
+        <>
+          <button onClick={copy} className="rounded-lg border border-emerald-300 bg-white px-3 py-1 font-mono text-sm font-semibold tracking-widest text-emerald-700 dark:bg-neutral-900" title="Copy">{code}</button>
+          {copied && <span className="text-xs text-emerald-600">copied</span>}
+          <button onClick={generate} disabled={busy} className="text-xs text-neutral-500 hover:text-neutral-900">{busy ? "…" : "Regenerate"}</button>
+        </>
+      ) : (
+        <button onClick={generate} disabled={busy} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">{busy ? "…" : "Generate code"}</button>
+      )}
+      <span className="text-xs text-neutral-400">Give this to the customer — they log in with their email + this code to see wholesale prices online.</span>
     </div>
   );
 }

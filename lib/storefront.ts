@@ -17,6 +17,7 @@ export type ShopProductCard = {
   models: string[];
   variantNumericId: string | null; // default variant, for quick add-to-cart
   hasOptions: boolean; // multiple variants -> choose on product page
+  wholesalePrice: string | null; // trade price (custom.wholesale_price)
 };
 
 export type ShopCollectionCard = {
@@ -46,6 +47,7 @@ type CardNode = {
   brand?: { value: string } | null;
   ptype?: { value: string } | null;
   modelsMf?: { value: string } | null;
+  wholesale?: { value: string } | null;
   variants?: { edges: { node: { id: string } }[] };
 };
 
@@ -66,6 +68,7 @@ function mapProduct(node: CardNode): ShopProductCard {
     models: parseModels(node.modelsMf?.value),
     variantNumericId: vEdges[0] ? (vEdges[0].node.id.split("/").pop() ?? null) : null,
     hasOptions: vEdges.length > 1,
+    wholesalePrice: node.wholesale?.value && Number(node.wholesale.value) > 0 ? node.wholesale.value : null,
   };
 }
 
@@ -77,6 +80,7 @@ const PRODUCT_CARD_FIELDS = `
   brand: metafield(namespace: "custom", key: "brand") { value }
   ptype: metafield(namespace: "custom", key: "product_type") { value }
   modelsMf: metafield(namespace: "custom", key: "product_model") { value }
+  wholesale: metafield(namespace: "custom", key: "wholesale_price") { value }
   variants(first: 2) { edges { node { id } } }
 `;
 
@@ -208,7 +212,7 @@ export type ShopVariant = { id: string; numericId: string; title: string; price:
 export type ShopProduct = {
   id: string; handle: string; title: string; descriptionHtml: string; vendor: string;
   images: string[];
-  price: string; compareAt: string | null;
+  price: string; compareAt: string | null; wholesalePrice: string | null;
   options: { name: string; values: string[] }[];
   variants: ShopVariant[];
   available: boolean;
@@ -220,6 +224,7 @@ export async function getStorefrontProduct(handle: string): Promise<ShopProduct 
       id: string; handle: string; title: string; descriptionHtml: string; vendor: string | null; totalInventory: number | null;
       priceRangeV2: { minVariantPrice: { amount: string } };
       compareAtPriceRange: { minVariantCompareAtPrice: { amount: string } | null } | null;
+      wholesale: { value: string } | null;
       options: { name: string; optionValues: { name: string }[] }[];
       images: { edges: { node: { url: string } }[] };
       variants: { edges: { node: { id: string; title: string; price: string; compareAtPrice: string | null; availableForSale: boolean; selectedOptions: { name: string; value: string }[] } }[] };
@@ -231,6 +236,7 @@ export async function getStorefrontProduct(handle: string): Promise<ShopProduct 
           id handle title descriptionHtml vendor totalInventory
           priceRangeV2 { minVariantPrice { amount } }
           compareAtPriceRange { minVariantCompareAtPrice { amount } }
+          wholesale: metafield(namespace: "custom", key: "wholesale_price") { value }
           options { name optionValues { name } }
           images(first: 10) { edges { node { url } } }
           variants(first: 100) { edges { node { id title price compareAtPrice availableForSale selectedOptions { name value } } } }
@@ -251,6 +257,7 @@ export async function getStorefrontProduct(handle: string): Promise<ShopProduct 
     images: p.images.edges.map((e) => e.node.url),
     price: p.priceRangeV2.minVariantPrice.amount,
     compareAt: compare && Number(compare) > Number(p.priceRangeV2.minVariantPrice.amount) ? compare : null,
+    wholesalePrice: p.wholesale?.value && Number(p.wholesale.value) > 0 ? p.wholesale.value : null,
     options: p.options.map((o) => ({ name: o.name, values: o.optionValues.map((v) => v.name) })),
     variants: p.variants.edges.map((e) => ({
       id: e.node.id,

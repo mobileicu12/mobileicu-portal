@@ -7,13 +7,16 @@ import { useCart } from "./cart";
 import type { ShopProductCard } from "@/lib/storefront";
 
 export default function ProductCard({ p }: { p: ShopProductCard }) {
-  const { add } = useCart();
+  const { add, trade } = useCart();
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
 
+  const tradePrice = trade && p.wholesalePrice ? Number(p.wholesalePrice) : null;
+  const shownPrice = tradePrice ?? Number(p.price);
+
   function addToCart() {
     if (!p.variantNumericId) return;
-    add({ variantId: `gid://shopify/ProductVariant/${p.variantNumericId}`, numericId: p.variantNumericId, title: p.title, price: Number(p.price), image: p.image }, qty);
+    add({ variantId: `gid://shopify/ProductVariant/${p.variantNumericId}`, numericId: p.variantNumericId, title: p.title, price: shownPrice, image: p.image }, qty);
     setAdded(true);
     setTimeout(() => setAdded(false), 1200);
   }
@@ -40,8 +43,13 @@ export default function ProductCard({ p }: { p: ShopProductCard }) {
         {(p.brand || p.type) && <p className="text-[11px] font-medium uppercase tracking-wide text-amber-600">{p.brand || p.type}</p>}
         <Link href={`/shop/p/${p.handle}`} className="mt-0.5 line-clamp-2 min-h-[2.5rem] flex-1 text-sm font-medium text-neutral-900 hover:text-amber-600">{p.title}</Link>
         <div className="mt-2 flex items-baseline gap-2">
-          <span className="font-bold text-neutral-900">£{Number(p.price).toFixed(2)}</span>
-          {p.compareAt && <span className="text-sm text-neutral-400 line-through">£{Number(p.compareAt).toFixed(2)}</span>}
+          <span className={`font-bold ${tradePrice != null ? "text-emerald-600" : "text-neutral-900"}`}>£{shownPrice.toFixed(2)}</span>
+          {tradePrice != null ? (
+            <span className="text-sm text-neutral-400 line-through">£{Number(p.price).toFixed(2)}</span>
+          ) : p.compareAt ? (
+            <span className="text-sm text-neutral-400 line-through">£{Number(p.compareAt).toFixed(2)}</span>
+          ) : null}
+          {tradePrice != null && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">TRADE</span>}
         </div>
 
         {/* quick add */}

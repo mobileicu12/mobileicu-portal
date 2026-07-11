@@ -24,6 +24,7 @@ export type EditProduct = {
   barcode: string;
   price: string;
   compareAt: string;
+  wholesalePrice: string;
   inventoryItemId: string | null;
   available: number;
   collections: { id: string; title: string }[];
@@ -34,7 +35,7 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
     product: {
       id: string; title: string; handle: string; descriptionHtml: string; status: string;
       vendor: string; productType: string; tags: string[];
-      brand: { value: string } | null; ptype: { value: string } | null; model: { value: string } | null;
+      brand: { value: string } | null; ptype: { value: string } | null; model: { value: string } | null; wholesale: { value: string } | null;
       media: { edges: { node: { id: string; image: { url: string } | null } }[] };
       variants: { edges: { node: { id: string; sku: string | null; barcode: string | null; price: string; compareAtPrice: string | null; inventoryQuantity: number | null; inventoryItem: { id: string } | null } }[] };
       collections: { edges: { node: { id: string; title: string } }[] };
@@ -46,6 +47,7 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
         brand: metafield(namespace: "custom", key: "brand") { value }
         ptype: metafield(namespace: "custom", key: "product_type") { value }
         model: metafield(namespace: "custom", key: "product_model") { value }
+        wholesale: metafield(namespace: "custom", key: "wholesale_price") { value }
         media(first: 20) { edges { node { ... on MediaImage { id image { url } } } } }
         variants(first: 1) { edges { node { id sku barcode price compareAtPrice inventoryQuantity inventoryItem { id } } } }
         collections(first: 25) { edges { node { id title } } }
@@ -67,7 +69,7 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
     brand: p.brand?.value ?? "", type: p.ptype?.value ?? "", model,
     images: p.media.edges.filter((e) => e.node.image).map((e) => ({ id: e.node.id, url: e.node.image!.url })),
     variantId: v?.id ?? "", sku: v?.sku ?? "", barcode: v?.barcode ?? "", price: v?.price ?? "",
-    compareAt: v?.compareAtPrice ?? "", inventoryItemId: v?.inventoryItem?.id ?? null,
+    compareAt: v?.compareAtPrice ?? "", wholesalePrice: p.wholesale?.value ?? "", inventoryItemId: v?.inventoryItem?.id ?? null,
     available: v?.inventoryQuantity ?? 0,
     collections: p.collections.edges.map((e) => e.node),
   };
@@ -75,7 +77,7 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
 
 export type ProductEditInput = {
   title?: string; descriptionHtml?: string; status?: string; vendor?: string; productType?: string;
-  tags?: string; brand?: string; type?: string; model?: string;
+  tags?: string; brand?: string; type?: string; model?: string; wholesalePrice?: string;
   variantId?: string; price?: string; compareAt?: string; sku?: string; barcode?: string; stock?: string;
 };
 
@@ -106,6 +108,8 @@ export async function updateFullProduct(id: string, f: ProductEditInput): Promis
     if (models.length)
       mfs.push({ ownerId: id, namespace: "custom", key: "product_model", type: "list.single_line_text_field", value: JSON.stringify(models) });
   }
+  if (f.wholesalePrice !== undefined && f.wholesalePrice.trim() && Number(f.wholesalePrice) > 0)
+    mfs.push({ ownerId: id, namespace: "custom", key: "wholesale_price", type: "number_decimal", value: String(Number(f.wholesalePrice)) });
   if (mfs.length) {
     const mr = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
       `mutation($m: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $m) { userErrors { field message } } }`,

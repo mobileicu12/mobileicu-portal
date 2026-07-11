@@ -197,6 +197,35 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
   };
 }
 
+// Storefront trade checkout: create a draft order at wholesale prices for the
+// logged-in trade customer and return its invoice/checkout URL.
+export async function createTradeCheckout(
+  customerId: string,
+  lines: { variantId: string; quantity: number; unitPrice: number }[],
+): Promise<{ invoiceUrl: string | null }> {
+  if (!lines.length) throw new ShopifyError("Cart is empty.");
+  const input = {
+    purchasingEntity: { customerId },
+    lineItems: lines.map((l) => ({
+      variantId: l.variantId,
+      quantity: l.quantity,
+      priceOverride: { amount: l.unitPrice.toFixed(2), currencyCode: CURRENCY },
+    })),
+    tags: ["portal-billing", "storefront-trade", "seg:online"],
+  };
+  const res = await adminGraphQL<{
+    draftOrderCreate: { draftOrder: { id: string; invoiceUrl: string | null } | null; userErrors: { field: string[]; message: string }[] };
+  }>(
+    `mutation($input: DraftOrderInput!) {
+      draftOrderCreate(input: $input) { draftOrder { id invoiceUrl } userErrors { field message } }
+    }`,
+    { input },
+  );
+  const errs = res.draftOrderCreate.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  return { invoiceUrl: res.draftOrderCreate.draftOrder?.invoiceUrl ?? null };
+}
+
 export type InvoiceRow = {
   id: string;
   name: string;

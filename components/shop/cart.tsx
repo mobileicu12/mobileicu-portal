@@ -10,6 +10,7 @@ type CartCtx = {
   count: number;
   subtotal: number;
   open: boolean;
+  trade: boolean;
   setOpen: (v: boolean) => void;
   add: (item: Omit<CartItem, "qty">, qty?: number) => void;
   setQty: (numericId: string, qty: number) => void;
@@ -20,10 +21,11 @@ type CartCtx = {
 const Ctx = createContext<CartCtx | null>(null);
 const KEY = "micu_cart_v1";
 
-export function CartProvider({ domain, children }: { domain: string; children: React.ReactNode }) {
+export function CartProvider({ domain, trade = false, children }: { domain: string; trade?: boolean; children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
 
   useEffect(() => {
     try { const raw = localStorage.getItem(KEY); if (raw) setItems(JSON.parse(raw)); } catch {}
@@ -44,18 +46,31 @@ export function CartProvider({ domain, children }: { domain: string; children: R
   }, []);
   const remove = useCallback((numericId: string) => setItems((prev) => prev.filter((i) => i.numericId !== numericId)), []);
 
-  const checkout = useCallback(() => {
-    if (!items.length) return;
+  const checkout = useCallback(async () => {
+    if (!items.length || checkingOut) return;
+    if (trade) {
+      setCheckingOut(true);
+      try {
+        const res = await fetch("/api/shop/trade-checkout", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lines: items.map((i) => ({ variantId: i.variantId, quantity: i.qty, unitPrice: i.price })) }),
+        });
+        const d = await res.json();
+        if (res.ok && d.invoiceUrl) { window.location.href = d.invoiceUrl; return; }
+        alert(d.error || "Checkout failed.");
+      } finally { setCheckingOut(false); }
+      return;
+    }
     const line = items.map((i) => `${i.numericId}:${i.qty}`).join(",");
     window.location.href = `https://${domain}/cart/${line}`;
-  }, [items, domain]);
+  }, [items, domain, trade, checkingOut]);
 
   const value = useMemo<CartCtx>(() => ({
     items,
     count: items.reduce((s, i) => s + i.qty, 0),
     subtotal: items.reduce((s, i) => s + i.price * i.qty, 0),
-    open, setOpen, add, setQty, remove, checkout,
-  }), [items, open, add, setQty, remove, checkout]);
+    open, trade, setOpen, add, setQty, remove, checkout,
+  }), [items, open, trade, add, setQty, remove, checkout]);
 
   return <Ctx.Provider value={value}>{children}<CartDrawer /></Ctx.Provider>;
 }
