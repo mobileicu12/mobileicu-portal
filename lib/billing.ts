@@ -209,3 +209,117 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     invoiceUrl: e.node.invoiceUrl,
   }));
 }
+
+export type InvoiceLine = {
+  title: string;
+  sku: string;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+};
+
+export type InvoiceDetail = {
+  id: string;
+  name: string;
+  status: string;
+  createdAt: string;
+  note: string;
+  currency: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  billingAddress: string[];
+  lines: InvoiceLine[];
+  subtotal: string;
+  discount: string;
+  tax: string;
+  total: string;
+  taxExempt: boolean;
+};
+
+function addrLines(a: {
+  address1?: string | null; address2?: string | null; city?: string | null;
+  zip?: string | null; province?: string | null; country?: string | null;
+  company?: string | null;
+} | null): string[] {
+  if (!a) return [];
+  return [a.company, a.address1, a.address2, [a.city, a.province].filter(Boolean).join(", "), a.zip, a.country]
+    .map((s) => (s || "").trim())
+    .filter(Boolean);
+}
+
+export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
+  const gid = id.startsWith("gid://") ? id : `gid://shopify/DraftOrder/${id}`;
+  const data = await adminGraphQL<{
+    draftOrder: {
+      id: string; name: string; status: string; createdAt: string; note2: string | null;
+      taxExempt: boolean;
+      subtotalPrice: string; totalTax: string; totalPrice: string;
+      totalDiscountsSet: { presentmentMoney: { amount: string; currencyCode: string } } | null;
+      customer: { displayName: string | null; email: string | null; phone: string | null } | null;
+      email: string | null;
+      billingAddress: {
+        company: string | null; address1: string | null; address2: string | null;
+        city: string | null; zip: string | null; province: string | null; country: string | null;
+        phone: string | null;
+      } | null;
+      lineItems: {
+        edges: {
+          node: {
+            title: string; sku: string | null; quantity: number;
+            originalUnitPriceSet: { presentmentMoney: { amount: string; currencyCode: string } };
+            discountedTotalSet: { presentmentMoney: { amount: string } };
+          };
+        }[];
+      };
+    } | null;
+  }>(
+    `query($id: ID!) {
+      draftOrder(id: $id) {
+        id name status createdAt note2 taxExempt
+        subtotalPrice totalTax totalPrice
+        totalDiscountsSet { presentmentMoney { amount currencyCode } }
+        customer { displayName email phone }
+        email
+        billingAddress { company address1 address2 city zip province country phone }
+        lineItems(first: 100) {
+          edges { node {
+            title sku quantity
+            originalUnitPriceSet { presentmentMoney { amount currencyCode } }
+            discountedTotalSet { presentmentMoney { amount } }
+          } }
+        }
+      }
+    }`,
+    { id: gid },
+  );
+
+  const d = data.draftOrder;
+  if (!d) throw new ShopifyError("Invoice not found.");
+  const currency = d.lineItems.edges[0]?.node.originalUnitPriceSet.presentmentMoney.currencyCode || "GBP";
+
+  return {
+    id: d.id,
+    name: d.name,
+    status: d.status,
+    createdAt: d.createdAt,
+    note: d.note2 || "",
+    currency,
+    customerName: d.customer?.displayName || "—",
+    customerEmail: d.customer?.email || d.email || "",
+    customerPhone: d.customer?.phone || d.billingAddress?.phone || "",
+    billingAddress: addrLines(d.billingAddress),
+    lines: d.lineItems.edges.map((e) => ({
+      title: e.node.title,
+      sku: e.node.sku || "",
+      quantity: e.node.quantity,
+      unitPrice: e.node.originalUnitPriceSet.presentmentMoney.amount,
+      lineTotal: e.node.discountedTotalSet.presentmentMoney.amount,
+    })),
+    subtotal: d.subtotalPrice,
+    discount: d.totalDiscountsSet?.presentmentMoney.amount || "0.00",
+    tax: d.totalTax,
+    total: d.totalPrice,
+    taxExempt: d.taxExempt,
+  };
+}
