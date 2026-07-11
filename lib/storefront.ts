@@ -12,6 +12,9 @@ export type ShopProductCard = {
   compareAt: string | null;
   available: boolean;
   vendor: string;
+  brand: string;
+  type: string;
+  models: string[];
 };
 
 export type ShopCollectionCard = {
@@ -25,14 +28,25 @@ export type ShopCollectionCard = {
 
 const num = (gid: string) => gid.split("/").pop() ?? gid;
 
-function mapProduct(node: {
+function parseModels(v: string | null | undefined): string[] {
+  if (!v) return [];
+  try { const a = JSON.parse(v); return Array.isArray(a) ? a.map(String) : [String(a)]; }
+  catch { return v ? [v] : []; }
+}
+
+type CardNode = {
   id: string; handle: string; title: string; vendor: string | null;
   featuredImage: { url: string } | null;
   priceRangeV2: { minVariantPrice: { amount: string } };
   compareAtPriceRange?: { minVariantCompareAtPrice: { amount: string } | null } | null;
   totalInventory: number | null;
   status: string;
-}): ShopProductCard {
+  brand?: { value: string } | null;
+  ptype?: { value: string } | null;
+  modelsMf?: { value: string } | null;
+};
+
+function mapProduct(node: CardNode): ShopProductCard {
   const compare = node.compareAtPriceRange?.minVariantCompareAtPrice?.amount ?? null;
   return {
     id: node.id,
@@ -43,6 +57,9 @@ function mapProduct(node: {
     compareAt: compare && Number(compare) > Number(node.priceRangeV2.minVariantPrice.amount) ? compare : null,
     available: (node.totalInventory ?? 0) > 0,
     vendor: node.vendor ?? "",
+    brand: node.brand?.value ?? "",
+    type: node.ptype?.value ?? "",
+    models: parseModels(node.modelsMf?.value),
   };
 }
 
@@ -51,6 +68,9 @@ const PRODUCT_CARD_FIELDS = `
   featuredImage { url }
   priceRangeV2 { minVariantPrice { amount } }
   compareAtPriceRange { minVariantCompareAtPrice { amount } }
+  brand: metafield(namespace: "custom", key: "brand") { value }
+  ptype: metafield(namespace: "custom", key: "product_type") { value }
+  modelsMf: metafield(namespace: "custom", key: "product_model") { value }
 `;
 
 export async function getFeaturedProducts(first = 8): Promise<ShopProductCard[]> {
@@ -102,18 +122,28 @@ export type ShopCollectionPage = {
   subCollections: ShopCollectionCard[];
 };
 
+async function productsInCollectionId(collectionId: string, first = 100): Promise<ShopProductCard[]> {
+  const d = await adminGraphQL<{ collection: { products: { edges: { node: CardNode }[] } } | null }>(
+    `query($id: ID!, $first: Int!) {
+      collection(id: $id) { products(first: $first) { edges { node { ${PRODUCT_CARD_FIELDS} } } } }
+    }`,
+    { id: collectionId, first },
+  );
+  return d.collection?.products.edges.map((e) => mapProduct(e.node)) ?? [];
+}
+
 export async function getStorefrontCollection(handle: string): Promise<ShopCollectionPage | null> {
   const d = await adminGraphQL<{
     collections: { edges: { node: {
       id: string; title: string; handle: string; descriptionHtml: string; image: { url: string } | null;
-      products: { edges: { node: Parameters<typeof mapProduct>[0] }[] };
+      products: { edges: { node: CardNode }[] };
     } }[] };
   }>(
     `query($q: String!) {
       collections(first: 1, query: $q) {
         edges { node {
           id title handle descriptionHtml image { url }
-          products(first: 48) { edges { node { ${PRODUCT_CARD_FIELDS} } } }
+          products(first: 100) { edges { node { ${PRODUCT_CARD_FIELDS} } } }
         } }
       }
     }`,
@@ -121,16 +151,27 @@ export async function getStorefrontCollection(handle: string): Promise<ShopColle
   );
   const c = d.collections.edges[0]?.node;
   if (!c) return null;
-  // sub-collections whose portal.parent points at this collection
+
   const all = await getStorefrontCollections();
   const subs = all.filter((x) => x.parent === c.id);
+
+  // Aggregate: this collection's own products + all direct children's products (deduped).
+  let products = c.products.edges.map((e) => mapProduct(e.node));
+  if (subs.length > 0) {
+    const childSets = await Promise.all(subs.map((s) => productsInCollectionId(s.id).catch(() => [])));
+    const seen = new Set(products.map((p) => p.id));
+    for (const set of childSets) {
+      for (const p of set) if (!seen.has(p.id)) { seen.add(p.id); products.push(p); }
+    }
+  }
+
   return {
     id: c.id,
     title: c.title,
     handle: c.handle,
     descriptionHtml: c.descriptionHtml ?? "",
     image: c.image?.url ?? null,
-    products: c.products.edges.map((e) => mapProduct(e.node)),
+    products,
     subCollections: subs,
   };
 }
