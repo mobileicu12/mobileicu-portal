@@ -127,8 +127,18 @@ export default function BillingPage() {
   function updateQty(id: string, qty: number) {
     setLines((prev) => prev.map((l) => (l.variantId === id ? { ...l, qty: Math.max(1, qty) } : l)));
   }
+  function updatePrice(id: string, price: number) {
+    setLines((prev) => prev.map((l) => (l.variantId === id ? { ...l, price: Math.max(0, price) } : l)));
+  }
+  function updateTitle(id: string, title: string) {
+    setLines((prev) => prev.map((l) => (l.variantId === id ? { ...l, title } : l)));
+  }
   function removeLine(id: string) {
     setLines((prev) => prev.filter((l) => l.variantId !== id));
+  }
+  function addCustomLine() {
+    const tempId = `custom:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    setLines((prev) => [...prev, { variantId: tempId, title: "", sku: "", price: 0, qty: 1, image: null }]);
   }
 
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
@@ -150,7 +160,10 @@ export default function BillingPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.qty })),
+          lines: lines.map((l) => {
+            const custom = l.variantId.startsWith("custom:");
+            return { variantId: custom ? null : l.variantId, quantity: l.qty, unitPrice: l.price, title: l.title, custom };
+          }),
           vat,
           email,
           customerId,
@@ -259,11 +272,19 @@ export default function BillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {lines.map((l) => (
+                {lines.map((l) => {
+                  const custom = l.variantId.startsWith("custom:");
+                  return (
                   <tr key={l.variantId}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-neutral-900">{l.title}</p>
-                      <p className="text-xs text-neutral-500">{l.sku}</p>
+                      {custom ? (
+                        <input value={l.title} onChange={(e) => updateTitle(l.variantId, e.target.value)} placeholder="Custom item name…" className="w-full rounded-lg border border-dashed border-amber-400 bg-amber-50/40 px-2 py-1.5 text-sm" />
+                      ) : (
+                        <>
+                          <p className="font-medium text-neutral-900">{l.title}</p>
+                          <p className="text-xs text-neutral-500">{l.sku}</p>
+                        </>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <input
@@ -274,23 +295,32 @@ export default function BillingPage() {
                         className="w-20 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
                       />
                     </td>
-                    <td className="px-4 py-3 text-right text-neutral-700">£{l.price.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <span className="text-neutral-400">£</span>
+                        <input type="number" min={0} step="0.01" value={l.price} onChange={(e) => updatePrice(l.variantId, Number(e.target.value))} className="w-24 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm" />
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right font-medium text-neutral-900">£{(l.price * l.qty).toFixed(2)}</td>
                     <td className="px-2 py-3 text-right">
                       <button onClick={() => removeLine(l.variantId)} className="text-neutral-400 hover:text-red-600">✕</button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {lines.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-10 text-center text-neutral-400">
-                      Search above to add products.
+                      Search above to add products, or add a custom item.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          <button onClick={addCustomLine} className="mt-3 rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-600 transition hover:border-amber-500 hover:text-amber-600">
+            + Add custom item (labour, service, one-off…)
+          </button>
         </div>
 
         {/* Right: summary */}

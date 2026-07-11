@@ -146,16 +146,24 @@ export default function InvoiceEditPage() {
     setDirty(true);
   }
 
+  function addCustomLine() {
+    setLines((prev) => [...prev, { variantId: null, title: "", sku: "", price: 0, qty: 1, image: null }]);
+    setDirty(true);
+  }
+  function updateTitle(idx: number, title: string) {
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, title } : l)));
+    setDirty(true);
+  }
+
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
   const discountAmt = subtotal * (discount / 100);
   const net = subtotal - discountAmt;
   const vatAmt = vat ? net * VAT_RATE : 0;
   const total = net + vatAmt;
-  const hasCustomLine = lines.some((l) => !l.variantId);
 
   async function save() {
     if (lines.length === 0) return setError("An invoice needs at least one product.");
-    if (hasCustomLine) return setError("This invoice has a manual line item — edit it in Shopify admin.");
+    if (lines.some((l) => !l.variantId && !l.title.trim())) return setError("Give every custom item a name.");
     setBusy("save");
     setError(""); setMsg("");
     try {
@@ -163,7 +171,7 @@ export default function InvoiceEditPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.qty, unitPrice: l.price })),
+          lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.qty, unitPrice: l.price, title: l.title, custom: !l.variantId })),
           vat, customerId, email, note, discountPercent: discount,
         }),
       });
@@ -310,10 +318,16 @@ export default function InvoiceEditPage() {
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                 {lines.map((l, i) => (
-                  <tr key={l.variantId ?? i}>
+                  <tr key={l.variantId ?? `custom-${i}`}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-neutral-900 dark:text-neutral-100">{l.title}</p>
-                      <p className="text-xs text-neutral-500">{l.sku || "—"}</p>
+                      {!l.variantId && !readOnly ? (
+                        <input value={l.title} onChange={(e) => updateTitle(i, e.target.value)} placeholder="Custom item name…" className="w-full rounded-lg border border-dashed border-amber-400 bg-amber-50/40 px-2 py-1.5 text-sm dark:border-amber-500/40 dark:bg-amber-500/5" />
+                      ) : (
+                        <>
+                          <p className="font-medium text-neutral-900 dark:text-neutral-100">{l.title || "Custom item"}{!l.variantId && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">CUSTOM</span>}</p>
+                          <p className="text-xs text-neutral-500">{l.sku || "—"}</p>
+                        </>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {readOnly ? l.qty : (
@@ -336,6 +350,11 @@ export default function InvoiceEditPage() {
               </tbody>
             </table>
           </div>
+          {!readOnly && (
+            <button onClick={addCustomLine} className="mt-3 rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-600 transition hover:border-amber-500 hover:text-amber-600 dark:border-neutral-700 dark:text-neutral-300">
+              + Add custom item (labour, service, one-off…)
+            </button>
+          )}
         </div>
 
         {/* Right: summary */}

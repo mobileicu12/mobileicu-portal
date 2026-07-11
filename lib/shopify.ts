@@ -135,8 +135,8 @@ export async function getLocations(): Promise<Location[]> {
 }
 
 const INVENTORY_QUERY = `
-  query Inventory($first: Int!, $after: String, $query: String) {
-    products(first: $first, after: $after, query: $query, sortKey: TITLE) {
+  query Inventory($first: Int!, $after: String, $query: String, $sortKey: ProductSortKeys, $reverse: Boolean) {
+    products(first: $first, after: $after, query: $query, sortKey: $sortKey, reverse: $reverse) {
       pageInfo { hasNextPage endCursor }
       edges {
         node {
@@ -210,15 +210,22 @@ type RawProductsResponse = {
   };
 };
 
+const VALID_SORT_KEYS = new Set(["TITLE", "PRICE", "INVENTORY_TOTAL", "UPDATED_AT", "CREATED_AT", "PRODUCT_TYPE", "VENDOR"]);
+
 export async function getInventory(opts: {
   query?: string;
   after?: string | null;
   first?: number;
+  sortKey?: string;
+  reverse?: boolean;
 }): Promise<{ rows: ProductRow[]; hasNextPage: boolean; endCursor: string | null }> {
+  const sortKey = opts.sortKey && VALID_SORT_KEYS.has(opts.sortKey) ? opts.sortKey : "TITLE";
   const data = await adminGraphQL<RawProductsResponse>(INVENTORY_QUERY, {
     first: opts.first ?? 25,
     after: opts.after ?? null,
     query: opts.query || null,
+    sortKey,
+    reverse: opts.reverse ?? false,
   });
 
   const rows: ProductRow[] = data.products.edges.map(({ node }) => ({

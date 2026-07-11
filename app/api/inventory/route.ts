@@ -16,8 +16,10 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const query = searchParams.get("query") ?? "";
   const after = searchParams.get("after");
+  const sort = searchParams.get("sort") ?? undefined;
+  const reverse = searchParams.get("reverse") === "1";
   try {
-    const result = await getInventory({ query, after, first: 25 });
+    const result = await getInventory({ query, after, first: 25, sortKey: sort, reverse });
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to load inventory.";

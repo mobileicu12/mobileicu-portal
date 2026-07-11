@@ -64,12 +64,29 @@ export async function searchVariants(q: string): Promise<VariantHit[]> {
   return hits;
 }
 
-export type BillLine = { variantId: string; quantity: number; unitPrice?: number };
+// A line is either a catalog variant (variantId) or a custom/manual item (title + price).
+export type BillLine = {
+  variantId?: string | null;
+  quantity: number;
+  unitPrice?: number;
+  title?: string; // for custom items
+  custom?: boolean;
+};
 
 const CURRENCY = process.env.SHOPIFY_CURRENCY || "GBP";
 
-// Build a draft-order line item, applying a custom unit price when given.
+// Build a draft-order line item. Custom items carry a title + explicit price;
+// catalog variants keep their variant link (for stock) with an optional price override.
 function lineItemInput(l: BillLine) {
+  if (l.custom || !l.variantId) {
+    return {
+      title: (l.title || "Custom item").slice(0, 250),
+      quantity: l.quantity,
+      originalUnitPriceWithCurrency: { amount: (l.unitPrice ?? 0).toFixed(2), currencyCode: CURRENCY },
+      taxable: true,
+      requiresShipping: false,
+    };
+  }
   const li: Record<string, unknown> = { variantId: l.variantId, quantity: l.quantity };
   if (l.unitPrice != null && l.unitPrice >= 0) {
     li.priceOverride = { amount: l.unitPrice.toFixed(2), currencyCode: CURRENCY };

@@ -71,16 +71,21 @@ export default function InventoryPage() {
   const [stockFilter, setStockFilter] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
   const [collectionFilter, setCollectionFilter] = useState("");
+  const [sortKey, setSortKey] = useState("TITLE");
+  const [reverse, setReverse] = useState(false);
   const [allCols, setAllCols] = useState<{ id: string; title: string }[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeQueryRef = useRef(""); // the full built query currently in effect (search + filters)
 
-  const load = useCallback(async (q: string, after: string | null, append: boolean) => {
+  const load = useCallback(async (q: string, after: string | null, append: boolean, sort = "TITLE", rev = false) => {
     setLoading(true);
     setError("");
     try {
       const url = new URL("/api/inventory", window.location.origin);
       if (q) url.searchParams.set("query", q);
       if (after) url.searchParams.set("after", after);
+      if (sort) url.searchParams.set("sort", sort);
+      if (rev) url.searchParams.set("reverse", "1");
       const res = await fetch(url.toString());
       if (res.status === 503) {
         setNotConfigured(true);
@@ -127,10 +132,16 @@ export default function InventoryPage() {
     return parts.join(" ");
   }
 
+  // Build the query, remember it as the active one, and reload from page 1.
+  function reload(built: string) {
+    activeQueryRef.current = built;
+    load(built, null, false, sortKey, reverse);
+  }
+
   function onSearch(value: string) {
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => load(buildQuery(value, statusFilter, stockFilter, channelFilter, collectionFilter), null, false), 350);
+    debounceRef.current = setTimeout(() => reload(buildQuery(value, statusFilter, stockFilter, channelFilter, collectionFilter)), 350);
   }
 
   function applyFilters(next: { status?: string; stock?: string; channel?: string; collection?: string }) {
@@ -142,7 +153,13 @@ export default function InventoryPage() {
     if (next.stock !== undefined) setStockFilter(next.stock);
     if (next.channel !== undefined) setChannelFilter(next.channel);
     if (next.collection !== undefined) setCollectionFilter(next.collection);
-    load(buildQuery(query, s, st, ch, co), null, false);
+    reload(buildQuery(query, s, st, ch, co));
+  }
+
+  function changeSort(key: string, rev: boolean) {
+    setSortKey(key);
+    setReverse(rev);
+    load(activeQueryRef.current, null, false, key, rev);
   }
 
   const availableAt = useCallback((row: FlatRow): number => {
@@ -193,7 +210,7 @@ export default function InventoryPage() {
       if (!res.ok) throw new Error(d.error || "Bulk action failed");
       setFlash(`Done: ${d.ok} updated${d.failed ? `, ${d.failed} failed` : ""}.`);
       clearSelection();
-      load(query, null, false);
+      load(activeQueryRef.current, null, false, sortKey, reverse);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Bulk action failed");
     } finally {
@@ -259,8 +276,25 @@ export default function InventoryPage() {
             <option value="">Any collection</option>
             {allCols.map((c) => <option key={c.id} value={c.id.split("/").pop()}>{c.title}</option>)}
           </select>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted">Sort</span>
+            <select
+              value={`${sortKey}:${reverse ? "1" : "0"}`}
+              onChange={(e) => { const [k, r] = e.target.value.split(":"); changeSort(k, r === "1"); }}
+              className={inputCls}
+            >
+              <option value="TITLE:0">Title A–Z</option>
+              <option value="TITLE:1">Title Z–A</option>
+              <option value="PRICE:0">Price low–high</option>
+              <option value="PRICE:1">Price high–low</option>
+              <option value="INVENTORY_TOTAL:0">Stock low–high</option>
+              <option value="INVENTORY_TOTAL:1">Stock high–low</option>
+              <option value="UPDATED_AT:1">Recently updated</option>
+              <option value="CREATED_AT:1">Newest</option>
+            </select>
+          </div>
           {(statusFilter || stockFilter || channelFilter || collectionFilter) && (
-            <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); setCollectionFilter(""); load(buildQuery(query, "", "", "", ""), null, false); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear</button>
+            <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); setCollectionFilter(""); reload(buildQuery(query, "", "", "", "")); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear filters</button>
           )}
         </div>
       </div>
@@ -304,7 +338,7 @@ export default function InventoryPage() {
 
       <div className="mt-5 flex justify-center">
         {hasNext ? (
-          <button onClick={() => load(query, cursor, true)} disabled={loading} className="rounded-lg border border-line px-5 py-2.5 text-sm font-medium text-ink transition hover:border-accent disabled:opacity-60">
+          <button onClick={() => load(activeQueryRef.current, cursor, true, sortKey, reverse)} disabled={loading} className="rounded-lg border border-line px-5 py-2.5 text-sm font-medium text-ink transition hover:border-accent disabled:opacity-60">
             {loading ? "Loading…" : "Load more"}
           </button>
         ) : (loading && <p className="text-sm text-muted">Loading…</p>)}
