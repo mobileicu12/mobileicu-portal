@@ -64,7 +64,18 @@ export async function searchVariants(q: string): Promise<VariantHit[]> {
   return hits;
 }
 
-export type BillLine = { variantId: string; quantity: number };
+export type BillLine = { variantId: string; quantity: number; unitPrice?: number };
+
+const CURRENCY = process.env.SHOPIFY_CURRENCY || "GBP";
+
+// Build a draft-order line item, applying a custom unit price when given.
+function lineItemInput(l: BillLine) {
+  const li: Record<string, unknown> = { variantId: l.variantId, quantity: l.quantity };
+  if (l.unitPrice != null && l.unitPrice >= 0) {
+    li.priceOverride = { amount: l.unitPrice.toFixed(2), currencyCode: CURRENCY };
+  }
+  return li;
+}
 export type CreateBillInput = {
   lines: BillLine[];
   vat: boolean;
@@ -90,7 +101,7 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
   if (!input.lines.length) throw new ShopifyError("Add at least one product.");
 
   const draftInput: Record<string, unknown> = {
-    lineItems: input.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
+    lineItems: input.lines.map(lineItemInput),
     taxExempt: !input.vat,
     note: input.note || undefined,
     tags: ["portal-billing", ...(input.segment ? [`seg:${input.segment}`] : [])],
@@ -225,6 +236,8 @@ export type InvoiceLine = {
   image: string | null;
 };
 
+export type InvoicePayment = { date: string; amount: number; method: string; note: string };
+
 export type InvoiceDetail = {
   id: string;
   name: string;
@@ -242,6 +255,9 @@ export type InvoiceDetail = {
   tax: string;
   total: string;
   taxExempt: boolean;
+  payments: InvoicePayment[];
+  amountPaid: number;
+  balance: number;
 };
 
 function addrLines(a: {
@@ -265,6 +281,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
       totalDiscountsSet: { presentmentMoney: { amount: string; currencyCode: string } } | null;
       customer: { displayName: string | null; email: string | null; phone: string | null } | null;
       email: string | null;
+      payments: { value: string } | null;
       billingAddress: {
         company: string | null; address1: string | null; address2: string | null;
         city: string | null; zip: string | null; province: string | null; country: string | null;
@@ -290,6 +307,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
         totalDiscountsSet { presentmentMoney { amount currencyCode } }
         customer { displayName email phone }
         email
+        payments: metafield(namespace: "portal", key: "payments") { value }
         billingAddress { company address1 address2 city zip province country phone }
         lineItems(first: 100) {
           edges { node {
@@ -308,6 +326,16 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
   const d = data.draftOrder;
   if (!d) throw new ShopifyError("Invoice not found.");
   const currency = d.lineItems.edges[0]?.node.originalUnitPriceSet.presentmentMoney.currencyCode || "GBP";
+
+  let payments: InvoicePayment[] = [];
+  if (d.payments?.value) {
+    try {
+      const parsed = JSON.parse(d.payments.value);
+      if (Array.isArray(parsed)) payments = parsed;
+    } catch { /* ignore */ }
+  }
+  const amountPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const balance = Math.max(0, (parseFloat(d.totalPrice) || 0) - amountPaid);
 
   return {
     id: d.id,
@@ -334,7 +362,29 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     tax: d.totalTax,
     total: d.totalPrice,
     taxExempt: d.taxExempt,
+    payments,
+    amountPaid,
+    balance,
   };
+}
+
+// Record a (partial) payment against a specific invoice (draft order metafield).
+export async function addInvoicePayment(id: string, payment: InvoicePayment): Promise<InvoicePayment[]> {
+  const detail = await getInvoiceDetail(id);
+  const payments = [...detail.payments, payment];
+  const res = await adminGraphQL<{
+    metafieldsSet: { userErrors: { field: string[]; message: string }[] };
+  }>(
+    `mutation($mf: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $mf) { userErrors { field message } }
+    }`,
+    {
+      mf: [{ ownerId: toGid(id), namespace: "portal", key: "payments", type: "json", value: JSON.stringify(payments) }],
+    },
+  );
+  const errs = res.metafieldsSet.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  return payments;
 }
 
 function toGid(id: string) {
@@ -354,7 +404,7 @@ export type UpdateInvoiceInput = {
 export async function updateInvoice(id: string, input: UpdateInvoiceInput): Promise<BillResult> {
   if (!input.lines.length) throw new ShopifyError("An invoice needs at least one product.");
   const patch: Record<string, unknown> = {
-    lineItems: input.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
+    lineItems: input.lines.map(lineItemInput),
     taxExempt: !input.vat,
     note: input.note ?? "",
   };

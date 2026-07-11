@@ -27,6 +27,8 @@ export type CustomerDetail = CustomerSummary & {
     total: string;
     createdAt: string;
     invoiceUrl: string | null;
+    amountPaid: number;
+    balance: number;
   }[];
 };
 
@@ -156,7 +158,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
       ledger: { value: string } | null;
       draftOrders: {
         edges: {
-          node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; invoiceUrl: string | null };
+          node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; invoiceUrl: string | null; payments: { value: string } | null };
         }[];
       };
     } | null;
@@ -167,8 +169,8 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         amountSpent { amount }
         company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
         ledger: metafield(namespace: "${LEDGER_NS}", key: "${LEDGER_KEY}") { value }
-        draftOrders(first: 50, reverse: true) {
-          edges { node { id name status totalPrice createdAt invoiceUrl } }
+        draftOrders(first: 100, reverse: true) {
+          edges { node { id name status totalPrice createdAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
         }
       }
     }`,
@@ -197,14 +199,26 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     orders: Number(c.numberOfOrders ?? 0),
     totalSpent: c.amountSpent?.amount ?? "0",
     ledger,
-    invoices: c.draftOrders.edges.map((e) => ({
-      id: e.node.id,
-      name: e.node.name,
-      status: e.node.status,
-      total: e.node.totalPrice,
-      createdAt: e.node.createdAt,
-      invoiceUrl: e.node.invoiceUrl,
-    })),
+    invoices: c.draftOrders.edges.map((e) => {
+      let amountPaid = 0;
+      if (e.node.payments?.value) {
+        try {
+          const arr = JSON.parse(e.node.payments.value);
+          if (Array.isArray(arr)) amountPaid = arr.reduce((s: number, p: { amount?: number }) => s + (Number(p.amount) || 0), 0);
+        } catch { /* ignore */ }
+      }
+      const balance = Math.max(0, (parseFloat(e.node.totalPrice) || 0) - amountPaid);
+      return {
+        id: e.node.id,
+        name: e.node.name,
+        status: e.node.status,
+        total: e.node.totalPrice,
+        createdAt: e.node.createdAt,
+        invoiceUrl: e.node.invoiceUrl,
+        amountPaid,
+        balance,
+      };
+    }),
   };
 }
 

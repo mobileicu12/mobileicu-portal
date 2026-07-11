@@ -3,9 +3,10 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
+import { generateStatementPdf } from "@/lib/statement-pdf";
 
 type Payment = { date: string; amount: number; method: string; note: string };
-type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null };
+type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null; amountPaid: number; balance: number };
 type Detail = {
   id: string;
   name: string;
@@ -58,12 +59,21 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             {c.email || "no email"}{c.phone ? ` · ${c.phone}` : ""}
           </p>
         </div>
-        <Link
-          href={`/billing?customer=${id}`}
-          className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
-        >
-          New bill for this customer
-        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={() => generateStatementPdf({ customerName: c.name || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices })}
+            disabled={c.invoices.length === 0}
+            className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200"
+          >
+            📄 Statement (PDF)
+          </button>
+          <Link
+            href={`/billing?customer=${id}`}
+            className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
+          >
+            New bill
+          </Link>
+        </div>
       </div>
 
       <SegmentEditor customerId={id} current={c.segments} onSaved={load} />
@@ -81,16 +91,20 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <h2 className="text-lg font-semibold text-neutral-900">Invoices</h2>
           <div className="mt-3 divide-y divide-neutral-100">
             {c.invoices.map((i) => (
-              <div key={i.id} className="flex items-center justify-between py-2.5 text-sm">
+              <Link key={i.id} href={`/invoices/${i.id.split("/").pop()}`} className="flex items-center justify-between py-2.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                 <div>
-                  <p className="font-medium text-neutral-900">{i.name}</p>
-                  <p className="text-xs text-neutral-500">{new Date(i.createdAt).toLocaleDateString("en-GB")} · {i.status}</p>
+                  <p className="font-medium text-neutral-900 dark:text-neutral-100">{i.name}</p>
+                  <p className="text-xs text-neutral-500">{new Date(i.createdAt).toLocaleDateString("en-GB")} · {i.status === "COMPLETED" ? "Paid" : "Draft"}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium">£{i.total}</p>
-                  {i.invoiceUrl && <a href={i.invoiceUrl} target="_blank" rel="noreferrer" className="text-xs text-amber-600 underline">open</a>}
+                  <p className="font-medium text-neutral-900 dark:text-neutral-100">£{i.total}</p>
+                  {i.balance > 0.001 ? (
+                    <p className="text-xs text-red-600">£{i.balance.toFixed(2)} due</p>
+                  ) : i.amountPaid > 0 ? (
+                    <p className="text-xs text-emerald-600">paid</p>
+                  ) : null}
                 </div>
-              </div>
+              </Link>
             ))}
             {c.invoices.length === 0 && <p className="py-4 text-sm text-neutral-400">No invoices yet.</p>}
           </div>

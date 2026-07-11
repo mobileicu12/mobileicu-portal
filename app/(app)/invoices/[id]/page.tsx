@@ -137,6 +137,10 @@ export default function InvoiceEditPage() {
     setLines((prev) => prev.map((l) => (l.variantId === vid ? { ...l, qty: Math.max(1, qty) } : l)));
     setDirty(true);
   }
+  function updatePrice(vid: string | null, price: number) {
+    setLines((prev) => prev.map((l) => (l.variantId === vid ? { ...l, price: Math.max(0, price) } : l)));
+    setDirty(true);
+  }
   function removeLine(vid: string | null) {
     setLines((prev) => prev.filter((l) => l.variantId !== vid));
     setDirty(true);
@@ -159,7 +163,7 @@ export default function InvoiceEditPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.qty })),
+          lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.qty, unitPrice: l.price })),
           vat, customerId, email, note, discountPercent: discount,
         }),
       });
@@ -316,7 +320,14 @@ export default function InvoiceEditPage() {
                         <input type="number" min={1} value={l.qty} onChange={(e) => updateQty(l.variantId, Number(e.target.value))} className="w-20 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800" />
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right text-neutral-700 dark:text-neutral-300">£{l.price.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-neutral-700 dark:text-neutral-300">
+                      {readOnly ? `£${l.price.toFixed(2)}` : (
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-neutral-400">£</span>
+                          <input type="number" min={0} step="0.01" value={l.price} onChange={(e) => updatePrice(l.variantId, Number(e.target.value))} className="w-24 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm dark:border-neutral-700 dark:bg-neutral-800" />
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{(l.price * l.qty).toFixed(2)}</td>
                     {!readOnly && <td className="px-2 py-3 text-right"><button onClick={() => removeLine(l.variantId)} className="text-neutral-400 hover:text-red-600">✕</button></td>}
                   </tr>
@@ -390,6 +401,85 @@ export default function InvoiceEditPage() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Payments on this invoice */}
+      <PaymentsPanel invoiceId={encId} meta={meta} onChanged={load} />
+    </div>
+  );
+}
+
+function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta: InvoiceDetail; onChanged: () => void }) {
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("cash");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function record() {
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return setErr("Enter a valid amount.");
+    setSaving(true);
+    setErr("");
+    try {
+      const res = await fetch(`/api/billing/${invoiceId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "payment", amount: amt, method, note }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      setAmount(""); setNote("");
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const paid = meta.amountPaid;
+  const balance = meta.balance;
+  const fully = balance <= 0.001;
+
+  return (
+    <div className="mt-5 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Payments on this invoice</h2>
+        <div className="flex gap-4 text-sm">
+          <span className="text-neutral-500">Total <strong className="text-neutral-900 dark:text-neutral-100">£{Number(meta.total).toFixed(2)}</strong></span>
+          <span className="text-emerald-600">Paid <strong>£{paid.toFixed(2)}</strong></span>
+          <span className={fully ? "text-emerald-600" : "text-red-600"}>Balance <strong>£{balance.toFixed(2)}</strong></span>
+          {fully && paid > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">FULLY PAID</span>}
+        </div>
+      </div>
+
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/50">
+        <input className="w-28 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800" type="number" step="0.01" placeholder="Amount £" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <select className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800" value={method} onChange={(e) => setMethod(e.target.value)}>
+          <option value="cash">Cash</option>
+          <option value="card">Card</option>
+          <option value="bank transfer">Bank transfer</option>
+          <option value="cheque">Cheque</option>
+          <option value="other">Other</option>
+        </select>
+        <input className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+        <button onClick={record} disabled={saving} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">{saving ? "…" : "Record payment"}</button>
+        {balance > 0 && <button onClick={() => setAmount(balance.toFixed(2))} className="text-xs text-amber-600 hover:underline">Pay balance (£{balance.toFixed(2)})</button>}
+      </div>
+
+      <div className="mt-3 divide-y divide-neutral-100 dark:divide-neutral-800">
+        {[...meta.payments].reverse().map((p, i) => (
+          <div key={i} className="flex items-center justify-between py-2.5 text-sm">
+            <div>
+              <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(p.amount).toFixed(2)} <span className="font-normal text-neutral-500">· {p.method}</span></p>
+              <p className="text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
+            </div>
+          </div>
+        ))}
+        {meta.payments.length === 0 && <p className="py-4 text-sm text-neutral-400">No payments recorded on this invoice yet.</p>}
       </div>
     </div>
   );

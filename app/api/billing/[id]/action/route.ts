@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { completeInvoice, duplicateInvoice, sendInvoiceEmail } from "@/lib/billing";
+import { completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment } from "@/lib/billing";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
-// POST /api/billing/<id>/action  body: { action: "complete"|"duplicate"|"send", ... }
+// POST /api/billing/<id>/action  body: { action: "complete"|"duplicate"|"send"|"payment", ... }
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const { id } = await params;
@@ -15,6 +15,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     to?: string;
     subject?: string;
     message?: string;
+    amount?: number;
+    method?: string;
+    note?: string;
+    date?: string;
   };
   try {
     switch (body.action) {
@@ -29,6 +33,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       case "send": {
         await sendInvoiceEmail(decoded, { to: body.to, subject: body.subject, message: body.message });
         return NextResponse.json({ ok: true });
+      }
+      case "payment": {
+        if (typeof body.amount !== "number" || body.amount <= 0) {
+          return NextResponse.json({ error: "A positive payment amount is required." }, { status: 400 });
+        }
+        const payments = await addInvoicePayment(decoded, {
+          date: body.date || new Date().toISOString(),
+          amount: body.amount,
+          method: body.method || "cash",
+          note: body.note || "",
+        });
+        return NextResponse.json({ ok: true, payments });
       }
       default:
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });
