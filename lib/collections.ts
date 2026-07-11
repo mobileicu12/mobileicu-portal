@@ -9,6 +9,8 @@ export type CollectionProduct = {
   sku: string;
   price: string;
   available: number;
+  variantId: string | null;
+  inventoryItemId: string | null;
 };
 
 export type CollectionDetail = {
@@ -38,7 +40,7 @@ export async function getCollection(id: string, after?: string | null): Promise<
       ruleSet: { appliedDisjunctively: boolean; rules: { column: string; relation: string; condition: string }[] } | null;
       products: {
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
-        edges: { node: { id: string; title: string; status: string; featuredImage: { url: string } | null; totalInventory: number; variants: { edges: { node: { sku: string | null; price: string } }[] } } }[];
+        edges: { node: { id: string; title: string; status: string; featuredImage: { url: string } | null; totalInventory: number; variants: { edges: { node: { id: string; sku: string | null; price: string; inventoryItem: { id: string } | null } }[] } } }[];
       };
     } | null;
   }>(
@@ -50,7 +52,7 @@ export async function getCollection(id: string, after?: string | null): Promise<
         ruleSet { appliedDisjunctively rules { column relation condition } }
         products(first: 50, after: $after) {
           pageInfo { hasNextPage endCursor }
-          edges { node { id title status featuredImage { url } totalInventory variants(first: 1) { edges { node { sku price } } } } }
+          edges { node { id title status featuredImage { url } totalInventory variants(first: 1) { edges { node { id sku price inventoryItem { id } } } } } }
         }
       }
     }`,
@@ -76,6 +78,8 @@ export async function getCollection(id: string, after?: string | null): Promise<
       sku: e.node.variants.edges[0]?.node.sku ?? "",
       price: e.node.variants.edges[0]?.node.price ?? "",
       available: e.node.totalInventory ?? 0,
+      variantId: e.node.variants.edges[0]?.node.id ?? null,
+      inventoryItemId: e.node.variants.edges[0]?.node.inventoryItem?.id ?? null,
     })),
     hasNextPage: c.products.pageInfo.hasNextPage,
     endCursor: c.products.pageInfo.endCursor,
