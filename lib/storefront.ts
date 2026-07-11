@@ -15,6 +15,8 @@ export type ShopProductCard = {
   brand: string;
   type: string;
   models: string[];
+  variantNumericId: string | null; // default variant, for quick add-to-cart
+  hasOptions: boolean; // multiple variants -> choose on product page
 };
 
 export type ShopCollectionCard = {
@@ -44,10 +46,12 @@ type CardNode = {
   brand?: { value: string } | null;
   ptype?: { value: string } | null;
   modelsMf?: { value: string } | null;
+  variants?: { edges: { node: { id: string } }[] };
 };
 
 function mapProduct(node: CardNode): ShopProductCard {
   const compare = node.compareAtPriceRange?.minVariantCompareAtPrice?.amount ?? null;
+  const vEdges = node.variants?.edges ?? [];
   return {
     id: node.id,
     handle: node.handle,
@@ -60,6 +64,8 @@ function mapProduct(node: CardNode): ShopProductCard {
     brand: node.brand?.value ?? "",
     type: node.ptype?.value ?? "",
     models: parseModels(node.modelsMf?.value),
+    variantNumericId: vEdges[0] ? (vEdges[0].node.id.split("/").pop() ?? null) : null,
+    hasOptions: vEdges.length > 1,
   };
 }
 
@@ -71,6 +77,7 @@ const PRODUCT_CARD_FIELDS = `
   brand: metafield(namespace: "custom", key: "brand") { value }
   ptype: metafield(namespace: "custom", key: "product_type") { value }
   modelsMf: metafield(namespace: "custom", key: "product_model") { value }
+  variants(first: 2) { edges { node { id } } }
 `;
 
 export async function getFeaturedProducts(first = 8): Promise<ShopProductCard[]> {

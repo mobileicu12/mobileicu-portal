@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useCart } from "./cart";
 
 type NavCol = { handle: string; title: string; children: { handle: string; title: string }[] };
@@ -9,9 +10,17 @@ type NavCol = { handle: string; title: string; children: { handle: string; title
 export default function ShopHeader({ nav, loginUrl }: { nav: NavCol[]; loginUrl: string }) {
   const { count, setOpen } = useCart();
   const [mobile, setMobile] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white/95 backdrop-blur">
+    <header className={`sticky top-0 z-40 border-b bg-white/90 backdrop-blur transition-shadow duration-300 ${scrolled ? "border-neutral-200 shadow-[0_6px_20px_-12px_rgba(0,0,0,0.25)]" : "border-transparent"}`}>
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <button onClick={() => setMobile((v) => !v)} className="lg:hidden" aria-label="Menu">
           <span className="block h-0.5 w-6 bg-neutral-900" />
@@ -52,19 +61,21 @@ export default function ShopHeader({ nav, loginUrl }: { nav: NavCol[]; loginUrl:
         </div>
       </div>
 
-      {mobile && (
-        <div className="border-t border-neutral-200 lg:hidden">
-          <div className="mx-auto max-w-7xl px-4 py-2">
-            {nav.map((c) => (
-              <Link key={c.handle} href={`/shop/c/${c.handle}`} onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
-                {c.title}
-              </Link>
-            ))}
-            <Link href="/shop/search" onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Search</Link>
-            <a href={loginUrl} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Trade login</a>
-          </div>
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {mobile && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden border-t border-neutral-200 lg:hidden">
+            <div className="mx-auto max-w-7xl px-4 py-2">
+              {nav.map((c) => (
+                <Link key={c.handle} href={`/shop/c/${c.handle}`} onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                  {c.title}
+                </Link>
+              ))}
+              <Link href="/shop/search" onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Search</Link>
+              <a href={loginUrl} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Trade login</a>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

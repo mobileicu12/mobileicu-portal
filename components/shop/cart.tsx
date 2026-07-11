@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
 export type CartItem = { variantId: string; numericId: string; title: string; price: number; image: string | null; qty: number };
 
@@ -67,11 +68,12 @@ export function useCart() {
 
 function CartDrawer() {
   const { items, open, setOpen, subtotal, setQty, remove, checkout } = useCart();
-  if (!open) return null;
   return (
+    <AnimatePresence>
+      {open && (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-      <div className="relative flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+      <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "tween", duration: 0.3, ease: "easeInOut" }} className="relative flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h2 className="text-lg font-semibold text-neutral-900">Your cart</h2>
           <button onClick={() => setOpen(false)} className="text-neutral-400 hover:text-neutral-900">✕</button>
@@ -108,7 +110,9 @@ function CartDrawer() {
             </button>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
+      )}
+    </AnimatePresence>
   );
 }

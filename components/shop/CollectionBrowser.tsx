@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import ProductCard from "./ProductCard";
 import type { ShopProductCard } from "@/lib/storefront";
 
@@ -44,37 +45,42 @@ export default function CollectionBrowser({ products }: { products: ShopProductC
     return out;
   }, [products, brands, types, models, inStock, maxPrice, sort]);
 
-  const toggle = (set: Set<string>, setter: (s: Set<string>) => void, v: string) => {
-    const n = new Set(set); n.has(v) ? n.delete(v) : n.add(v); setter(n);
-  };
+  const toggle = (set: Set<string>, setter: (s: Set<string>) => void, v: string) => { const n = new Set(set); n.has(v) ? n.delete(v) : n.add(v); setter(n); };
   const activeCount = brands.size + types.size + models.size + (inStock ? 1 : 0) + (maxPrice != null ? 1 : 0);
   function clearAll() { setBrands(new Set()); setTypes(new Set()); setModels(new Set()); setInStock(false); setMaxPrice(null); }
 
+  const chips: { label: string; onRemove: () => void }[] = [
+    ...[...types].map((v) => ({ label: v, onRemove: () => toggle(types, setTypes, v) })),
+    ...[...brands].map((v) => ({ label: v, onRemove: () => toggle(brands, setBrands, v) })),
+    ...[...models].map((v) => ({ label: v, onRemove: () => toggle(models, setModels, v) })),
+    ...(inStock ? [{ label: "In stock", onRemove: () => setInStock(false) }] : []),
+    ...(maxPrice != null ? [{ label: `≤ £${maxPrice}`, onRemove: () => setMaxPrice(null) }] : []),
+  ];
+
   const FilterPanel = (
-    <div className="space-y-6">
+    <div className="space-y-1">
       {typeFacet.length > 1 && (
-        <FacetGroup title="Part type">
+        <FacetGroup title="Part type" defaultOpen>
           {typeFacet.map(([v, n]) => <Check key={v} label={v} n={n} checked={types.has(v)} onChange={() => toggle(types, setTypes, v)} />)}
         </FacetGroup>
       )}
       {brandFacet.length > 1 && (
-        <FacetGroup title="Brand">
-          {brandFacet.slice(0, 40).map(([v, n]) => <Check key={v} label={v} n={n} checked={brands.has(v)} onChange={() => toggle(brands, setBrands, v)} />)}
+        <FacetGroup title="Brand" defaultOpen>
+          {brandFacet.slice(0, 50).map(([v, n]) => <Check key={v} label={v} n={n} checked={brands.has(v)} onChange={() => toggle(brands, setBrands, v)} />)}
         </FacetGroup>
       )}
-      {modelFacet.length > 1 && modelFacet.length <= 60 && (
+      {modelFacet.length > 1 && modelFacet.length <= 80 && (
         <FacetGroup title="Model">
-          {modelFacet.slice(0, 60).map(([v, n]) => <Check key={v} label={v} n={n} checked={models.has(v)} onChange={() => toggle(models, setModels, v)} />)}
+          {modelFacet.slice(0, 80).map(([v, n]) => <Check key={v} label={v} n={n} checked={models.has(v)} onChange={() => toggle(models, setModels, v)} />)}
         </FacetGroup>
       )}
-      <FacetGroup title="Price">
+      <FacetGroup title="Price" defaultOpen>
         <input type="range" min={0} max={priceCeil} value={maxPrice ?? priceCeil} onChange={(e) => setMaxPrice(Number(e.target.value))} className="w-full accent-amber-500" />
-        <p className="text-xs text-neutral-500">Up to <span className="font-semibold text-neutral-900">£{(maxPrice ?? priceCeil).toFixed(0)}</span></p>
+        <div className="flex justify-between text-xs text-neutral-500"><span>£0</span><span className="font-semibold text-neutral-900">Up to £{(maxPrice ?? priceCeil).toFixed(0)}</span></div>
       </FacetGroup>
-      <label className="flex items-center gap-2 text-sm text-neutral-700">
+      <label className="flex cursor-pointer items-center gap-2 px-1 py-2 text-sm text-neutral-700">
         <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} className="h-4 w-4 accent-amber-500" /> In stock only
       </label>
-      {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-amber-600 hover:underline">Clear all filters</button>}
     </div>
   );
 
@@ -82,13 +88,13 @@ export default function CollectionBrowser({ products }: { products: ShopProductC
     <div>
       {/* toolbar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-3">
-        <div className="flex items-center gap-2">
-          <button onClick={() => setMobileFilters((v) => !v)} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 lg:hidden">Filters{activeCount ? ` (${activeCount})` : ""}</button>
-          <span className="text-sm text-neutral-500">{filtered.length} product{filtered.length === 1 ? "" : "s"}</span>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMobileFilters(true)} className="rounded-full border border-neutral-300 px-4 py-1.5 text-sm font-medium text-neutral-700 lg:hidden">Filters{activeCount ? ` · ${activeCount}` : ""}</button>
+          <span className="text-sm text-neutral-500"><span className="font-semibold text-neutral-900">{filtered.length}</span> products</span>
         </div>
         <label className="flex items-center gap-2 text-sm">
-          <span className="text-neutral-500">Sort</span>
-          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm">
+          <span className="text-neutral-500">Sort by</span>
+          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="rounded-full border border-neutral-300 px-4 py-1.5 text-sm font-medium outline-none focus:border-amber-500">
             <option value="featured">Featured</option>
             <option value="price-asc">Price: low to high</option>
             <option value="price-desc">Price: high to low</option>
@@ -97,29 +103,51 @@ export default function CollectionBrowser({ products }: { products: ShopProductC
         </label>
       </div>
 
+      {/* active chips */}
+      {chips.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <AnimatePresence>
+            {chips.map((c) => (
+              <motion.button key={c.label} layout initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
+                onClick={c.onRemove} className="flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200">
+                {c.label} <span className="text-amber-500">✕</span>
+              </motion.button>
+            ))}
+          </AnimatePresence>
+          <button onClick={clearAll} className="text-xs font-semibold text-neutral-500 hover:text-amber-600">Clear all</button>
+        </div>
+      )}
+
       <div className="flex gap-8">
-        {/* desktop filters column */}
-        <div className="hidden w-52 shrink-0 lg:block">{FilterPanel}</div>
+        <div className="hidden w-56 shrink-0 lg:block">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-neutral-400">Filter</p>
+            {FilterPanel}
+          </div>
+        </div>
 
         {/* mobile filters drawer */}
-        {mobileFilters && (
-          <div className="fixed inset-0 z-50 flex lg:hidden">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setMobileFilters(false)} />
-            <div className="relative ml-auto h-full w-80 max-w-[85vw] overflow-y-auto bg-white p-5">
-              <div className="mb-4 flex items-center justify-between"><h3 className="font-semibold">Filters</h3><button onClick={() => setMobileFilters(false)}>✕</button></div>
-              {FilterPanel}
+        <AnimatePresence>
+          {mobileFilters && (
+            <div className="fixed inset-0 z-50 flex lg:hidden">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/40" onClick={() => setMobileFilters(false)} />
+              <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "tween", duration: 0.28 }} className="relative ml-auto h-full w-80 max-w-[85vw] overflow-y-auto bg-white p-5">
+                <div className="mb-4 flex items-center justify-between"><h3 className="text-lg font-semibold">Filters</h3><button onClick={() => setMobileFilters(false)} className="text-neutral-400">✕</button></div>
+                {FilterPanel}
+                <button onClick={() => setMobileFilters(false)} className="mt-5 w-full rounded-full bg-neutral-900 py-3 text-sm font-semibold text-white">Show {filtered.length} products</button>
+              </motion.div>
             </div>
-          </div>
-        )}
+          )}
+        </AnimatePresence>
 
         {/* grid */}
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           {filtered.length === 0 ? (
-            <p className="py-16 text-center text-neutral-400">No products match these filters.</p>
+            <p className="py-16 text-center text-neutral-400">No products match these filters. <button onClick={clearAll} className="text-amber-600 hover:underline">Clear filters</button></p>
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+            <motion.div layout className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
               {filtered.map((p) => <ProductCard key={p.id} p={p} />)}
-            </div>
+            </motion.div>
           )}
         </div>
       </div>
@@ -127,23 +155,33 @@ export default function CollectionBrowser({ products }: { products: ShopProductC
   );
 }
 
-function FacetGroup({ title, children }: { title: string; children: React.ReactNode }) {
+function FacetGroup({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div>
-      <p className="mb-2 text-sm font-semibold text-neutral-900">{title}</p>
-      <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">{children}</div>
+    <div className="border-t border-neutral-100 first:border-t-0">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between py-2.5 text-sm font-semibold text-neutral-900">
+        {title}
+        <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }} className="text-xs text-neutral-400">▾</motion.span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22, ease: "easeInOut" }} className="overflow-hidden">
+            <div className="max-h-64 space-y-1.5 overflow-y-auto pb-3 pr-1">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 function Check({ label, n, checked, onChange }: { label: string; n: number; checked: boolean; onChange: () => void }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-2 text-sm text-neutral-600 hover:text-neutral-900">
-      <span className="flex items-center gap-2">
-        <input type="checkbox" checked={checked} onChange={onChange} className="h-4 w-4 accent-amber-500" />
+    <label className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-1 py-1 text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900">
+      <span className="flex min-w-0 items-center gap-2">
+        <input type="checkbox" checked={checked} onChange={onChange} className="h-4 w-4 shrink-0 accent-amber-500" />
         <span className="truncate">{label}</span>
       </span>
-      <span className="text-xs text-neutral-400">{n}</span>
+      <span className="shrink-0 text-xs text-neutral-400">{n}</span>
     </label>
   );
 }
