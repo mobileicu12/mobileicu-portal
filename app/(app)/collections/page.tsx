@@ -28,6 +28,9 @@ export default function CollectionsPage() {
   const [busy, setBusy] = useState(false);
   const [savingParent, setSavingParent] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [flash, setFlash] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   function load() {
     setLoading(true);
@@ -83,6 +86,52 @@ export default function CollectionsPage() {
     }
   }
 
+  function toggleSel(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  function clearSel() { setSelected(new Set()); }
+
+  // Bulk: move all selected under a parent (or top-level). Skips cycles.
+  async function bulkSetParent(parentId: string | null) {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    setBulkBusy(true); setError(""); setFlash("");
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      if (parentId && (id === parentId || descendantsOf(id).has(parentId))) { fail++; continue; }
+      try {
+        const res = await fetch(`/api/collections/${nid(id)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setParent", parentId: parentId ? nid(parentId) : null }) });
+        if (res.ok) { setCollections((prev) => prev.map((c) => (c.id === id ? { ...c, parent: parentId } : c))); ok++; } else fail++;
+      } catch { fail++; }
+    }
+    setFlash(`Moved ${ok}${fail ? `, ${fail} skipped` : ""}.`);
+    clearSel(); setBulkBusy(false);
+  }
+
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} collection(s)? Products are not deleted.`)) return;
+    setBulkBusy(true); setError(""); setFlash("");
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try { const res = await fetch(`/api/collections/${nid(id)}`, { method: "DELETE" }); if (res.ok) { setCollections((prev) => prev.filter((c) => c.id !== id)); ok++; } else fail++; } catch { fail++; }
+    }
+    setFlash(`Deleted ${ok}${fail ? `, ${fail} failed` : ""}.`);
+    clearSel(); setBulkBusy(false);
+  }
+
+  async function autoOrganize() {
+    if (!confirm("Auto-organize creates 'By Model', 'By Part' and 'By Brand' parents and nests your collections under them. You can adjust anything afterwards. Continue?")) return;
+    setBulkBusy(true); setError(""); setFlash("");
+    try {
+      const res = await fetch("/api/collections/organize", { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      setFlash(`Organized — ${d.model} models, ${d.part} parts, ${d.brand} brands${d.skipped ? `, ${d.skipped} left as-is` : ""}.`);
+      load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed"); }
+    finally { setBulkBusy(false); }
+  }
+
   async function create() {
     if (!newTitle.trim()) return;
     setBusy(true);
@@ -115,7 +164,8 @@ export default function CollectionsPage() {
     const blocked = descendantsOf(c.id);
     return (
       <div key={c.id}>
-        <div className="flex items-center gap-2 rounded-lg py-2 pr-2 hover:bg-subtle" style={{ paddingLeft: depth * 22 + 4 }}>
+        <div className={`flex items-center gap-2 rounded-lg py-2 pr-2 ${selected.has(c.id) ? "bg-accent/10" : "hover:bg-subtle"}`} style={{ paddingLeft: depth * 22 + 4 }}>
+          <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} className="h-4 w-4 shrink-0 accent-amber-500" />
           {kids.length > 0 ? (
             <button onClick={() => toggle(c.id)} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-ink">{isOpen ? "▾" : "▸"}</button>
           ) : <span className="inline-block h-5 w-5 text-center text-muted/40">·</span>}
@@ -166,11 +216,13 @@ export default function CollectionsPage() {
             ))}
           </div>
           {view === "grid" && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="w-48 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent" />}
+          <button onClick={autoOrganize} disabled={bulkBusy} className="rounded-lg border border-accent/50 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50">✨ Auto-organize</button>
           <button onClick={() => setCreating(true)} className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent hover:text-accentfg">+ New</button>
         </div>
       </div>
 
       {error && <p className="mb-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-500">{error}</p>}
+      {flash && <p className="mb-4 rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600">{flash}</p>}
 
       {creating && (
         <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface p-4">
@@ -206,6 +258,31 @@ export default function CollectionsPage() {
             </Link>
           ))}
           {gridShown.length === 0 && <p className="text-sm text-muted">No collections match.</p>}
+        </div>
+      )}
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-14 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-full border border-line bg-ink px-4 py-2.5 text-sm text-bg shadow-2xl">
+          <span className="font-medium">{selected.size} selected</span>
+          <span className="h-4 w-px bg-bg/20" />
+          <span className="text-bg/70">Move under</span>
+          <select
+            disabled={bulkBusy}
+            defaultValue=""
+            onChange={(e) => { if (e.target.value) { bulkSetParent(e.target.value); e.target.value = ""; } }}
+            className="max-w-44 rounded-lg border border-bg/20 bg-ink px-2 py-1 text-xs text-bg outline-none"
+          >
+            <option value="" disabled>Choose parent…</option>
+            {collections
+              .filter((o) => !selected.has(o.id))
+              .sort((a, b) => a.title.localeCompare(b.title))
+              .map((o) => <option key={o.id} value={o.id} className="text-ink">{o.title}</option>)}
+          </select>
+          <button disabled={bulkBusy} onClick={() => bulkSetParent(null)} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50">Make top-level</button>
+          <button disabled={bulkBusy} onClick={bulkDelete} className="rounded-full px-3 py-1 text-red-400 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
+          <span className="h-4 w-px bg-bg/20" />
+          <button onClick={clearSel} className="rounded-full px-2 py-1 text-bg/50 hover:text-bg">✕</button>
         </div>
       )}
     </div>

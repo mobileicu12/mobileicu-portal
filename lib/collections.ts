@@ -1,5 +1,6 @@
 // Collection management: detail, create, edit, delete, add/remove products.
 import { adminGraphQL, ShopifyError } from "./shopify";
+import { getCollectionsDetailed } from "./products";
 
 export type CollectionProduct = {
   id: string;
@@ -129,6 +130,54 @@ export async function setCollectionParent(id: string, parentId: string | null): 
     },
   );
   if (d.metafieldsSet.userErrors.length) throw new ShopifyError(d.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+}
+
+// --- Auto-organize: classify collections into By Model / By Part / By Brand ---
+const BRANDS = new Set([
+  "ahl", "mobyone", "dudao", "earldom", "apple", "samsung", "tecno", "km", "baseus", "anker",
+  "xiaomi", "oppo", "vivo", "nokia", "realme", "honor", "huawei", "oneplus", "infinix", "itel",
+  "remax", "hoco", "joyroom", "ugreen", "motorola", "google", "lg", "sony", "original", "unbranded",
+]);
+const PART_KEYWORDS = [
+  "case", "cover", "cable", "charger", "adapter", "batter", "headphone", "earphone", "earbud",
+  "airpod", "audio", "speaker", "holder", "mount", "stand", "screen", "lcd", "glass", "digitizer",
+  "gadget", "accessor", "powerbank", "power bank", "protector", "tpu", "stylus", "sim ", "tool",
+  "flex", "camera", "housing", "buzzer", "connector", "tempered", "back glass",
+];
+const MODEL_RE = /\b(iphone|ipad|galaxy|redmi|poco|tecno|spark|pop|oppo|vivo|nokia|moto|huawei|honor|oneplus|pixel|realme|xiaomi|infinix|itel|samsung)\b/i;
+
+export type OrgGroup = "model" | "part" | "brand";
+export function classifyCollection(title: string): OrgGroup | null {
+  const t = title.trim().toLowerCase();
+  if (BRANDS.has(t)) return "brand";
+  if (PART_KEYWORDS.some((k) => t.includes(k))) return "part";
+  if (MODEL_RE.test(title)) return "model";
+  return null;
+}
+
+const GROUP_TITLES: Record<OrgGroup, string> = { model: "By Model", part: "By Part", brand: "By Brand" };
+
+export async function autoOrganizeCollections(): Promise<{ model: number; part: number; brand: number; skipped: number }> {
+  const cols = await getCollectionsDetailed(); // {id,title,parent,...}
+  const parentTitles = new Set(Object.values(GROUP_TITLES).map((t) => t.toLowerCase()));
+
+  // Ensure the three parent collections exist.
+  const parentId: Record<OrgGroup, string> = { model: "", part: "", brand: "" };
+  for (const g of ["model", "part", "brand"] as OrgGroup[]) {
+    const existing = cols.find((c) => c.title.trim().toLowerCase() === GROUP_TITLES[g].toLowerCase());
+    parentId[g] = existing ? existing.id : (await createCollection({ title: GROUP_TITLES[g] })).id;
+  }
+  const parentIds = new Set(Object.values(parentId));
+
+  const counts = { model: 0, part: 0, brand: 0, skipped: 0 };
+  for (const c of cols) {
+    if (parentIds.has(c.id) || parentTitles.has(c.title.trim().toLowerCase())) continue;
+    const g = classifyCollection(c.title);
+    if (!g) { counts.skipped++; continue; }
+    if (c.parent !== parentId[g]) await setCollectionParent(c.id, parentId[g]);
+    counts[g]++;
+  }
+  return counts;
 }
 
 export async function deleteCollection(id: string): Promise<void> {
