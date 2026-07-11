@@ -23,3 +23,28 @@ export const BUSINESS: Business = {
   vatNumber: process.env.NEXT_PUBLIC_BIZ_VAT || "",
   bank: process.env.NEXT_PUBLIC_BIZ_BANK || "",
 };
+
+// Fetch live business details from the Settings page (falls back to defaults).
+let _cache: Business | null = null;
+export async function loadBusiness(): Promise<Business> {
+  if (_cache) return _cache;
+  try {
+    const res = await fetch("/api/settings");
+    const d = await res.json();
+    const s = d.settings;
+    if (s) {
+      _cache = {
+        name: s.bizName || BUSINESS.name,
+        tagline: s.tagline || BUSINESS.tagline,
+        addressLines: String(s.address || "").split("\n").map((x: string) => x.trim()).filter(Boolean),
+        email: s.email || "",
+        phone: s.phone || "",
+        website: s.website || "",
+        vatNumber: s.vatNumber || "",
+        bank: s.bank || s.invoiceFooter || "",
+      };
+      return _cache;
+    }
+  } catch { /* fall through */ }
+  return BUSINESS;
+}

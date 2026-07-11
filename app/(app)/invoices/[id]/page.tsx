@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { generateInvoicePdf } from "@/lib/invoice-pdf";
+import { loadBusiness } from "@/lib/business";
 import type { InvoiceDetail } from "@/lib/billing";
 
 const VAT_RATE = 0.2;
@@ -248,9 +249,9 @@ export default function InvoiceEditPage() {
   }
 
   async function downloadPdf() {
-    const res = await fetch(`/api/billing/${encId}`);
+    const [res, biz] = await Promise.all([fetch(`/api/billing/${encId}`), loadBusiness()]);
     const d = await res.json();
-    if (res.ok) generateInvoicePdf(d.invoice as InvoiceDetail);
+    if (res.ok) generateInvoicePdf(d.invoice as InvoiceDetail, biz);
   }
 
   if (loading) return <div className="px-8 py-7 text-sm text-neutral-400">Loading invoice…</div>;

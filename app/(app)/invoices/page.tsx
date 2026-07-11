@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { generateInvoicePdf } from "@/lib/invoice-pdf";
+import { loadBusiness } from "@/lib/business";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 
@@ -64,10 +65,10 @@ export default function InvoicesPage() {
     setBusy(inv.id + ":pdf");
     setError("");
     try {
-      const res = await fetch(`/api/billing/${encodeURIComponent(inv.id)}`);
+      const [res, biz] = await Promise.all([fetch(`/api/billing/${encodeURIComponent(inv.id)}`), loadBusiness()]);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load invoice");
-      generateInvoicePdf(data.invoice as InvoiceDetail);
+      generateInvoicePdf(data.invoice as InvoiceDetail, biz);
     } catch (err) {
       setError(err instanceof Error ? err.message : "PDF failed");
     } finally {

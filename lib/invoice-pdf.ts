@@ -3,7 +3,7 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { BUSINESS } from "./business";
+import { BUSINESS, type Business } from "./business";
 import type { InvoiceDetail } from "./billing";
 
 const INK = "#1a1a1a";
@@ -16,7 +16,8 @@ function money(n: string | number, currency = "GBP") {
   return `${sym}${(isNaN(v) ? 0 : v).toFixed(2)}`;
 }
 
-export function generateInvoicePdf(inv: InvoiceDetail) {
+export function generateInvoicePdf(inv: InvoiceDetail, biz: Business = BUSINESS) {
+  const BUSINESS = biz;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const M = 40; // margin

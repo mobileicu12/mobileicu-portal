@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { generateStatementPdf } from "@/lib/statement-pdf";
+import { loadBusiness } from "@/lib/business";
 
 type Payment = { date: string; amount: number; method: string; note: string };
 type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null; amountPaid: number; balance: number };
@@ -61,7 +62,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => generateStatementPdf({ customerName: c.name || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices })}
+            onClick={async () => generateStatementPdf({ customerName: c.name || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices }, await loadBusiness())}
             disabled={c.invoices.length === 0}
             className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200"
           >

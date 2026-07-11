@@ -3,7 +3,7 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { BUSINESS } from "./business";
+import { BUSINESS, type Business } from "./business";
 
 const INK = "#1a1a1a";
 const GOLD = "#c8952f";
@@ -30,7 +30,8 @@ export type StatementInput = {
   invoices: StatementInvoice[];
 };
 
-export function generateStatementPdf(s: StatementInput) {
+export function generateStatementPdf(s: StatementInput, business: Business = BUSINESS) {
+  const BUSINESS = business;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const M = 40;
