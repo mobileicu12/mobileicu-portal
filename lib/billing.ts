@@ -1,6 +1,7 @@
 // Billing: product search, draft orders (invoices), POS completion.
 import { adminGraphQL, ShopifyError } from "./shopify";
 import { segmentsFromTags, type SegmentKey } from "./segments";
+import { nextInvoiceNumber } from "./settings";
 
 export type VariantHit = {
   variantId: string;
@@ -107,6 +108,7 @@ export type CreateBillInput = {
 export type BillResult = {
   id: string;
   name: string;
+  invoiceNo?: string;
   invoiceUrl: string | null;
   subtotal: string;
   tax: string;
@@ -117,11 +119,13 @@ export type BillResult = {
 export async function createBill(input: CreateBillInput): Promise<BillResult> {
   if (!input.lines.length) throw new ShopifyError("Add at least one product.");
 
+  const invoiceNo = await nextInvoiceNumber();
   const draftInput: Record<string, unknown> = {
     lineItems: input.lines.map(lineItemInput),
     taxExempt: !input.vat,
     note: input.note || undefined,
     tags: ["portal-billing", ...(input.segment ? [`seg:${input.segment}`] : [])],
+    metafields: [{ namespace: "portal", key: "invoice_no", type: "single_line_text_field", value: invoiceNo }],
   };
   if (input.customerId?.trim()) draftInput.purchasingEntity = { customerId: input.customerId.trim() };
   else if (input.email?.trim()) draftInput.email = input.email.trim();
@@ -184,6 +188,7 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
   return {
     id: draft.id,
     name: draft.name,
+    invoiceNo,
     invoiceUrl: draft.invoiceUrl,
     subtotal: draft.subtotalPrice,
     tax: draft.totalTax,
@@ -195,6 +200,7 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
 export type InvoiceRow = {
   id: string;
   name: string;
+  invoiceNo: string;
   customer: string;
   status: string;
   total: string;
@@ -215,6 +221,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
           createdAt: string;
           invoiceUrl: string | null;
           tags: string[];
+          invoiceNo: { value: string } | null;
           customer: { displayName: string | null } | null;
           email: string | null;
         };
@@ -225,6 +232,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
       draftOrders(first: 100, reverse: true, query: "tag:portal-billing") {
         edges { node {
           id name status totalPrice createdAt invoiceUrl tags
+          invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
           customer { displayName }
           email
         } }
@@ -234,6 +242,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
   return data.draftOrders.edges.map((e) => ({
     id: e.node.id,
     name: e.node.name,
+    invoiceNo: e.node.invoiceNo?.value || e.node.name,
     customer: e.node.customer?.displayName || e.node.email || "—",
     status: e.node.status,
     total: e.node.totalPrice,
@@ -258,6 +267,7 @@ export type InvoicePayment = { date: string; amount: number; method: string; not
 export type InvoiceDetail = {
   id: string;
   name: string;
+  invoiceNo: string;
   status: string;
   createdAt: string;
   note: string;
@@ -299,6 +309,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
       customer: { displayName: string | null; email: string | null; phone: string | null } | null;
       email: string | null;
       payments: { value: string } | null;
+      invoiceNo: { value: string } | null;
       billingAddress: {
         company: string | null; address1: string | null; address2: string | null;
         city: string | null; zip: string | null; province: string | null; country: string | null;
@@ -325,6 +336,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
         customer { displayName email phone }
         email
         payments: metafield(namespace: "portal", key: "payments") { value }
+        invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
         billingAddress { company address1 address2 city zip province country phone }
         lineItems(first: 100) {
           edges { node {
@@ -357,6 +369,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
   return {
     id: d.id,
     name: d.name,
+    invoiceNo: d.invoiceNo?.value || d.name,
     status: d.status,
     createdAt: d.createdAt,
     note: d.note2 || "",

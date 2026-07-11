@@ -42,7 +42,12 @@ export default function CustomersPage() {
   const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [flash, setFlash] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [segMode, setSegMode] = useState(false);
+  const [segDraft, setSegDraft] = useState<SegmentKey[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = (query: string, seg: SegmentKey | "all") => {
@@ -59,6 +64,34 @@ export default function CustomersPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
+
+  const allSelected = customers.length > 0 && selected.size === customers.length;
+  function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  function toggleAll() { setSelected(allSelected ? new Set() : new Set(customers.map((c) => c.id))); }
+  function clearSel() { setSelected(new Set()); setSegMode(false); setSegDraft([]); }
+
+  async function runBulk(action: "addSegments" | "removeSegments" | "delete") {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (action === "delete" && !confirm(`Delete ${ids.length} customer(s)? This cannot be undone.`)) return;
+    if ((action === "addSegments" || action === "removeSegments") && segDraft.length === 0) { setError("Pick a segment first."); return; }
+    setBulkBusy(true); setError(""); setFlash("");
+    try {
+      const res = await fetch("/api/customers/bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ids, segments: segDraft }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Bulk action failed");
+      setFlash(`Done: ${d.ok} updated${d.failed ? `, ${d.failed} failed` : ""}.`);
+      clearSel();
+      load(q, segFilter);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Bulk action failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   useEffect(() => load("", "all"), []);
 
@@ -90,6 +123,7 @@ export default function CustomersPage() {
       </div>
 
       {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+      {flash && <p className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
 
       {showForm && <RegisterForm onCreated={() => { setShowForm(false); load(q, segFilter); }} />}
 
@@ -112,6 +146,7 @@ export default function CustomersPage() {
         <table className="w-full text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
+              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Segment</th>
               <th className="px-4 py-3">Company</th>
@@ -122,7 +157,8 @@ export default function CustomersPage() {
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
             {customers.map((c) => (
-              <tr key={c.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
+              <tr key={c.id} className={selected.has(c.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}>
+                <td className="px-4 py-3"><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleRow(c.id)} className="h-4 w-4 accent-amber-500" /></td>
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">
                   <Link href={`/customers/${numericId(c.id)}`} className="hover:text-amber-600">
                     {c.name || "(no name)"}
@@ -139,7 +175,7 @@ export default function CustomersPage() {
             ))}
             {customers.length === 0 && !loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-neutral-400">
+                <td colSpan={7} className="px-4 py-10 text-center text-neutral-400">
                   No customers in this segment yet.
                 </td>
               </tr>
@@ -147,6 +183,35 @@ export default function CustomersPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-14 left-1/2 z-40 -translate-x-1/2">
+          {segMode && (
+            <div className="mb-2 max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-neutral-500">Segments →</span>
+                {SEGMENTS.map((s) => (
+                  <label key={s.key} className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${segDraft.includes(s.key) ? s.badge : "border-neutral-300 text-neutral-500 dark:border-neutral-700"}`}>
+                    <input type="checkbox" checked={segDraft.includes(s.key)} onChange={(e) => setSegDraft((prev) => e.target.checked ? [...prev, s.key] : prev.filter((k) => k !== s.key))} className="h-3.5 w-3.5 accent-amber-500" />
+                    {s.short}
+                  </label>
+                ))}
+                <button disabled={bulkBusy || !segDraft.length} onClick={() => runBulk("addSegments")} className="rounded-lg bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">Assign</button>
+                <button disabled={bulkBusy || !segDraft.length} onClick={() => runBulk("removeSegments")} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-600 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300">Remove</button>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
+            <span className="font-medium">{selected.size} selected</span>
+            <span className="h-4 w-px bg-white/20" />
+            <button disabled={bulkBusy} onClick={() => setSegMode((v) => !v)} className={`rounded-full px-3 py-1 hover:bg-white/10 ${segMode ? "text-amber-400" : ""}`}>Set segment</button>
+            <button disabled={bulkBusy} onClick={() => runBulk("delete")} className="rounded-full px-3 py-1 text-red-400 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
+            <span className="h-4 w-px bg-white/20" />
+            <button onClick={clearSel} className="rounded-full px-2 py-1 text-white/50 hover:text-white">✕</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

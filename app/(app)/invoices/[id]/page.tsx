@@ -263,7 +263,8 @@ export default function InvoiceEditPage() {
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{meta.name}</h1>
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{meta.invoiceNo}</h1>
+          <span className="text-sm text-neutral-400">{meta.name}</span>
           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
             {completed ? "PAID" : "DRAFT"}
           </span>

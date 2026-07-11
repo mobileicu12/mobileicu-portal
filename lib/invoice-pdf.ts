@@ -44,7 +44,7 @@ export function generateInvoicePdf(inv: InvoiceDetail, biz: Business = BUSINESS)
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(GOLD);
-  doc.text(inv.name, pageW - M, 64, { align: "right" });
+  doc.text(inv.invoiceNo || inv.name, pageW - M, 64, { align: "right" });
 
   // ---- Business + meta row ----
   let y = 118;
@@ -163,5 +163,5 @@ export function generateInvoicePdf(inv: InvoiceDetail, biz: Business = BUSINESS)
   doc.text(footLeft, M, footY);
   doc.text(`${BUSINESS.name} · ${BUSINESS.website}`, pageW - M, footY, { align: "right" });
 
-  doc.save(`${BUSINESS.name.replace(/\s+/g, "_")}_${inv.name.replace(/[^\w-]/g, "")}.pdf`);
+  doc.save(`${BUSINESS.name.replace(/\s+/g, "_")}_${(inv.invoiceNo || inv.name).replace(/[^\w-]/g, "")}.pdf`);
 }

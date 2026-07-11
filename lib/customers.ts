@@ -222,6 +222,44 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   };
 }
 
+// Bulk: add/remove segment tags across many customers (uses tagsAdd/tagsRemove — no read needed).
+export async function bulkCustomerSegments(
+  ids: string[],
+  segments: SegmentKey[],
+  mode: "add" | "remove",
+): Promise<{ ok: number; failed: number }> {
+  const tags = tagsForSegments(segments);
+  if (!tags.length || !ids.length) return { ok: 0, failed: 0 };
+  const mutation = mode === "add"
+    ? `mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { message } } }`
+    : `mutation($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { message } } }`;
+  let ok = 0, failed = 0;
+  for (const id of ids) {
+    try {
+      const r = await adminGraphQL<{ tagsAdd?: { userErrors: { message: string }[] }; tagsRemove?: { userErrors: { message: string }[] } }>(mutation, { id, tags });
+      const errs = (r.tagsAdd ?? r.tagsRemove)?.userErrors ?? [];
+      if (errs.length) failed++; else ok++;
+    } catch { failed++; }
+  }
+  return { ok, failed };
+}
+
+export async function deleteCustomer(id: string): Promise<void> {
+  const d = await adminGraphQL<{ customerDelete: { deletedCustomerId: string | null; userErrors: { message: string }[] } }>(
+    `mutation($id: ID!) { customerDelete(input: { id: $id }) { deletedCustomerId userErrors { field message } } }`,
+    { id },
+  );
+  if (d.customerDelete.userErrors.length) throw new ShopifyError(d.customerDelete.userErrors.map((e) => e.message).join("; "));
+}
+
+export async function bulkDeleteCustomers(ids: string[]): Promise<{ ok: number; failed: number }> {
+  let ok = 0, failed = 0;
+  for (const id of ids) {
+    try { await deleteCustomer(id); ok++; } catch { failed++; }
+  }
+  return { ok, failed };
+}
+
 export async function addPayment(
   customerId: string,
   payment: Payment,

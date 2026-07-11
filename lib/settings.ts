@@ -11,6 +11,7 @@ export type PortalSettings = {
   vatNumber: string;
   bank: string; // payment instructions / footer
   invoiceFooter: string;
+  invoicePrefix: string; // e.g. "MICU" -> MICU-2026-0001
   vatRate: number; // percent, e.g. 20
   lowStock: number;
 };
@@ -25,6 +26,7 @@ export const DEFAULT_SETTINGS: PortalSettings = {
   vatNumber: "",
   bank: "",
   invoiceFooter: "Thank you for your business.",
+  invoicePrefix: "MICU",
   vatRate: 20,
   lowStock: 5,
 };
@@ -47,6 +49,24 @@ export async function getSettings(): Promise<PortalSettings> {
   } catch {
     return DEFAULT_SETTINGS;
   }
+}
+
+// Generate the next unique, sequential invoice number: PREFIX-YYYY-0001.
+// Backed by an atomically-read counter in a shop metafield.
+export async function nextInvoiceNumber(): Promise<string> {
+  const settings = await getSettings();
+  const prefix = (settings.invoicePrefix || "MICU").trim();
+  const d = await adminGraphQL<{ shop: { id: string; metafield: { value: string } | null } }>(
+    `query { shop { id metafield(namespace: "${NS}", key: "invoice_counter") { value } } }`,
+  );
+  const current = parseInt(d.shop.metafield?.value || "0", 10) || 0;
+  const next = current + 1;
+  await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf: [{ ownerId: d.shop.id, namespace: NS, key: "invoice_counter", type: "number_integer", value: String(next) }] },
+  );
+  const year = new Date().getFullYear();
+  return `${prefix}-${year}-${String(next).padStart(4, "0")}`;
 }
 
 export async function saveSettings(input: Partial<PortalSettings>): Promise<PortalSettings> {

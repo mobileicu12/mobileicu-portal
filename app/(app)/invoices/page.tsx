@@ -10,6 +10,7 @@ import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 type Invoice = {
   id: string;
   name: string;
+  invoiceNo: string;
   customer: string;
   status: string;
   total: string;
@@ -56,7 +57,7 @@ export default function InvoicesPage() {
       if (statusFilter === "paid" && inv.status !== "COMPLETED") return false;
       if (segFilter !== "all" && inv.segment !== segFilter) return false;
       if (!s) return true;
-      return inv.name.toLowerCase().includes(s) || inv.customer.toLowerCase().includes(s);
+      return inv.invoiceNo.toLowerCase().includes(s) || inv.name.toLowerCase().includes(s) || inv.customer.toLowerCase().includes(s);
     });
   }, [invoices, search, statusFilter, segFilter]);
 
@@ -143,7 +144,7 @@ export default function InvoicesPage() {
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
             {filtered.map((inv) => (
               <tr key={inv.id} onClick={() => router.push(`/invoices/${encodeURIComponent(inv.id)}`)} className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
-                <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{inv.name}</td>
+                <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{inv.invoiceNo}<span className="ml-1 text-xs font-normal text-neutral-400">{inv.name}</span></td>
                 <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{inv.customer}</td>
                 <td className="px-4 py-3">
                   {(() => {

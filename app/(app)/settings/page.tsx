@@ -12,6 +12,7 @@ type Settings = {
   vatNumber: string;
   bank: string;
   invoiceFooter: string;
+  invoicePrefix: string;
   vatRate: number;
   lowStock: number;
 };
@@ -90,6 +91,8 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Defaults">
+          <Field label="Invoice number prefix"><input className={inp} value={s.invoicePrefix} onChange={(e) => set("invoicePrefix", e.target.value)} placeholder="MICU" /></Field>
+          <p className="text-xs text-neutral-400">New invoices are numbered <strong>{s.invoicePrefix || "MICU"}-{new Date().getFullYear()}-0001</strong>, incrementing uniquely.</p>
           <Field label="VAT rate (%)"><input type="number" className={inp} value={s.vatRate} onChange={(e) => set("vatRate", Number(e.target.value))} /></Field>
           <Field label="Low-stock threshold"><input type="number" className={inp} value={s.lowStock} onChange={(e) => set("lowStock", Number(e.target.value))} /></Field>
         </Section>
