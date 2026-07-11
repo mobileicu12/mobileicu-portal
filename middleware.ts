@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Protect everything except the login page, the login API, and static assets.
-const PUBLIC_PATHS = ["/login", "/api/login"];
+// Protect everything except the login page, the login API, static assets,
+// and the public customer-facing storefront (/shop + its data API).
+const PUBLIC_PATHS = ["/login", "/api/login", "/shop", "/api/shop"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

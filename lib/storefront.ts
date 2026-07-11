@@ -1,0 +1,208 @@
+// Public storefront data — read-only catalog via the Admin API (server-side only).
+import { adminGraphQL } from "./shopify";
+
+export const STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN ?? "";
+
+export type ShopProductCard = {
+  id: string;
+  handle: string;
+  title: string;
+  image: string | null;
+  price: string;
+  compareAt: string | null;
+  available: boolean;
+  vendor: string;
+};
+
+export type ShopCollectionCard = {
+  id: string;
+  handle: string;
+  title: string;
+  image: string | null;
+  count: number;
+  parent: string | null;
+};
+
+const num = (gid: string) => gid.split("/").pop() ?? gid;
+
+function mapProduct(node: {
+  id: string; handle: string; title: string; vendor: string | null;
+  featuredImage: { url: string } | null;
+  priceRangeV2: { minVariantPrice: { amount: string } };
+  compareAtPriceRange?: { minVariantCompareAtPrice: { amount: string } | null } | null;
+  totalInventory: number | null;
+  status: string;
+}): ShopProductCard {
+  const compare = node.compareAtPriceRange?.minVariantCompareAtPrice?.amount ?? null;
+  return {
+    id: node.id,
+    handle: node.handle,
+    title: node.title,
+    image: node.featuredImage?.url ?? null,
+    price: node.priceRangeV2.minVariantPrice.amount,
+    compareAt: compare && Number(compare) > Number(node.priceRangeV2.minVariantPrice.amount) ? compare : null,
+    available: (node.totalInventory ?? 0) > 0,
+    vendor: node.vendor ?? "",
+  };
+}
+
+const PRODUCT_CARD_FIELDS = `
+  id handle title vendor status totalInventory
+  featuredImage { url }
+  priceRangeV2 { minVariantPrice { amount } }
+  compareAtPriceRange { minVariantCompareAtPrice { amount } }
+`;
+
+export async function getFeaturedProducts(first = 8): Promise<ShopProductCard[]> {
+  const d = await adminGraphQL<{ products: { edges: { node: Parameters<typeof mapProduct>[0] }[] } }>(
+    `query($first: Int!) {
+      products(first: $first, query: "status:active", sortKey: UPDATED_AT, reverse: true) {
+        edges { node { ${PRODUCT_CARD_FIELDS} } }
+      }
+    }`,
+    { first },
+  );
+  return d.products.edges.map((e) => mapProduct(e.node));
+}
+
+export async function getStorefrontCollections(): Promise<ShopCollectionCard[]> {
+  const out: ShopCollectionCard[] = [];
+  let after: string | null = null;
+  for (let p = 0; p < 5; p++) {
+    const d: {
+      collections: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        edges: { node: { id: string; handle: string; title: string; image: { url: string } | null; productsCount: { count: number } | null; parent: { value: string } | null } }[];
+      };
+    } = await adminGraphQL(
+      `query($after: String) {
+        collections(first: 100, after: $after, sortKey: TITLE) {
+          pageInfo { hasNextPage endCursor }
+          edges { node { id handle title image { url } productsCount { count } parent: metafield(namespace: "portal", key: "parent") { value } } }
+        }
+      }`,
+      { after },
+    );
+    for (const e of d.collections.edges) {
+      out.push({ id: e.node.id, handle: e.node.handle, title: e.node.title, image: e.node.image?.url ?? null, count: e.node.productsCount?.count ?? 0, parent: e.node.parent?.value || null });
+    }
+    if (!d.collections.pageInfo.hasNextPage) break;
+    after = d.collections.pageInfo.endCursor;
+  }
+  return out;
+}
+
+export type ShopCollectionPage = {
+  id: string;
+  title: string;
+  handle: string;
+  descriptionHtml: string;
+  image: string | null;
+  products: ShopProductCard[];
+  subCollections: ShopCollectionCard[];
+};
+
+export async function getStorefrontCollection(handle: string): Promise<ShopCollectionPage | null> {
+  const d = await adminGraphQL<{
+    collections: { edges: { node: {
+      id: string; title: string; handle: string; descriptionHtml: string; image: { url: string } | null;
+      products: { edges: { node: Parameters<typeof mapProduct>[0] }[] };
+    } }[] };
+  }>(
+    `query($q: String!) {
+      collections(first: 1, query: $q) {
+        edges { node {
+          id title handle descriptionHtml image { url }
+          products(first: 48) { edges { node { ${PRODUCT_CARD_FIELDS} } } }
+        } }
+      }
+    }`,
+    { q: `handle:${handle}` },
+  );
+  const c = d.collections.edges[0]?.node;
+  if (!c) return null;
+  // sub-collections whose portal.parent points at this collection
+  const all = await getStorefrontCollections();
+  const subs = all.filter((x) => x.parent === c.id);
+  return {
+    id: c.id,
+    title: c.title,
+    handle: c.handle,
+    descriptionHtml: c.descriptionHtml ?? "",
+    image: c.image?.url ?? null,
+    products: c.products.edges.map((e) => mapProduct(e.node)),
+    subCollections: subs,
+  };
+}
+
+export type ShopVariant = { id: string; numericId: string; title: string; price: string; compareAt: string | null; available: boolean; options: { name: string; value: string }[] };
+export type ShopProduct = {
+  id: string; handle: string; title: string; descriptionHtml: string; vendor: string;
+  images: string[];
+  price: string; compareAt: string | null;
+  options: { name: string; values: string[] }[];
+  variants: ShopVariant[];
+  available: boolean;
+};
+
+export async function getStorefrontProduct(handle: string): Promise<ShopProduct | null> {
+  const d = await adminGraphQL<{
+    products: { edges: { node: {
+      id: string; handle: string; title: string; descriptionHtml: string; vendor: string | null; totalInventory: number | null;
+      priceRangeV2: { minVariantPrice: { amount: string } };
+      compareAtPriceRange: { minVariantCompareAtPrice: { amount: string } | null } | null;
+      options: { name: string; optionValues: { name: string }[] }[];
+      images: { edges: { node: { url: string } }[] };
+      variants: { edges: { node: { id: string; title: string; price: string; compareAtPrice: string | null; availableForSale: boolean; selectedOptions: { name: string; value: string }[] } }[] };
+    } }[] };
+  }>(
+    `query($q: String!) {
+      products(first: 1, query: $q) {
+        edges { node {
+          id handle title descriptionHtml vendor totalInventory
+          priceRangeV2 { minVariantPrice { amount } }
+          compareAtPriceRange { minVariantCompareAtPrice { amount } }
+          options { name optionValues { name } }
+          images(first: 10) { edges { node { url } } }
+          variants(first: 100) { edges { node { id title price compareAtPrice availableForSale selectedOptions { name value } } } }
+        } }
+      }
+    }`,
+    { q: `handle:${handle}` },
+  );
+  const p = d.products.edges[0]?.node;
+  if (!p) return null;
+  const compare = p.compareAtPriceRange?.minVariantCompareAtPrice?.amount ?? null;
+  return {
+    id: p.id,
+    handle: p.handle,
+    title: p.title,
+    descriptionHtml: p.descriptionHtml ?? "",
+    vendor: p.vendor ?? "",
+    images: p.images.edges.map((e) => e.node.url),
+    price: p.priceRangeV2.minVariantPrice.amount,
+    compareAt: compare && Number(compare) > Number(p.priceRangeV2.minVariantPrice.amount) ? compare : null,
+    options: p.options.map((o) => ({ name: o.name, values: o.optionValues.map((v) => v.name) })),
+    variants: p.variants.edges.map((e) => ({
+      id: e.node.id,
+      numericId: num(e.node.id),
+      title: e.node.title === "Default Title" ? "" : e.node.title,
+      price: e.node.price,
+      compareAt: e.node.compareAtPrice && Number(e.node.compareAtPrice) > Number(e.node.price) ? e.node.compareAtPrice : null,
+      available: e.node.availableForSale,
+      options: e.node.selectedOptions,
+    })),
+    available: (p.totalInventory ?? 0) > 0,
+  };
+}
+
+export async function searchStorefront(q: string, first = 24): Promise<ShopProductCard[]> {
+  if (!q.trim()) return [];
+  const d = await adminGraphQL<{ products: { edges: { node: Parameters<typeof mapProduct>[0] }[] } }>(
+    `query($q: String!, $first: Int!) {
+      products(first: $first, query: $q, sortKey: RELEVANCE) { edges { node { ${PRODUCT_CARD_FIELDS} } } }
+    }`,
+    { q: `status:active AND (title:*${q.trim()}* OR tag:${q.trim()})`, first },
+  );
+  return d.products.edges.map((e) => mapProduct(e.node));
+}
