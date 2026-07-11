@@ -1,14 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCart } from "./cart";
 
-type NavCol = { handle: string; title: string; children: { handle: string; title: string }[] };
+const PAGES = [
+  { href: "/shop", label: "Home", exact: true },
+  { href: "/shop/all", label: "Shop" },
+  { href: "/shop/collections", label: "Collections" },
+  { href: "/shop/about", label: "About" },
+  { href: "/shop/contact", label: "Contact" },
+];
 
-export default function ShopHeader({ nav, loginUrl }: { nav: NavCol[]; loginUrl: string }) {
+export default function ShopHeader({ loginUrl }: { loginUrl: string }) {
   const { count, setOpen } = useCart();
+  const pathname = usePathname();
   const [mobile, setMobile] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -18,6 +26,8 @@ export default function ShopHeader({ nav, loginUrl }: { nav: NavCol[]; loginUrl:
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  const isActive = (p: { href: string; exact?: boolean }) => (p.exact ? pathname === p.href : pathname.startsWith(p.href) && p.href !== "/shop");
 
   return (
     <header className={`sticky top-0 z-40 border-b bg-white/90 backdrop-blur transition-shadow duration-300 ${scrolled ? "border-neutral-200 shadow-[0_6px_20px_-12px_rgba(0,0,0,0.25)]" : "border-transparent"}`}>
@@ -33,26 +43,18 @@ export default function ShopHeader({ nav, loginUrl }: { nav: NavCol[]; loginUrl:
         </Link>
 
         <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">
-          {nav.slice(0, 7).map((c) => (
-            <div key={c.handle} className="group relative">
-              <Link href={`/shop/c/${c.handle}`} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:text-amber-600">
-                {c.title}
-              </Link>
-              {c.children.length > 0 && (
-                <div className="invisible absolute left-0 top-full z-50 min-w-52 rounded-xl border border-neutral-200 bg-white p-2 opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100">
-                  {c.children.map((s) => (
-                    <Link key={s.handle} href={`/shop/c/${s.handle}`} className="block rounded-lg px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50 hover:text-amber-600">
-                      {s.title}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
+          {PAGES.map((p) => (
+            <Link key={p.href} href={p.href} className={`relative rounded-lg px-3.5 py-2 text-sm font-medium transition ${isActive(p) ? "text-amber-600" : "text-neutral-700 hover:text-amber-600"}`}>
+              {p.label}
+              {isActive(p) && <motion.span layoutId="nav-underline" className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-amber-500" />}
+            </Link>
           ))}
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link href="/shop/search" className="hidden rounded-lg px-3 py-2 text-sm text-neutral-600 hover:text-amber-600 sm:block">Search</Link>
+          <Link href="/shop/search" aria-label="Search" className="hidden rounded-lg p-2 text-neutral-600 hover:text-amber-600 sm:block">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
+          </Link>
           <a href={loginUrl} className="hidden rounded-full border border-neutral-300 px-3.5 py-1.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 sm:block">Trade login</a>
           <button onClick={() => setOpen(true)} className="relative rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">
             Cart
@@ -65,13 +67,12 @@ export default function ShopHeader({ nav, loginUrl }: { nav: NavCol[]; loginUrl:
         {mobile && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden border-t border-neutral-200 lg:hidden">
             <div className="mx-auto max-w-7xl px-4 py-2">
-              {nav.map((c) => (
-                <Link key={c.handle} href={`/shop/c/${c.handle}`} onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
-                  {c.title}
-                </Link>
+              {PAGES.map((p) => (
+                <Link key={p.href} href={p.href} onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">{p.label}</Link>
               ))}
               <Link href="/shop/search" onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Search</Link>
               <a href={loginUrl} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Trade login</a>
+              <Link href="/shop/register" onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-amber-600">Register for wholesale</Link>
             </div>
           </motion.div>
         )}

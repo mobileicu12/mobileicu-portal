@@ -92,6 +92,27 @@ export async function getFeaturedProducts(first = 8): Promise<ShopProductCard[]>
   return d.products.edges.map((e) => mapProduct(e.node));
 }
 
+export async function getAllProducts(max = 250): Promise<ShopProductCard[]> {
+  const out: ShopProductCard[] = [];
+  let after: string | null = null;
+  while (out.length < max) {
+    const d: { products: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; edges: { node: CardNode }[] } } =
+      await adminGraphQL(
+        `query($after: String) {
+          products(first: 100, after: $after, query: "status:active", sortKey: TITLE) {
+            pageInfo { hasNextPage endCursor }
+            edges { node { ${PRODUCT_CARD_FIELDS} } }
+          }
+        }`,
+        { after },
+      );
+    out.push(...d.products.edges.map((e) => mapProduct(e.node)));
+    if (!d.products.pageInfo.hasNextPage) break;
+    after = d.products.pageInfo.endCursor;
+  }
+  return out.slice(0, max);
+}
+
 export async function getStorefrontCollections(): Promise<ShopCollectionCard[]> {
   const out: ShopCollectionCard[] = [];
   let after: string | null = null;

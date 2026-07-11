@@ -75,6 +75,37 @@ export async function createCustomer(input: {
   return { id: data.customerCreate.customer.id };
 }
 
+// Public storefront trade-account registration. Creates a Shopify customer tagged
+// as a pending signup (NO wholesale segment — you approve it in the portal).
+export async function registerCustomer(input: {
+  firstName?: string; lastName?: string; email?: string; phone?: string; company?: string; note?: string;
+}): Promise<{ id: string }> {
+  if (!input.email?.trim()) throw new ShopifyError("An email address is required.");
+  const customerInput: Record<string, unknown> = {
+    firstName: input.firstName?.trim() || undefined,
+    lastName: input.lastName?.trim() || undefined,
+    email: input.email.trim(),
+    phone: input.phone?.trim() || undefined,
+    note: input.note?.trim() || undefined,
+    tags: ["portal", "storefront-signup", "pending-approval"],
+  };
+  if (input.company?.trim()) {
+    customerInput.metafields = [
+      { namespace: LEDGER_NS, key: "company", type: "single_line_text_field", value: input.company.trim() },
+    ];
+  }
+  const data = await adminGraphQL<{
+    customerCreate: { customer: { id: string } | null; userErrors: { field: string[]; message: string }[] };
+  }>(
+    `mutation($input: CustomerInput!) { customerCreate(input: $input) { customer { id } userErrors { field message } } }`,
+    { input: customerInput },
+  );
+  const errs = data.customerCreate.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  if (!data.customerCreate.customer) throw new ShopifyError("Could not create the account.");
+  return { id: data.customerCreate.customer.id };
+}
+
 export async function listCustomers(q?: string, segment?: SegmentKey): Promise<CustomerSummary[]> {
   // Build a Shopify customer search query combining free text + segment tag.
   const parts: string[] = [];
