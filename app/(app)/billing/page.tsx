@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 
 const VAT_RATE = 0.2;
 
@@ -31,6 +32,7 @@ type BillResult = {
 
 export default function BillingPage() {
   const [mode, setMode] = useState<"invoice" | "pos">("invoice");
+  const [segment, setSegment] = useState<SegmentKey>("online");
   const [vat, setVat] = useState(true);
   const [discount, setDiscount] = useState(0);
   const [email, setEmail] = useState("");
@@ -155,6 +157,7 @@ export default function BillingPage() {
           note,
           discountPercent: discount,
           complete: mode === "pos",
+          segment,
         }),
       });
       const d = await res.json();
@@ -177,13 +180,13 @@ export default function BillingPage() {
         <h1 className="text-2xl font-semibold text-neutral-900">Billing / POS</h1>
         <div className="flex rounded-lg border border-neutral-300 p-1">
           <button
-            onClick={() => setMode("invoice")}
+            onClick={() => { setMode("invoice"); setSegment("online"); }}
             className={`rounded-md px-4 py-1.5 text-sm font-medium ${mode === "invoice" ? "bg-neutral-900 text-white" : "text-neutral-600"}`}
           >
             Wholesale invoice
           </button>
           <button
-            onClick={() => setMode("pos")}
+            onClick={() => { setMode("pos"); setSegment("shop"); }}
             className={`rounded-md px-4 py-1.5 text-sm font-medium ${mode === "pos" ? "bg-neutral-900 text-white" : "text-neutral-600"}`}
           >
             POS (instant sale)
@@ -294,7 +297,20 @@ export default function BillingPage() {
         <div className="rounded-2xl border border-neutral-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-neutral-900">Summary</h2>
 
-          <label className="mt-4 flex items-center justify-between text-sm">
+          <label className="mt-4 block text-sm">
+            <span className="font-medium text-neutral-700">Source</span>
+            <select
+              value={segment}
+              onChange={(e) => setSegment(e.target.value as SegmentKey)}
+              className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            >
+              {SEGMENTS.map((s) => (
+                <option key={s.key} value={s.key}>{s.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="mt-3 flex items-center justify-between text-sm">
             <span className="font-medium text-neutral-700">Charge VAT (20%)</span>
             <input type="checkbox" checked={vat} onChange={(e) => setVat(e.target.checked)} className="h-4 w-4" />
           </label>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCustomer, listCustomers } from "@/lib/customers";
+import type { SegmentKey } from "@/lib/segments";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -7,8 +8,12 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   if (!shopifyConfigured()) return NextResponse.json({ customers: [] });
   const { searchParams } = new URL(req.url);
+  const seg = searchParams.get("segment");
   try {
-    const customers = await listCustomers(searchParams.get("q") ?? undefined);
+    const customers = await listCustomers(
+      searchParams.get("q") ?? undefined,
+      (seg as SegmentKey) || undefined,
+    );
     return NextResponse.json({ customers });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to load customers.";

@@ -1,5 +1,6 @@
 // Customer management (Shopify customers) + payment ledger via metafield.
 import { adminGraphQL, ShopifyError } from "./shopify";
+import { segmentsFromTags, tagsForSegments, isSegmentTag, type SegmentKey } from "./segments";
 
 export type CustomerSummary = {
   id: string;
@@ -9,6 +10,7 @@ export type CustomerSummary = {
   phone: string;
   orders: number;
   totalSpent: string;
+  segments: SegmentKey[];
 };
 
 export type Payment = { date: string; amount: number; method: string; note: string };
@@ -16,6 +18,7 @@ export type Ledger = { payments: Payment[]; creditLimit?: number };
 
 export type CustomerDetail = CustomerSummary & {
   note: string;
+  tags: string[];
   ledger: Ledger;
   invoices: {
     id: string;
@@ -37,17 +40,19 @@ export async function createCustomer(input: {
   phone?: string;
   company?: string;
   note?: string;
+  segments?: SegmentKey[];
 }): Promise<{ id: string }> {
   if (!input.email?.trim() && !input.phone?.trim() && !input.firstName?.trim()) {
     throw new ShopifyError("Provide at least a name, email, or phone.");
   }
+  const segs = input.segments?.length ? input.segments : (["shop"] as SegmentKey[]);
   const customerInput: Record<string, unknown> = {
     firstName: input.firstName?.trim() || undefined,
     lastName: input.lastName?.trim() || undefined,
     email: input.email?.trim() || undefined,
     phone: input.phone?.trim() || undefined,
     note: input.note?.trim() || undefined,
-    tags: ["portal", "wholesale"],
+    tags: ["portal", ...tagsForSegments(segs)],
   };
   if (input.company?.trim()) {
     customerInput.metafields = [
@@ -68,7 +73,13 @@ export async function createCustomer(input: {
   return { id: data.customerCreate.customer.id };
 }
 
-export async function listCustomers(q?: string): Promise<CustomerSummary[]> {
+export async function listCustomers(q?: string, segment?: SegmentKey): Promise<CustomerSummary[]> {
+  // Build a Shopify customer search query combining free text + segment tag.
+  const parts: string[] = [];
+  if (q && q.trim()) parts.push(q.trim());
+  if (segment) parts.push(`tag:'seg:${segment}'`);
+  const query = parts.length ? parts.join(" AND ") : null;
+
   const data = await adminGraphQL<{
     customers: {
       edges: {
@@ -78,6 +89,7 @@ export async function listCustomers(q?: string): Promise<CustomerSummary[]> {
           email: string | null;
           phone: string | null;
           numberOfOrders: string;
+          tags: string[];
           amountSpent: { amount: string } | null;
           company: { value: string } | null;
         };
@@ -85,15 +97,15 @@ export async function listCustomers(q?: string): Promise<CustomerSummary[]> {
     };
   }>(
     `query($q: String) {
-      customers(first: 50, query: $q, sortKey: UPDATED_AT, reverse: true) {
+      customers(first: 100, query: $q, sortKey: UPDATED_AT, reverse: true) {
         edges { node {
-          id displayName email phone numberOfOrders
+          id displayName email phone numberOfOrders tags
           amountSpent { amount }
           company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
         } }
       }
     }`,
-    { q: q && q.trim() ? q.trim() : null },
+    { q: query },
   );
   return data.customers.edges.map((e) => ({
     id: e.node.id,
@@ -103,7 +115,30 @@ export async function listCustomers(q?: string): Promise<CustomerSummary[]> {
     phone: e.node.phone ?? "",
     orders: Number(e.node.numberOfOrders ?? 0),
     totalSpent: e.node.amountSpent?.amount ?? "0",
+    segments: segmentsFromTags(e.node.tags ?? []),
   }));
+}
+
+// Replace a customer's segment tags (keeps all non-segment tags intact).
+export async function setCustomerSegments(id: string, segments: SegmentKey[]): Promise<SegmentKey[]> {
+  const cur = await adminGraphQL<{ customer: { tags: string[] } | null }>(
+    `query($id: ID!) { customer(id: $id) { tags } }`,
+    { id },
+  );
+  if (!cur.customer) throw new ShopifyError("Customer not found.");
+  const kept = (cur.customer.tags ?? []).filter((t) => !isSegmentTag(t));
+  const tags = [...kept, ...tagsForSegments(segments)];
+  const res = await adminGraphQL<{
+    customerUpdate: { customer: { id: string } | null; userErrors: { field: string[]; message: string }[] };
+  }>(
+    `mutation($input: CustomerInput!) {
+      customerUpdate(input: $input) { customer { id } userErrors { field message } }
+    }`,
+    { input: { id, tags } },
+  );
+  const errs = res.customerUpdate.userErrors;
+  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  return segments;
 }
 
 export async function getCustomer(id: string): Promise<CustomerDetail> {
@@ -115,6 +150,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
       phone: string | null;
       note: string | null;
       numberOfOrders: string;
+      tags: string[];
       amountSpent: { amount: string } | null;
       company: { value: string } | null;
       ledger: { value: string } | null;
@@ -127,7 +163,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   }>(
     `query($id: ID!) {
       customer(id: $id) {
-        id displayName email phone note numberOfOrders
+        id displayName email phone note numberOfOrders tags
         amountSpent { amount }
         company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
         ledger: metafield(namespace: "${LEDGER_NS}", key: "${LEDGER_KEY}") { value }
@@ -156,6 +192,8 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     email: c.email ?? "",
     phone: c.phone ?? "",
     note: c.note ?? "",
+    tags: c.tags ?? [],
+    segments: segmentsFromTags(c.tags ?? []),
     orders: Number(c.numberOfOrders ?? 0),
     totalSpent: c.amountSpent?.amount ?? "0",
     ledger,

@@ -1,5 +1,6 @@
 // Billing: product search, draft orders (invoices), POS completion.
 import { adminGraphQL, ShopifyError } from "./shopify";
+import { segmentsFromTags, type SegmentKey } from "./segments";
 
 export type VariantHit = {
   variantId: string;
@@ -72,6 +73,7 @@ export type CreateBillInput = {
   note?: string;
   discountPercent?: number;
   complete?: boolean; // POS: complete immediately (creates order, deducts stock)
+  segment?: SegmentKey; // where this sale comes from (online/shop/ebay/amazon)
 };
 
 export type BillResult = {
@@ -91,7 +93,7 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
     lineItems: input.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
     taxExempt: !input.vat,
     note: input.note || undefined,
-    tags: ["portal-billing"],
+    tags: ["portal-billing", ...(input.segment ? [`seg:${input.segment}`] : [])],
   };
   if (input.customerId?.trim()) draftInput.purchasingEntity = { customerId: input.customerId.trim() };
   else if (input.email?.trim()) draftInput.email = input.email.trim();
@@ -170,6 +172,7 @@ export type InvoiceRow = {
   total: string;
   createdAt: string;
   invoiceUrl: string | null;
+  segment: SegmentKey | null;
 };
 
 export async function listInvoices(): Promise<InvoiceRow[]> {
@@ -183,6 +186,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
           totalPrice: string;
           createdAt: string;
           invoiceUrl: string | null;
+          tags: string[];
           customer: { displayName: string | null } | null;
           email: string | null;
         };
@@ -190,9 +194,9 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     };
   }>(
     `query {
-      draftOrders(first: 40, reverse: true, query: "tag:portal-billing") {
+      draftOrders(first: 100, reverse: true, query: "tag:portal-billing") {
         edges { node {
-          id name status totalPrice createdAt invoiceUrl
+          id name status totalPrice createdAt invoiceUrl tags
           customer { displayName }
           email
         } }
@@ -207,6 +211,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     total: e.node.totalPrice,
     createdAt: e.node.createdAt,
     invoiceUrl: e.node.invoiceUrl,
+    segment: segmentsFromTags(e.node.tags ?? [])[0] ?? null,
   }));
 }
 

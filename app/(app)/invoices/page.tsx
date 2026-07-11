@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { generateInvoicePdf } from "@/lib/invoice-pdf";
 import type { InvoiceDetail } from "@/lib/billing";
+import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 
 type Invoice = {
   id: string;
@@ -13,6 +14,7 @@ type Invoice = {
   total: string;
   createdAt: string;
   invoiceUrl: string | null;
+  segment: SegmentKey | null;
 };
 
 type Stats = {
@@ -32,6 +34,7 @@ export default function InvoicesPage() {
   const [busy, setBusy] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid">("all");
+  const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
 
   useEffect(() => {
     fetch("/api/billing")
@@ -50,10 +53,11 @@ export default function InvoicesPage() {
     return invoices.filter((inv) => {
       if (statusFilter === "open" && inv.status === "COMPLETED") return false;
       if (statusFilter === "paid" && inv.status !== "COMPLETED") return false;
+      if (segFilter !== "all" && inv.segment !== segFilter) return false;
       if (!s) return true;
       return inv.name.toLowerCase().includes(s) || inv.customer.toLowerCase().includes(s);
     });
-  }, [invoices, search, statusFilter]);
+  }, [invoices, search, statusFilter, segFilter]);
 
   async function downloadPdf(e: React.MouseEvent, inv: Invoice) {
     e.stopPropagation();
@@ -113,6 +117,12 @@ export default function InvoicesPage() {
             <button key={f} onClick={() => setStatusFilter(f)} className={`rounded-md px-3 py-1 text-sm font-medium capitalize ${statusFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
           ))}
         </div>
+        <div className="flex flex-wrap rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
+          <button onClick={() => setSegFilter("all")} className={`rounded-md px-3 py-1 text-sm font-medium ${segFilter === "all" ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>All sources</button>
+          {SEGMENTS.map((s) => (
+            <button key={s.key} onClick={() => setSegFilter(s.key)} className={`rounded-md px-3 py-1 text-sm font-medium ${segFilter === s.key ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{s.short}</button>
+          ))}
+        </div>
         <span className="text-sm text-neutral-400">{filtered.length} shown</span>
       </div>
 
@@ -122,6 +132,7 @@ export default function InvoicesPage() {
             <tr>
               <th className="px-4 py-3">Invoice</th>
               <th className="px-4 py-3">Customer</th>
+              <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3 text-right">Total</th>
@@ -133,6 +144,12 @@ export default function InvoicesPage() {
               <tr key={inv.id} onClick={() => router.push(`/invoices/${encodeURIComponent(inv.id)}`)} className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{inv.name}</td>
                 <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{inv.customer}</td>
+                <td className="px-4 py-3">
+                  {(() => {
+                    const s = SEGMENTS.find((x) => x.key === inv.segment);
+                    return s ? <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${s.badge}`}>{s.short}</span> : <span className="text-neutral-300">—</span>;
+                  })()}
+                </td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${inv.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                     {inv.status === "COMPLETED" ? "PAID" : "DRAFT"}
@@ -149,7 +166,7 @@ export default function InvoicesPage() {
               </tr>
             ))}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-neutral-400">{invoices.length === 0 ? "No invoices yet. Create one in Billing / POS." : "No invoices match."}</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-neutral-400">{invoices.length === 0 ? "No invoices yet. Create one in Billing / POS." : "No invoices match."}</td></tr>
             )}
           </tbody>
         </table>

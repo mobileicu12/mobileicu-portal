@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
+import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 
 type Payment = { date: string; amount: number; method: string; note: string };
 type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null };
@@ -14,6 +15,7 @@ type Detail = {
   note: string;
   orders: number;
   totalSpent: string;
+  segments: SegmentKey[];
   ledger: { payments: Payment[] };
   invoices: Invoice[];
 };
@@ -64,6 +66,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </Link>
       </div>
 
+      <SegmentEditor customerId={id} current={c.segments} onSaved={load} />
+
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total billed" value={billed} />
         <Stat label="Total paid" value={paid} tone="emerald" />
@@ -109,6 +113,60 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function SegmentEditor({ customerId, current, onSaved }: { customerId: string; current: SegmentKey[]; onSaved: () => void }) {
+  const [sel, setSel] = useState<SegmentKey[]>(current);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const changed = sel.slice().sort().join(",") !== current.slice().sort().join(",");
+
+  function toggle(k: SegmentKey) {
+    setSel((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
+  }
+  async function save() {
+    setSaving(true);
+    setMsg("");
+    try {
+      const res = await fetch(`/api/customers/${customerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ segments: sel }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      setMsg("Saved");
+      onSaved();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900">
+      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Segment:</span>
+      {SEGMENTS.map((s) => (
+        <button
+          key={s.key}
+          onClick={() => toggle(s.key)}
+          title={s.desc}
+          className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+            sel.includes(s.key) ? s.badge : "border-neutral-300 text-neutral-500 dark:border-neutral-700"
+          }`}
+        >
+          {sel.includes(s.key) ? "✓ " : ""}{s.label}
+        </button>
+      ))}
+      {changed && (
+        <button onClick={save} disabled={saving} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">
+          {saving ? "…" : "Save"}
+        </button>
+      )}
+      {msg && <span className="text-xs text-neutral-400">{msg}</span>}
     </div>
   );
 }
