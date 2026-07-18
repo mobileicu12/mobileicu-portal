@@ -340,14 +340,20 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     totalSpent: c.amountSpent?.amount ?? "0",
     ledger,
     invoices: dd.draftOrders.edges.map((e) => {
+      const total = parseFloat(e.node.totalPrice) || 0;
+      // A COMPLETED draft order is a finished sale — paid in full (money taken at
+      // the till / via the order). Otherwise use any partial payments recorded
+      // against the invoice.
       let amountPaid = 0;
-      if (e.node.payments?.value) {
+      if (e.node.status === "COMPLETED") {
+        amountPaid = total;
+      } else if (e.node.payments?.value) {
         try {
           const arr = JSON.parse(e.node.payments.value);
           if (Array.isArray(arr)) amountPaid = arr.reduce((s: number, p: { amount?: number }) => s + (Number(p.amount) || 0), 0);
         } catch { /* ignore */ }
       }
-      const balance = Math.max(0, (parseFloat(e.node.totalPrice) || 0) - amountPaid);
+      const balance = Math.max(0, total - amountPaid);
       return {
         id: e.node.id,
         name: e.node.name,

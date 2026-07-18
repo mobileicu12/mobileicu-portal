@@ -52,9 +52,14 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (!c) return null;
 
   const invoiceTotal = c.invoices.reduce((s, i) => s + Number(i.total || 0), 0);
+  // Unpaid portion of invoices (completed invoices already count as fully paid).
+  const invoiceOutstanding = c.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
+  const ledgerPaid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const billed = c.openingBalance + invoiceTotal;
-  const paid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const outstanding = billed - paid;
+  // Paid = what's settled on invoices (completed + partial) + on-account payments.
+  const paid = invoiceTotal - invoiceOutstanding + ledgerPaid;
+  // Owed = old opening balance + still-unpaid invoices − on-account payments received.
+  const outstanding = c.openingBalance + invoiceOutstanding - ledgerPaid;
 
   return (
     <div className="px-8 py-7">
