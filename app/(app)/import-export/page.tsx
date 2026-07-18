@@ -63,12 +63,14 @@ export default function ImportExportPage() {
   }
 
   return (
-    <div className="px-8 py-7">
-      <h1 className="text-2xl font-semibold text-neutral-900">Import / Export</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Bulk-manage products with Excel. Export your catalog, edit, and re-import — or add new
-        products with the template.
-      </p>
+    <div className="px-8 py-7 pb-16">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
+        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Import / Export</h1>
+        <p className="text-sm text-neutral-500">
+          Bulk-manage products with Excel. Export your catalog, edit, and re-import — or add new
+          products with the template.
+        </p>
+      </div>
 
       {error && (
         <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>

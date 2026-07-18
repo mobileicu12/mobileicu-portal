@@ -201,8 +201,8 @@ export default function CollectionsPage() {
   }
 
   return (
-    <div className="px-8 py-7">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+    <div className="px-8 py-7 pb-28">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-line bg-bg/95 px-8 py-3 backdrop-blur">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Collections</h1>
           <p className="text-sm text-muted">

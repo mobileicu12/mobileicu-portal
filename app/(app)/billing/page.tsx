@@ -230,19 +230,19 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="px-8 py-7">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-neutral-900">Billing / POS</h1>
-        <div className="flex rounded-lg border border-neutral-300 p-1">
+    <div className="px-8 py-7 pb-16">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
+        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Billing / POS</h1>
+        <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
           <button
             onClick={() => { setMode("invoice"); setSegment("online"); }}
-            className={`rounded-md px-4 py-1.5 text-sm font-medium ${mode === "invoice" ? "bg-neutral-900 text-white" : "text-neutral-600"}`}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium ${mode === "invoice" ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}
           >
             Wholesale invoice
           </button>
           <button
             onClick={() => { setMode("pos"); setSegment("shop"); }}
-            className={`rounded-md px-4 py-1.5 text-sm font-medium ${mode === "pos" ? "bg-neutral-900 text-white" : "text-neutral-600"}`}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium ${mode === "pos" ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}
           >
             POS (instant sale)
           </button>

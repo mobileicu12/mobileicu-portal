@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bulkCustomerSegments, bulkDeleteCustomers } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ function gid(id: string) {
 
 // POST /api/customers/bulk  { action: "addSegments"|"removeSegments"|"delete", ids: [], segments?: [] }
 export async function POST(req: Request) {
+  const denied = await requirePermission("customers");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const body = (await req.json().catch(() => null)) as {
     action?: string;

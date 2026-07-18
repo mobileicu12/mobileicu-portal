@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getInvoiceDetail, updateInvoice, deleteInvoice, type UpdateInvoiceInput } from "@/lib/billing";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -19,6 +20,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("invoices");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const { id } = await params;
   const body = (await req.json().catch(() => null)) as UpdateInvoiceInput | null;
@@ -35,6 +38,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("invoices");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const { id } = await params;
   try {

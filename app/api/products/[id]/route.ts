@@ -6,6 +6,7 @@ import {
   deleteProductImage,
   type ProductEditInput,
 } from "@/lib/product-edit";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -27,6 +28,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("inventory");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
   const body = (await req.json().catch(() => ({}))) as

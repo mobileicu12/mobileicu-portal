@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createCustomer, listCustomers } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -22,6 +23,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const denied = await requirePermission("customers");
+  if (denied) return denied;
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }

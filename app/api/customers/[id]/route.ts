@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCustomer, addPayment, setCustomerSegments, setTradeCode, updateCustomer, type Payment } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -12,6 +13,8 @@ function gid(id: string) {
 type UpdateFields = { firstName?: string; lastName?: string; email?: string; phone?: string; company?: string; note?: string; openingBalance?: number };
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("customers");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
   const body = (await req.json().catch(() => null)) as { segments?: SegmentKey[]; action?: string; update?: UpdateFields } | null;
@@ -48,6 +51,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("customers");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
   const body = (await req.json().catch(() => null)) as Payment | null;

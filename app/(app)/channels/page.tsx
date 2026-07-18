@@ -34,13 +34,15 @@ export default function ChannelsPage() {
   }
 
   return (
-    <div className="px-8 py-7">
-      <h1 className="text-2xl font-semibold text-ink">Channels</h1>
-      <p className="mt-1 max-w-2xl text-sm text-muted">
-        Route products to the marketplaces you sell on. Mark each channel connected once you&apos;ve
-        linked it in Marketplace Connect, then assign products (Inventory → select → Edit values →
-        Channels). Stock stays synced across every channel automatically.
-      </p>
+    <div className="px-8 py-7 pb-16">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-line bg-bg/95 px-8 py-3 backdrop-blur">
+        <h1 className="text-2xl font-semibold text-ink">Channels</h1>
+        <p className="max-w-2xl text-sm text-muted">
+          Route products to the marketplaces you sell on. Mark each channel connected once you&apos;ve
+          linked it in Marketplace Connect, then assign products (Inventory → select → Edit values →
+          Channels). Stock stays synced across every channel automatically.
+        </p>
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CHANNELS.map((c) => {

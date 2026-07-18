@@ -7,6 +7,7 @@ import {
   bulkAddToCollection,
   bulkSetChannels,
 } from "@/lib/products";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -25,6 +26,8 @@ type Body = {
 };
 
 export async function POST(req: Request) {
+  const denied = await requirePermission("inventory");
+  if (denied) return denied;
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }

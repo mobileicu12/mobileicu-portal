@@ -15,6 +15,7 @@ const LABELS: { match: (p: string) => boolean; label: string }[] = [
   { match: (p) => p.startsWith("/orders"), label: "Orders" },
   { match: (p) => p.startsWith("/channels"), label: "Channels" },
   { match: (p) => p.startsWith("/settings"), label: "Settings" },
+  { match: (p) => p.startsWith("/users"), label: "Team & access" },
 ];
 
 export default function AppHeader() {

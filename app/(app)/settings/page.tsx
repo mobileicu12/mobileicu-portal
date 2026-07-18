@@ -60,9 +60,16 @@ export default function SettingsPage() {
   if (loading || !s) return <div className="px-8 py-7 text-sm text-neutral-400">Loading settings…</div>;
 
   return (
-    <div className="px-8 py-7">
-      <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Settings</h1>
-      <p className="mt-1 text-sm text-neutral-500">Business details used on your invoices, statements &amp; PDFs.</p>
+    <div className="px-8 py-7 pb-16">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Settings</h1>
+          <p className="text-sm text-neutral-500">Business details used on your invoices, statements &amp; PDFs.</p>
+        </div>
+        <button onClick={save} disabled={saving} className="rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">
+          {saving ? "Saving…" : "Save settings"}
+        </button>
+      </div>
 
       {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {msg && <p className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{msg}</p>}
@@ -101,6 +108,7 @@ export default function SettingsPage() {
       <button onClick={save} disabled={saving} className="mt-7 rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">
         {saving ? "Saving…" : "Save settings"}
       </button>
+      {msg && <p className="mt-3 text-sm text-emerald-600">{msg}</p>}
     </div>
   );
 }

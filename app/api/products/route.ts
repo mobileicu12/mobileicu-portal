@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { importRows, type ImportRow } from "@/lib/products";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  const denied = await requirePermission("inventory");
+  if (denied) return denied;
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }

@@ -107,11 +107,11 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="px-8 py-7">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="px-8 py-7 pb-28">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Customers</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="text-sm text-neutral-500">
             Segmented by source. <strong>Online / Registered</strong> customers are the only ones with wholesale price access.
           </p>
         </div>

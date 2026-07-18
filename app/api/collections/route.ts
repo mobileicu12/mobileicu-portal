@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCollectionsDetailed } from "@/lib/products";
 import { createCollection } from "@/lib/collections";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -17,6 +18,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = await requirePermission("collections");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const body = (await req.json().catch(() => ({}))) as { title?: string; descriptionHtml?: string };
   try {

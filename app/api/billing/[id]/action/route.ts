@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment } from "@/lib/billing";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
 // POST /api/billing/<id>/action  body: { action: "complete"|"duplicate"|"send"|"payment", ... }
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("invoices");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const { id } = await params;
   const decoded = decodeURIComponent(id);

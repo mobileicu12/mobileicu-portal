@@ -7,6 +7,7 @@ import {
   setCollectionParent,
 } from "@/lib/collections";
 import { bulkAddToCollection } from "@/lib/products";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -29,6 +30,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("collections");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
   const body = (await req.json().catch(() => ({}))) as {
@@ -58,6 +61,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("collections");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
   try {

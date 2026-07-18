@@ -31,15 +31,17 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="px-8 py-7">
-      <h1 className="text-2xl font-semibold text-neutral-900">Dashboard</h1>
-      <p className="mt-1 text-sm text-neutral-500">MOBILE ICU — control portal</p>
+    <div className="px-8 py-7 pb-16">
+      <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
+        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Dashboard</h1>
+        <p className="text-sm text-neutral-500">MOBILE ICU — control portal</p>
+      </div>
 
       {notConfigured && (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-neutral-700">
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-neutral-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-neutral-200">
           <strong className="font-semibold">Connect Shopify to begin.</strong> Add your{" "}
-          <code>shpat_</code> token to <code>.env.local</code> (key{" "}
-          <code>SHOPIFY_ADMIN_TOKEN</code>) and restart the server.
+          <code>SHOPIFY_CLIENT_ID</code> and <code>SHOPIFY_CLIENT_SECRET</code> (or a{" "}
+          <code>SHOPIFY_ADMIN_TOKEN</code>) to <code>.env.local</code> and restart the server.
         </div>
       )}
       {error && (
@@ -79,9 +81,9 @@ function Stat({
   tone: "ink" | "amber" | "red";
 }) {
   const color =
-    tone === "amber" ? "text-amber-600" : tone === "red" ? "text-red-600" : "text-neutral-900";
+    tone === "amber" ? "text-amber-600" : tone === "red" ? "text-red-600" : "text-neutral-900 dark:text-neutral-100";
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+    <div className="rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
       <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</p>
       <p className={`mt-2 text-3xl font-semibold ${color}`}>
         {value === undefined ? "—" : value.toLocaleString()}
@@ -94,9 +96,9 @@ function ActionCard({ href, title, desc }: { href: string; title: string; desc: 
   return (
     <Link
       href={href}
-      className="group rounded-2xl border border-neutral-200 bg-white p-5 transition hover:border-amber-400 hover:shadow-sm"
+      className="group rounded-2xl border border-neutral-200 bg-white p-5 transition hover:border-amber-400 hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
     >
-      <p className="font-semibold text-neutral-900 group-hover:text-amber-600">{title}</p>
+      <p className="font-semibold text-neutral-900 group-hover:text-amber-600 dark:text-neutral-100">{title}</p>
       <p className="mt-1 text-sm text-neutral-500">{desc}</p>
     </Link>
   );
