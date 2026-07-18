@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import ProductCard from "./ProductCard";
 import { CategoryNav } from "./CategorySidebar";
+import { useCart } from "./cart";
 import type { ShopProductCard, ShopCollectionCard } from "@/lib/storefront";
 
 type Sort = "featured" | "price-asc" | "price-desc" | "title";
@@ -23,6 +24,7 @@ export default function CollectionBrowser({
   collections?: ShopCollectionCard[];
   activeHandle?: string;
 }) {
+  const { trade } = useCart();
   const [sort, setSort] = useState<Sort>("featured");
   const [brands, setBrands] = useState<Set<string>>(new Set());
   const [types, setTypes] = useState<Set<string>>(new Set());
@@ -84,10 +86,12 @@ export default function CollectionBrowser({
           <FacetList items={modelFacet} selected={models} onToggle={(v) => toggle(models, setModels, v)} />
         </FacetGroup>
       )}
-      <FacetGroup title="Price" defaultOpen>
-        <input type="range" min={0} max={priceCeil} value={maxPrice ?? priceCeil} onChange={(e) => setMaxPrice(Number(e.target.value))} className="w-full accent-amber-500" />
-        <div className="flex justify-between text-xs text-neutral-500"><span>£0</span><span className="font-semibold text-neutral-900">Up to £{(maxPrice ?? priceCeil).toFixed(0)}</span></div>
-      </FacetGroup>
+      {trade && (
+        <FacetGroup title="Price" defaultOpen>
+          <input type="range" min={0} max={priceCeil} value={maxPrice ?? priceCeil} onChange={(e) => setMaxPrice(Number(e.target.value))} className="w-full accent-amber-500" />
+          <div className="flex justify-between text-xs text-neutral-500"><span>£0</span><span className="font-semibold text-neutral-900">Up to £{(maxPrice ?? priceCeil).toFixed(0)}</span></div>
+        </FacetGroup>
+      )}
       <label className="flex cursor-pointer items-center gap-2 border-t border-neutral-100 px-1 py-2.5 text-sm text-neutral-700">
         <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} className="h-4 w-4 accent-amber-500" /> In stock only
       </label>

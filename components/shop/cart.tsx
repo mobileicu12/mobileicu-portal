@@ -21,7 +21,7 @@ type CartCtx = {
 const Ctx = createContext<CartCtx | null>(null);
 const KEY = "micu_cart_v1";
 
-export function CartProvider({ domain, trade = false, children }: { domain: string; trade?: boolean; children: React.ReactNode }) {
+export function CartProvider({ trade = false, children }: { domain?: string; trade?: boolean; children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
@@ -48,22 +48,19 @@ export function CartProvider({ domain, trade = false, children }: { domain: stri
 
   const checkout = useCallback(async () => {
     if (!items.length || checkingOut) return;
-    if (trade) {
-      setCheckingOut(true);
-      try {
-        const res = await fetch("/api/shop/trade-checkout", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lines: items.map((i) => ({ variantId: i.variantId, quantity: i.qty, unitPrice: i.price })) }),
-        });
-        const d = await res.json();
-        if (res.ok && d.invoiceUrl) { window.location.href = d.invoiceUrl; return; }
-        alert(d.error || "Checkout failed.");
-      } finally { setCheckingOut(false); }
-      return;
-    }
-    const line = items.map((i) => `${i.numericId}:${i.qty}`).join(",");
-    window.location.href = `https://${domain}/cart/${line}`;
-  }, [items, domain, trade, checkingOut]);
+    // Ordering is for registered/logged-in customers only.
+    if (!trade) { window.location.href = "/shop/trade-login"; return; }
+    setCheckingOut(true);
+    try {
+      const res = await fetch("/api/shop/trade-checkout", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines: items.map((i) => ({ variantId: i.variantId, quantity: i.qty, unitPrice: i.price })) }),
+      });
+      const d = await res.json();
+      if (res.ok && d.invoiceUrl) { window.location.href = d.invoiceUrl; return; }
+      alert(d.error || "Checkout failed.");
+    } finally { setCheckingOut(false); }
+  }, [items, trade, checkingOut]);
 
   const value = useMemo<CartCtx>(() => ({
     items,

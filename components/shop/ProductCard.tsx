@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useCart } from "./cart";
+import { PriceLockInline, PriceLockButton } from "./PriceLock";
 import type { ShopProductCard } from "@/lib/storefront";
 
 export default function ProductCard({ p }: { p: ShopProductCard }) {
@@ -43,18 +44,26 @@ export default function ProductCard({ p }: { p: ShopProductCard }) {
         {(p.brand || p.type) && <p className="text-[11px] font-medium uppercase tracking-wide text-amber-600">{p.brand || p.type}</p>}
         <Link href={`/shop/p/${p.handle}`} className="mt-0.5 line-clamp-2 min-h-[2.5rem] flex-1 text-sm font-medium text-neutral-900 hover:text-amber-600">{p.title}</Link>
         <div className="mt-2 flex items-baseline gap-2">
-          <span className={`font-bold ${tradePrice != null ? "text-emerald-600" : "text-neutral-900"}`}>£{shownPrice.toFixed(2)}</span>
-          {tradePrice != null ? (
-            <span className="text-sm text-neutral-400 line-through">£{Number(p.price).toFixed(2)}</span>
-          ) : p.compareAt ? (
-            <span className="text-sm text-neutral-400 line-through">£{Number(p.compareAt).toFixed(2)}</span>
-          ) : null}
-          {tradePrice != null && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">TRADE</span>}
+          {trade ? (
+            <>
+              <span className={`font-bold ${tradePrice != null ? "text-emerald-600" : "text-neutral-900"}`}>£{shownPrice.toFixed(2)}</span>
+              {tradePrice != null ? (
+                <span className="text-sm text-neutral-400 line-through">£{Number(p.price).toFixed(2)}</span>
+              ) : p.compareAt ? (
+                <span className="text-sm text-neutral-400 line-through">£{Number(p.compareAt).toFixed(2)}</span>
+              ) : null}
+              {tradePrice != null && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">TRADE</span>}
+            </>
+          ) : (
+            <PriceLockInline />
+          )}
         </div>
 
-        {/* quick add */}
+        {/* quick add — registered customers only */}
         <div className="mt-3">
-          {p.hasOptions ? (
+          {!trade ? (
+            <PriceLockButton />
+          ) : p.hasOptions ? (
             <Link href={`/shop/p/${p.handle}`} className="flex w-full items-center justify-center rounded-full border border-neutral-300 py-2 text-sm font-semibold text-neutral-800 transition hover:border-neutral-900">
               Choose options →
             </Link>

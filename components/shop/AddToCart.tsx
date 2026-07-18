@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { useCart } from "./cart";
+import { PriceLockPanel } from "./PriceLock";
 import type { ShopProduct } from "@/lib/storefront";
 
 export default function AddToCart({ product }: { product: ShopProduct }) {
   const { add, trade } = useCart();
   const [variantId, setVariantId] = useState(product.variants[0]?.id ?? "");
   const [qty, setQty] = useState(1);
+
+  // Non-registered visitors can't see prices or buy.
+  if (!trade) return <PriceLockPanel />;
 
   const variant = product.variants.find((v) => v.id === variantId) ?? product.variants[0];
   const hasVariants = product.variants.length > 1;
