@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createBill, listInvoices, summarizeInvoices, type CreateBillInput } from "@/lib/billing";
 import { auth } from "@/auth";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -17,6 +18,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = await requirePermission("billing");
+  if (denied) return denied;
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }

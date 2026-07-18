@@ -1,15 +1,32 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getPortalUsers, addPortalUser, removePortalUser, isOwner } from "@/lib/portal-users";
+import {
+  getPublicUsers,
+  addPortalUser,
+  updatePortalUser,
+  removePortalUser,
+  isOwner,
+  type PermKey,
+} from "@/lib/portal-users";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
+async function ownerGuard() {
+  const session = await auth().catch(() => null);
+  const email = session?.user?.email;
+  return { ok: isOwner(email), email };
+}
+
 export async function GET() {
   if (!shopifyConfigured()) return NextResponse.json({ users: [], canManage: false });
-  const session = await auth();
+  const session = await auth().catch(() => null);
   try {
-    return NextResponse.json({ users: await getPortalUsers(), canManage: isOwner(session?.user?.email), me: session?.user?.email ?? null });
+    return NextResponse.json({
+      users: await getPublicUsers(),
+      canManage: isOwner(session?.user?.email),
+      me: session?.user?.email ?? null,
+    });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to load users.";
     return NextResponse.json({ error: msg, users: [], canManage: false }, { status: 502 });
@@ -17,21 +34,34 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!isOwner(session?.user?.email)) return NextResponse.json({ error: "Only the owner can add teammates (sign in with Google as the owner)." }, { status: 403 });
-  const { email } = (await req.json().catch(() => ({}))) as { email?: string };
-  if (!email) return NextResponse.json({ error: "Email required." }, { status: 400 });
+  const { ok } = await ownerGuard();
+  if (!ok) return NextResponse.json({ error: "Only the owner can add teammates (sign in as the owner)." }, { status: 403 });
+  const body = (await req.json().catch(() => ({}))) as { email?: string; name?: string; password?: string; permissions?: PermKey[] };
+  if (!body.email) return NextResponse.json({ error: "Email required." }, { status: 400 });
   try {
-    return NextResponse.json({ users: await addPortalUser(email) });
+    return NextResponse.json({ users: await addPortalUser({ email: body.email, name: body.name, password: body.password, permissions: body.permissions }) });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to add.";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 }
 
+export async function PATCH(req: Request) {
+  const { ok } = await ownerGuard();
+  if (!ok) return NextResponse.json({ error: "Only the owner can change teammate access." }, { status: 403 });
+  const body = (await req.json().catch(() => ({}))) as { email?: string; name?: string; permissions?: PermKey[]; password?: string | null };
+  if (!body.email) return NextResponse.json({ error: "Email required." }, { status: 400 });
+  try {
+    return NextResponse.json({ users: await updatePortalUser(body.email, { name: body.name, permissions: body.permissions, password: body.password }) });
+  } catch (e) {
+    const msg = e instanceof ShopifyError ? e.message : "Failed to update.";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
+}
+
 export async function DELETE(req: Request) {
-  const session = await auth();
-  if (!isOwner(session?.user?.email)) return NextResponse.json({ error: "Only the owner can remove teammates." }, { status: 403 });
+  const { ok } = await ownerGuard();
+  if (!ok) return NextResponse.json({ error: "Only the owner can remove teammates." }, { status: 403 });
   const { email } = (await req.json().catch(() => ({}))) as { email?: string };
   if (!email) return NextResponse.json({ error: "Email required." }, { status: 400 });
   try {
