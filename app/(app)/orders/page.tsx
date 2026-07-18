@@ -99,16 +99,38 @@ export default function OrdersPage() {
 
   return (
     <div className="px-8 py-7 pb-28">
-      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
-        <div>
-          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Orders</h1>
-          <p className="text-sm text-neutral-500">Completed sales across all sources — store, shop, eBay &amp; Amazon.</p>
+      <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Orders</h1>
+            <p className="text-sm text-neutral-500">Completed sales across all sources — store, shop, eBay &amp; Amazon.</p>
+          </div>
+          <button onClick={() => (window.location.href = "/api/orders/export")} disabled={orders.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ Export all</button>
         </div>
-        <button onClick={() => (window.location.href = "/api/orders/export")} disabled={orders.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ Export all</button>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order # or customer…" className="w-56 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
+          <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
+            {(["all", "unfulfilled", "fulfilled"] as const).map((f) => (
+              <button key={f} onClick={() => setFulFilter(f)} className={`rounded-md px-3 py-1 text-sm font-medium capitalize ${fulFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
+            ))}
+          </div>
+          <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
+            {(["all", "paid", "unpaid"] as const).map((f) => (
+              <button key={f} onClick={() => setPayFilter(f)} className={`rounded-md px-3 py-1 text-sm font-medium capitalize ${payFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
+            ))}
+          </div>
+          <div className="flex flex-wrap rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
+            <button onClick={() => setSegFilter("all")} className={`rounded-md px-3 py-1 text-sm font-medium ${segFilter === "all" ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>All sources</button>
+            {SEGMENTS.map((s) => (
+              <button key={s.key} onClick={() => setSegFilter(s.key)} className={`rounded-md px-3 py-1 text-sm font-medium ${segFilter === s.key ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{s.short}</button>
+            ))}
+          </div>
+          <span className="text-sm text-neutral-400">{filtered.length} shown</span>
+        </div>
       </div>
 
       {stats && (
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Tile label="Orders" value={String(stats.count)} />
           <Tile label="Sales" value={`£${stats.sales.toFixed(2)}`} />
           <Tile label="Unfulfilled" value={String(stats.unfulfilled)} accent="rose" />
@@ -118,27 +140,6 @@ export default function OrdersPage() {
 
       {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
-
-      <div className="mt-5 flex flex-wrap items-center gap-3">
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order # or customer…" className="w-56 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
-        <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
-          {(["all", "unfulfilled", "fulfilled"] as const).map((f) => (
-            <button key={f} onClick={() => setFulFilter(f)} className={`rounded-md px-3 py-1 text-sm font-medium capitalize ${fulFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
-          ))}
-        </div>
-        <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
-          {(["all", "paid", "unpaid"] as const).map((f) => (
-            <button key={f} onClick={() => setPayFilter(f)} className={`rounded-md px-3 py-1 text-sm font-medium capitalize ${payFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
-          ))}
-        </div>
-        <div className="flex flex-wrap rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
-          <button onClick={() => setSegFilter("all")} className={`rounded-md px-3 py-1 text-sm font-medium ${segFilter === "all" ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>All sources</button>
-          {SEGMENTS.map((s) => (
-            <button key={s.key} onClick={() => setSegFilter(s.key)} className={`rounded-md px-3 py-1 text-sm font-medium ${segFilter === s.key ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{s.short}</button>
-          ))}
-        </div>
-        <span className="text-sm text-neutral-400">{filtered.length} shown</span>
-      </div>
 
       <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <table className="w-full text-left text-sm">
@@ -177,9 +178,9 @@ export default function OrdersPage() {
         </table>
       </div>
 
-      {/* Bulk action bar */}
+      {/* Bulk action bar — sticky so it never hides or covers rows */}
       {selected.size > 0 && (
-        <div className="fixed bottom-14 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
+        <div className="sticky bottom-4 z-40 mx-auto mt-4 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
           <span className="font-medium">{selected.size} selected</span>
           <span className="h-4 w-px bg-white/20" />
           <button disabled={bulkBusy} onClick={bulkExport} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">⬇ Export</button>

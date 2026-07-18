@@ -108,40 +108,39 @@ export default function CustomersPage() {
 
   return (
     <div className="px-8 py-7 pb-28">
-      <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
-        <div>
-          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Customers</h1>
-          <p className="text-sm text-neutral-500">
-            Segmented by source. <strong>Online / Registered</strong> customers are the only ones with wholesale price access.
-          </p>
+      <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Customers</h1>
+            <p className="text-sm text-neutral-500">
+              Segmented by source. <strong>Online / Registered</strong> customers are the only ones with wholesale price access.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
+          >
+            {showForm ? "Close" : "+ Register customer"}
+          </button>
         </div>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
-        >
-          {showForm ? "Close" : "+ Register customer"}
-        </button>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <SegTab active={segFilter === "all"} onClick={() => pickSeg("all")} label="All" />
+          {SEGMENTS.map((s) => (
+            <SegTab key={s.key} active={segFilter === s.key} onClick={() => pickSeg(s.key)} label={s.label} />
+          ))}
+          <input
+            value={q}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search name, company, email or phone…"
+            className="ml-auto w-64 rounded-lg border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+          />
+        </div>
       </div>
 
       {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {flash && <p className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
 
       {showForm && <RegisterForm onCreated={() => { setShowForm(false); load(q, segFilter); }} />}
-
-      {/* segment tabs */}
-      <div className="mt-5 flex flex-wrap gap-2">
-        <SegTab active={segFilter === "all"} onClick={() => pickSeg("all")} label="All" />
-        {SEGMENTS.map((s) => (
-          <SegTab key={s.key} active={segFilter === s.key} onClick={() => pickSeg(s.key)} label={s.label} />
-        ))}
-      </div>
-
-      <input
-        value={q}
-        onChange={(e) => onSearch(e.target.value)}
-        placeholder="Search by name, company, email or phone…"
-        className="mt-4 w-full max-w-md rounded-lg border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-      />
 
       <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <table className="w-full text-left text-sm">
@@ -185,9 +184,9 @@ export default function CustomersPage() {
         </table>
       </div>
 
-      {/* Bulk action bar */}
+      {/* Bulk action bar — sticky so it never hides or covers rows */}
       {selected.size > 0 && (
-        <div className="fixed bottom-14 left-1/2 z-40 -translate-x-1/2">
+        <div className="sticky bottom-4 z-40 mx-auto mt-4 w-fit max-w-full">
           {segMode && (
             <div className="mb-2 max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
               <div className="flex flex-wrap items-center gap-2">
@@ -292,10 +291,10 @@ function RegisterForm({ onCreated }: { onCreated: () => void }) {
         <L label="Email"><input type="email" className={input} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></L>
         <L label="Phone">
           <div className="flex gap-2">
-            <select value={countryIso} onChange={(e) => setCountryIso(e.target.value)} className={`${input} w-32 shrink-0`}>
+            <select value={countryIso} onChange={(e) => setCountryIso(e.target.value)} className={`${input.replace("w-full", "")} w-28 shrink-0`}>
               {COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>{c.flag} {c.dial}</option>)}
             </select>
-            <input className={input} placeholder="7911 123456" value={f.phoneNumber} onChange={(e) => setF({ ...f, phoneNumber: e.target.value })} />
+            <input className={`${input} min-w-0 flex-1`} placeholder="7911 123456" value={f.phoneNumber} onChange={(e) => setF({ ...f, phoneNumber: e.target.value })} />
           </div>
         </L>
         <L label="Opening balance (£) — old outstanding brought forward">

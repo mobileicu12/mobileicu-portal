@@ -195,6 +195,7 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
     const cErrs = done.draftOrderComplete.userErrors;
     if (cErrs.length) throw new ShopifyError(cErrs.map((e) => e.message).join("; "));
     completed = true;
+    await fulfillOrder(done.draftOrderComplete.draftOrder?.order?.id ?? null);
   }
 
   return {
@@ -527,6 +528,33 @@ export async function updateInvoice(id: string, input: UpdateInvoiceInput): Prom
   return { id: d.id, name: d.name, invoiceUrl: d.invoiceUrl, subtotal: d.subtotalPrice, tax: d.totalTax, total: d.totalPrice, completed: false };
 }
 
+// Best-effort: mark a freshly-created order as fully fulfilled. Instant/POS sales
+// and completed wholesale bills mean the goods have left the building, so they
+// shouldn't linger as "Unfulfilled". Never throws — fulfillment must not block a sale.
+export async function fulfillOrder(orderId: string | null): Promise<void> {
+  if (!orderId) return;
+  try {
+    const q = await adminGraphQL<{
+      order: { fulfillmentOrders: { edges: { node: { id: string; status: string } }[] } } | null;
+    }>(
+      `query($id: ID!) { order(id: $id) { fulfillmentOrders(first: 20) { edges { node { id status } } } } }`,
+      { id: orderId },
+    );
+    const open = (q.order?.fulfillmentOrders.edges ?? [])
+      .map((e) => e.node)
+      .filter((n) => n.status === "OPEN" || n.status === "IN_PROGRESS" || n.status === "SCHEDULED");
+    if (!open.length) return;
+    await adminGraphQL(
+      `mutation($f: FulfillmentInput!) {
+        fulfillmentCreate(fulfillment: $f) { fulfillment { id status } userErrors { field message } }
+      }`,
+      { f: { lineItemsByFulfillmentOrder: open.map((n) => ({ fulfillmentOrderId: n.id })), notifyCustomer: false } },
+    );
+  } catch {
+    /* best-effort */
+  }
+}
+
 // ---- Complete a draft = mark paid, create the order, deduct stock ----
 export async function completeInvoice(id: string, paymentPending = false): Promise<{ orderId: string | null }> {
   const res = await adminGraphQL<{
@@ -545,7 +573,9 @@ export async function completeInvoice(id: string, paymentPending = false): Promi
   );
   const errs = res.draftOrderComplete.userErrors;
   if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
-  return { orderId: res.draftOrderComplete.draftOrder?.order?.id ?? null };
+  const orderId = res.draftOrderComplete.draftOrder?.order?.id ?? null;
+  await fulfillOrder(orderId);
+  return { orderId };
 }
 
 // ---- Delete a draft invoice ----

@@ -6,6 +6,7 @@ import { PERMISSIONS, ALL_PERMS, DEFAULT_MEMBER_PERMS, type PermKey } from "@/li
 type User = {
   email: string;
   name: string;
+  phone: string;
   role: "owner" | "member";
   addedAt: string;
   hasPassword: boolean;
@@ -95,7 +96,7 @@ export default function UsersPage() {
                       </span>
                     )}
                   </p>
-                  <p className="text-sm text-neutral-500">{u.email}</p>
+                  <p className="text-sm text-neutral-500">{u.email}{u.phone ? ` · ${u.phone}` : ""}</p>
                 </div>
                 {u.role !== "owner" && (
                   <div className="flex items-center gap-3 text-sm">
@@ -211,6 +212,7 @@ function PermPicker({ value, onChange }: { value: PermKey[]; onChange: (v: PermK
 function AddTeammate({ onDone, onError }: { onDone: (d: { users: User[] }, msg: string) => void; onError: (m: string) => void }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [perms, setPerms] = useState<PermKey[]>([...DEFAULT_MEMBER_PERMS]);
   const [busy, setBusy] = useState(false);
@@ -219,7 +221,7 @@ function AddTeammate({ onDone, onError }: { onDone: (d: { users: User[] }, msg: 
     if (!email.trim()) { onError("Email required."); return; }
     setBusy(true); onError("");
     try {
-      const res = await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name, password: password || undefined, permissions: perms }) });
+      const res = await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name, phone, password: password || undefined, permissions: perms }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
       onDone(d, `${email} added${password ? " with a password" : ""}.`);
@@ -232,7 +234,8 @@ function AddTeammate({ onDone, onError }: { onDone: (d: { users: User[] }, msg: 
       <div className="mt-3 grid max-w-2xl gap-3 sm:grid-cols-2">
         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Name<input className={`mt-1 ${inputCls}`} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Raj" /></label>
         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Email (their login ID)<input type="email" className={`mt-1 ${inputCls}`} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="raj@mobileicu.co.uk" /></label>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 sm:col-span-2">Password (optional — set one for ID login, or leave blank for Google-only)<input type="text" className={`mt-1 ${inputCls}`} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min 6 characters" /></label>
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Phone<input className={`mt-1 ${inputCls}`} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+44 7911 123456" /></label>
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Password (optional — for ID login; blank = Google-only)<input type="text" className={`mt-1 ${inputCls}`} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min 6 characters" /></label>
       </div>
       <p className="mt-4 text-sm font-medium text-neutral-700 dark:text-neutral-300">Feature access</p>
       <div className="mt-2 max-w-2xl"><PermPicker value={perms} onChange={setPerms} /></div>
@@ -243,10 +246,15 @@ function AddTeammate({ onDone, onError }: { onDone: (d: { users: User[] }, msg: 
 
 function ManageTeammate({ user, onSaved, onError }: { user: User; onSaved: (d: { users: User[] }, msg: string) => void; onError: (m: string) => void }) {
   const [name, setName] = useState(user.name);
+  const [emailVal, setEmailVal] = useState(user.email);
+  const [phone, setPhone] = useState(user.phone);
   const [perms, setPerms] = useState<PermKey[]>(user.permissions);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const dirtyPerms = useMemo(() => JSON.stringify([...perms].sort()) !== JSON.stringify([...user.permissions].sort()) || name !== user.name, [perms, name, user]);
+  const dirty = useMemo(
+    () => JSON.stringify([...perms].sort()) !== JSON.stringify([...user.permissions].sort()) || name !== user.name || phone !== user.phone || emailVal.trim().toLowerCase() !== user.email,
+    [perms, name, phone, emailVal, user],
+  );
 
   async function patch(body: Record<string, unknown>, msg: string) {
     setBusy(true); onError("");
@@ -260,9 +268,13 @@ function ManageTeammate({ user, onSaved, onError }: { user: User; onSaved: (d: {
 
   return (
     <div className="mt-4 space-y-4 border-t border-neutral-100 pt-4 dark:border-neutral-800">
-      <label className="block max-w-sm text-sm font-medium text-neutral-700 dark:text-neutral-300">Name<input className={`mt-1 ${inputCls}`} value={name} onChange={(e) => setName(e.target.value)} /></label>
+      <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Name<input className={`mt-1 ${inputCls}`} value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Login email<input type="email" className={`mt-1 ${inputCls}`} value={emailVal} onChange={(e) => setEmailVal(e.target.value)} /></label>
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 sm:col-span-2">Phone<input className={`mt-1 ${inputCls}`} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+44 7911 123456" /></label>
+      </div>
       <div className="max-w-2xl"><PermPicker value={perms} onChange={setPerms} /></div>
-      <button disabled={busy || !dirtyPerms} onClick={() => patch({ name, permissions: perms }, "Access updated.")} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">Save access</button>
+      <button disabled={busy || !dirty} onClick={() => patch({ newEmail: emailVal, name, phone, permissions: perms }, "Teammate updated.")} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">Save details &amp; access</button>
 
       <div className="flex flex-wrap items-end gap-2 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/50">
         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Set / reset password<input type="text" className={`mt-1 ${inputCls} w-56`} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="new password" /></label>

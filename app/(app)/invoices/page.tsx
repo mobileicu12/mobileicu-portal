@@ -236,9 +236,9 @@ export default function InvoicesPage() {
         </table>
       </div>
 
-      {/* Bulk action bar */}
+      {/* Bulk action bar — sticky so it never hides or covers rows */}
       {selected.size > 0 && (
-        <div className="fixed bottom-14 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
+        <div className="sticky bottom-4 z-40 mx-auto mt-4 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
           <span className="font-medium">{selected.size} selected</span>
           <span className="h-4 w-px bg-white/20" />
           <button disabled={bulkBusy} onClick={bulkMarkPaid} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">✓ Mark paid</button>

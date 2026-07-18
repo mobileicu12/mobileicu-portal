@@ -263,7 +263,7 @@ export default function CollectionsPage() {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="fixed bottom-14 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-full border border-line bg-ink px-4 py-2.5 text-sm text-bg shadow-2xl">
+        <div className="sticky bottom-4 z-40 mx-auto mt-4 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-line bg-ink px-4 py-2.5 text-sm text-bg shadow-2xl">
           <span className="font-medium">{selected.size} selected</span>
           <span className="h-4 w-px bg-bg/20" />
           <span className="text-bg/70">Move under</span>

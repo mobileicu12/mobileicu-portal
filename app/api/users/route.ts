@@ -34,10 +34,10 @@ export async function GET() {
 export async function POST(req: Request) {
   const { ok } = await ownerGuard();
   if (!ok) return NextResponse.json({ error: "Only the owner can add teammates (sign in as the owner)." }, { status: 403 });
-  const body = (await req.json().catch(() => ({}))) as { email?: string; name?: string; password?: string; permissions?: PermKey[] };
+  const body = (await req.json().catch(() => ({}))) as { email?: string; name?: string; phone?: string; password?: string; permissions?: PermKey[] };
   if (!body.email) return NextResponse.json({ error: "Email required." }, { status: 400 });
   try {
-    return NextResponse.json({ users: await addPortalUser({ email: body.email, name: body.name, password: body.password, permissions: body.permissions }) });
+    return NextResponse.json({ users: await addPortalUser({ email: body.email, name: body.name, phone: body.phone, password: body.password, permissions: body.permissions }) });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to add.";
     return NextResponse.json({ error: msg }, { status: 400 });
@@ -47,10 +47,10 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const { ok } = await ownerGuard();
   if (!ok) return NextResponse.json({ error: "Only the owner can change teammate access." }, { status: 403 });
-  const body = (await req.json().catch(() => ({}))) as { email?: string; name?: string; permissions?: PermKey[]; password?: string | null };
+  const body = (await req.json().catch(() => ({}))) as { email?: string; newEmail?: string; name?: string; phone?: string; permissions?: PermKey[]; password?: string | null };
   if (!body.email) return NextResponse.json({ error: "Email required." }, { status: 400 });
   try {
-    return NextResponse.json({ users: await updatePortalUser(body.email, { name: body.name, permissions: body.permissions, password: body.password }) });
+    return NextResponse.json({ users: await updatePortalUser(body.email, { email: body.newEmail, name: body.name, phone: body.phone, permissions: body.permissions, password: body.password }) });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to update.";
     return NextResponse.json({ error: msg }, { status: 400 });

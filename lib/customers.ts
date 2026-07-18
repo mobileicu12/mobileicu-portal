@@ -275,11 +275,6 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
       opening: { value: string } | null;
       defaultAddress: { address1: string | null; address2: string | null; city: string | null; zip: string | null; province: string | null; country: string | null } | null;
       ledger: { value: string } | null;
-      draftOrders: {
-        edges: {
-          node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; invoiceUrl: string | null; payments: { value: string } | null };
-        }[];
-      };
     } | null;
   }>(
     `query($id: ID!) {
@@ -291,15 +286,31 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         opening: metafield(namespace: "${LEDGER_NS}", key: "opening_balance") { value }
         defaultAddress { address1 address2 city zip province country }
         ledger: metafield(namespace: "${LEDGER_NS}", key: "${LEDGER_KEY}") { value }
-        draftOrders(first: 100, reverse: true) {
-          edges { node { id name status totalPrice createdAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
-        }
       }
     }`,
     { id },
   );
   const c = data.customer;
   if (!c) throw new ShopifyError("Customer not found.");
+
+  // Draft orders (our invoices) aren't a field on Customer — query them at the
+  // root, filtered to THIS customer only.
+  const numericId = id.split("/").pop() ?? id;
+  const dd = await adminGraphQL<{
+    draftOrders: {
+      edges: {
+        node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; invoiceUrl: string | null; payments: { value: string } | null };
+      }[];
+    };
+  }>(
+    `query($q: String!) {
+      draftOrders(first: 100, reverse: true, query: $q) {
+        edges { node { id name status totalPrice createdAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
+      }
+    }`,
+    { q: `customer_id:${numericId}` },
+  );
+
   let ledger: Ledger = { payments: [] };
   if (c.ledger?.value) {
     try {
@@ -328,7 +339,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     orders: Number(c.numberOfOrders ?? 0),
     totalSpent: c.amountSpent?.amount ?? "0",
     ledger,
-    invoices: c.draftOrders.edges.map((e) => {
+    invoices: dd.draftOrders.edges.map((e) => {
       let amountPaid = 0;
       if (e.node.payments?.value) {
         try {

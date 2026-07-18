@@ -301,7 +301,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
 
       {/* Bulk ribbon */}
       {selected.size > 0 && (
-        <div className="fixed bottom-14 left-1/2 z-40 -translate-x-1/2">
+        <div className="sticky bottom-4 z-40 mx-auto mt-4 w-fit max-w-full">
           {editMode && (
             <div className="mb-2 max-w-[92vw] rounded-2xl border border-line bg-surface p-3 shadow-2xl">
               <div className="flex flex-wrap items-center gap-3">

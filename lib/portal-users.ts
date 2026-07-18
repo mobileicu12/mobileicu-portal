@@ -16,6 +16,7 @@ function normPerms(v: unknown): PermKey[] | undefined {
 export type PortalUser = {
   email: string;
   name?: string;
+  phone?: string;
   role: "owner" | "member";
   addedAt: string;
   passwordHash?: string;
@@ -26,6 +27,7 @@ export type PortalUser = {
 export type PublicUser = {
   email: string;
   name: string;
+  phone: string;
   role: "owner" | "member";
   addedAt: string;
   hasPassword: boolean;
@@ -79,6 +81,7 @@ export async function getPortalUsers(): Promise<PortalUser[]> {
     .map((u) => ({
       email: u.email.toLowerCase(),
       name: typeof u.name === "string" ? u.name : undefined,
+      phone: typeof u.phone === "string" ? u.phone : undefined,
       role: "member",
       addedAt: u.addedAt || "",
       passwordHash: typeof u.passwordHash === "string" ? u.passwordHash : undefined,
@@ -94,6 +97,7 @@ export function toPublic(u: PortalUser): PublicUser {
   return {
     email: u.email,
     name: u.name || "",
+    phone: u.phone || "",
     role: u.role,
     addedAt: u.addedAt,
     hasPassword: !!u.passwordHash,
@@ -147,6 +151,7 @@ async function save(users: PortalUser[]): Promise<void> {
     .map((u) => ({
       email: u.email,
       name: u.name || undefined,
+      phone: u.phone || undefined,
       addedAt: u.addedAt,
       passwordHash: u.passwordHash || undefined,
       permissions: u.permissions, // may be undefined
@@ -158,7 +163,7 @@ async function save(users: PortalUser[]): Promise<void> {
   if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
 }
 
-export type AddUserInput = { email: string; name?: string; password?: string; permissions?: PermKey[] };
+export type AddUserInput = { email: string; name?: string; phone?: string; password?: string; permissions?: PermKey[] };
 
 export async function addPortalUser(input: AddUserInput | string): Promise<PublicUser[]> {
   const data: AddUserInput = typeof input === "string" ? { email: input } : input;
@@ -170,12 +175,14 @@ export async function addPortalUser(input: AddUserInput | string): Promise<Publi
   const existing = users.find((u) => u.email === e);
   if (existing) {
     if (data.name !== undefined) existing.name = data.name.trim() || undefined;
+    if (data.phone !== undefined) existing.phone = data.phone.trim() || undefined;
     if (data.permissions) existing.permissions = normPerms(data.permissions) ?? [];
     if (data.password) existing.passwordHash = hashPassword(data.password);
   } else {
     users.push({
       email: e,
       name: data.name?.trim() || undefined,
+      phone: data.phone?.trim() || undefined,
       role: "member",
       addedAt: new Date().toISOString(),
       passwordHash: data.password ? hashPassword(data.password) : undefined,
@@ -186,7 +193,7 @@ export async function addPortalUser(input: AddUserInput | string): Promise<Publi
   return getPublicUsers();
 }
 
-export type UpdateUserInput = { name?: string; permissions?: PermKey[]; password?: string | null };
+export type UpdateUserInput = { email?: string; name?: string; phone?: string; permissions?: PermKey[]; password?: string | null };
 
 export async function updatePortalUser(email: string, patch: UpdateUserInput): Promise<PublicUser[]> {
   const e = email.trim().toLowerCase();
@@ -194,7 +201,18 @@ export async function updatePortalUser(email: string, patch: UpdateUserInput): P
   const users = await getPortalUsers();
   const u = users.find((x) => x.email === e);
   if (!u) throw new ShopifyError("Teammate not found.");
+  // Change of login email (re-key). Must be a valid, unused, non-owner address.
+  if (patch.email !== undefined) {
+    const ne = patch.email.trim().toLowerCase();
+    if (ne && ne !== e) {
+      if (!ne.includes("@") || ne.length < 5) throw new ShopifyError("Enter a valid email address.");
+      if (ne === OWNER_EMAIL) throw new ShopifyError("That email belongs to the owner.");
+      if (users.some((x) => x.email === ne)) throw new ShopifyError("Another teammate already uses that email.");
+      u.email = ne;
+    }
+  }
   if (patch.name !== undefined) u.name = patch.name.trim() || undefined;
+  if (patch.phone !== undefined) u.phone = patch.phone.trim() || undefined;
   if (patch.permissions !== undefined) u.permissions = normPerms(patch.permissions) ?? [];
   if (patch.password !== undefined) {
     if (patch.password === null || patch.password === "") u.passwordHash = undefined; // revoke password login
