@@ -139,7 +139,7 @@ export default function CollectionsPage() {
       const res = await fetch("/api/collections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: newTitle }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
-      router.push(`/collections/${nid(d.id)}`);
+      router.push(`/portal/collections/${nid(d.id)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -170,7 +170,7 @@ export default function CollectionsPage() {
             <button onClick={() => toggle(c.id)} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-ink">{isOpen ? "▾" : "▸"}</button>
           ) : <span className="inline-block h-5 w-5 text-center text-muted/40">·</span>}
 
-          <Link href={`/collections/${nid(c.id)}`} className="flex min-w-0 flex-1 items-center gap-2">
+          <Link href={`/portal/collections/${nid(c.id)}`} className="flex min-w-0 flex-1 items-center gap-2">
             {c.image ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={c.image} alt="" className="h-7 w-7 shrink-0 rounded border border-line object-cover" />
@@ -241,7 +241,7 @@ export default function CollectionsPage() {
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {gridShown.map((c) => (
-            <Link key={c.id} href={`/collections/${nid(c.id)}`} className="group overflow-hidden rounded-2xl border border-line bg-surface transition hover:border-accent hover:shadow-lg">
+            <Link key={c.id} href={`/portal/collections/${nid(c.id)}`} className="group overflow-hidden rounded-2xl border border-line bg-surface transition hover:border-accent hover:shadow-lg">
               <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-subtle">
                 {c.image ? (
                   // eslint-disable-next-line @next/next/no-img-element

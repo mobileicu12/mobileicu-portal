@@ -160,7 +160,7 @@ export default function CustomersPage() {
               <tr key={c.id} className={selected.has(c.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}>
                 <td className="px-4 py-3"><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleRow(c.id)} className="h-4 w-4 accent-amber-500" /></td>
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">
-                  <Link href={`/customers/${numericId(c.id)}`} className="hover:text-amber-600">
+                  <Link href={`/portal/customers/${numericId(c.id)}`} className="hover:text-amber-600">
                     {c.name || "(no name)"}
                   </Link>
                 </td>

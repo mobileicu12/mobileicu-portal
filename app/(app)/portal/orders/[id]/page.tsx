@@ -55,7 +55,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="px-8 py-7">
-      <Link href="/orders" className="text-sm text-neutral-500 hover:text-amber-600">← All orders</Link>
+      <Link href="/portal/orders" className="text-sm text-neutral-500 hover:text-amber-600">← All orders</Link>
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{o.name}</h1>
         {seg && <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${seg.badge}`}>{seg.label}</span>}

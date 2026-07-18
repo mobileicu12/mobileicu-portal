@@ -61,11 +61,11 @@ export default function Dashboard() {
         Quick actions
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <ActionCard href="/inventory" title="Manage inventory" desc="Search, edit stock, bulk update." />
-        <ActionCard href="/products/new" title="Add a product" desc="Create a product with all details." />
-        <ActionCard href="/import-export" title="Import / Export" desc="Bulk add via Excel; export catalog." />
-        <ActionCard href="/billing" title="New bill / invoice" desc="Wholesale invoice or POS sale." />
-        <ActionCard href="/invoices" title="View invoices" desc="Past bills and orders." />
+        <ActionCard href="/portal/inventory" title="Manage inventory" desc="Search, edit stock, bulk update." />
+        <ActionCard href="/portal/products/new" title="Add a product" desc="Create a product with all details." />
+        <ActionCard href="/portal/import-export" title="Import / Export" desc="Bulk add via Excel; export catalog." />
+        <ActionCard href="/portal/billing" title="New bill / invoice" desc="Wholesale invoice or POS sale." />
+        <ActionCard href="/portal/invoices" title="View invoices" desc="Past bills and orders." />
       </div>
     </div>
   );

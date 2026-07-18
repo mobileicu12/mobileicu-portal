@@ -447,7 +447,7 @@ function StockRow({
             <img src={row.image} alt="" className="h-10 w-10 rounded-md border border-line object-cover" />
           ) : <div className="h-10 w-10 rounded-md bg-subtle" />}
           <div>
-            <Link href={`/products/${row.productId.split("/").pop()}/edit`} className="font-medium text-ink hover:text-accent">{row.productTitle}</Link>
+            <Link href={`/portal/products/${row.productId.split("/").pop()}/edit`} className="font-medium text-ink hover:text-accent">{row.productTitle}</Link>
             <p className="text-xs text-muted">
               {row.variantTitle && <span>{row.variantTitle} · </span>}
               <span className={row.status === "ACTIVE" ? "text-emerald-500" : "text-muted"}>{row.status}</span>

@@ -201,7 +201,7 @@ export default function InvoiceEditPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Action failed");
       if (action === "duplicate" && d.id) {
-        router.push(`/invoices/${encodeURIComponent(d.id)}`);
+        router.push(`/portal/invoices/${encodeURIComponent(d.id)}`);
         return;
       }
       await load();
@@ -242,7 +242,7 @@ export default function InvoiceEditPage() {
       const res = await fetch(`/api/billing/${encId}`, { method: "DELETE" });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Delete failed");
-      router.push("/invoices");
+      router.push("/portal/invoices");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
       setBusy("");
@@ -260,7 +260,7 @@ export default function InvoiceEditPage() {
 
   return (
     <div className="px-8 py-7">
-      <Link href="/invoices" className="text-sm text-neutral-500 hover:text-amber-600">← All invoices</Link>
+      <Link href="/portal/invoices" className="text-sm text-neutral-500 hover:text-amber-600">← All invoices</Link>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">

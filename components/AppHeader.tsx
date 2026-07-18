@@ -4,18 +4,18 @@ import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 
 const LABELS: { match: (p: string) => boolean; label: string }[] = [
-  { match: (p) => p === "/", label: "Dashboard" },
-  { match: (p) => p.startsWith("/inventory"), label: "Inventory" },
-  { match: (p) => p.startsWith("/collections"), label: "Collections" },
-  { match: (p) => p.startsWith("/customers"), label: "Customers" },
-  { match: (p) => p.startsWith("/products/new"), label: "Add Product" },
-  { match: (p) => p.startsWith("/import-export"), label: "Import / Export" },
-  { match: (p) => p.startsWith("/billing"), label: "Billing / POS" },
-  { match: (p) => p.startsWith("/invoices"), label: "Invoices" },
-  { match: (p) => p.startsWith("/orders"), label: "Orders" },
-  { match: (p) => p.startsWith("/channels"), label: "Channels" },
-  { match: (p) => p.startsWith("/settings"), label: "Settings" },
-  { match: (p) => p.startsWith("/users"), label: "Team & access" },
+  { match: (p) => p === "/portal", label: "Dashboard" },
+  { match: (p) => p.startsWith("/portal/inventory"), label: "Inventory" },
+  { match: (p) => p.startsWith("/portal/collections"), label: "Collections" },
+  { match: (p) => p.startsWith("/portal/customers"), label: "Customers" },
+  { match: (p) => p.startsWith("/portal/products/new"), label: "Add Product" },
+  { match: (p) => p.startsWith("/portal/import-export"), label: "Import / Export" },
+  { match: (p) => p.startsWith("/portal/billing"), label: "Billing / POS" },
+  { match: (p) => p.startsWith("/portal/invoices"), label: "Invoices" },
+  { match: (p) => p.startsWith("/portal/orders"), label: "Orders" },
+  { match: (p) => p.startsWith("/portal/channels"), label: "Channels" },
+  { match: (p) => p.startsWith("/portal/settings"), label: "Settings" },
+  { match: (p) => p.startsWith("/portal/users"), label: "Team & access" },
 ];
 
 export default function AppHeader() {

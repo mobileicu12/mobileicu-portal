@@ -11,7 +11,7 @@ export default async function NoAccess({ searchParams }: { searchParams: Promise
           Your account doesn&apos;t have permission to open{feature ? <> the <strong className="capitalize">{feature}</strong></> : " this"} section.
           Ask the owner to grant you access under <strong>Team &amp; access</strong>.
         </p>
-        <Link href="/" className="mt-6 inline-block rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">
+        <Link href="/portal" className="mt-6 inline-block rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">
           Back to dashboard
         </Link>
       </div>

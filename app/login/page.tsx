@@ -15,7 +15,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const from = params.get("from") || "/";
+  const from = params.get("from") || "/portal";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

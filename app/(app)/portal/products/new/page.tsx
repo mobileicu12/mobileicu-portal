@@ -69,7 +69,7 @@ export default function NewProductPage() {
         setForm({ ...EMPTY, brand: form.brand, type: form.type, shopifyType: form.shopifyType });
         setSuccess(`Saved “${form.title}”. Add the next one.`);
       } else {
-        router.push("/inventory");
+        router.push("/portal/inventory");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");

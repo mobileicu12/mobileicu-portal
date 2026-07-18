@@ -91,7 +91,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       {/* Ribbon */}
       <div className="sticky top-0 z-20 -mx-8 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg/90 px-8 py-3 backdrop-blur">
         <div className="flex items-center gap-3">
-          <Link href="/inventory" className="text-sm text-muted hover:text-ink">← Inventory</Link>
+          <Link href="/portal/inventory" className="text-sm text-muted hover:text-ink">← Inventory</Link>
           <h1 className="text-lg font-semibold text-ink">Edit product</h1>
         </div>
         <div className="flex items-center gap-2">
@@ -171,7 +171,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           <Card title="Collections">
             {p.collections.length === 0 ? <p className="text-sm text-muted">None</p> : (
               <div className="flex flex-wrap gap-1.5">
-                {p.collections.map((c) => <Link key={c.id} href={`/collections/${c.id.split("/").pop()}`} className="rounded-full bg-subtle px-2.5 py-1 text-xs text-ink hover:text-accent">{c.title}</Link>)}
+                {p.collections.map((c) => <Link key={c.id} href={`/portal/collections/${c.id.split("/").pop()}`} className="rounded-full bg-subtle px-2.5 py-1 text-xs text-ink hover:text-accent">{c.title}</Link>)}
               </div>
             )}
           </Card>

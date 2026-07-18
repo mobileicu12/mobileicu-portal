@@ -118,7 +118,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
     try {
       const res = await fetch(`/api/collections/${id}`, { method: "DELETE" });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed"); }
-      router.push("/collections");
+      router.push("/portal/collections");
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); setBusy(false); }
   }
 
@@ -167,7 +167,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
     <div className="px-8 py-7 pb-28">
       {/* Sticky header */}
       <div className="sticky top-0 z-30 -mx-8 mb-5 border-b border-line bg-bg/95 px-8 py-3 backdrop-blur">
-        <Link href="/collections" className="text-xs text-muted hover:text-ink">← Collections</Link>
+        <Link href="/portal/collections" className="text-xs text-muted hover:text-ink">← Collections</Link>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold text-ink">{c.title}</h1>
           <div className="flex items-center gap-3">
@@ -278,7 +278,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
                           <img src={p.image} alt="" className="h-9 w-9 rounded border border-line object-cover" />
                         ) : <div className="h-9 w-9 rounded bg-subtle" />}
                         <div>
-                          <Link href={`/products/${p.id.split("/").pop()}/edit`} className="font-medium text-ink hover:text-accent">{p.title}</Link>
+                          <Link href={`/portal/products/${p.id.split("/").pop()}/edit`} className="font-medium text-ink hover:text-accent">{p.title}</Link>
                           <p className="text-xs text-muted">{p.sku || "—"} · <span className={p.status === "ACTIVE" ? "text-emerald-500" : "text-muted"}>{p.status}</span></p>
                         </div>
                       </div>

@@ -95,7 +95,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="px-8 py-7">
-      <Link href="/customers" className="text-sm text-neutral-500 hover:text-neutral-900">← Customers</Link>
+      <Link href="/portal/customers" className="text-sm text-neutral-500 hover:text-neutral-900">← Customers</Link>
       <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900">{c.name || "(no name)"}</h1>
@@ -131,7 +131,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             </button>
           )}
           <Link
-            href={`/billing?customer=${id}`}
+            href={`/portal/billing?customer=${id}`}
             className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
           >
             + New bill
@@ -156,7 +156,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Invoices <span className="text-sm font-normal text-neutral-400">({shownInvoices.length})</span></h2>
-              <Link href={`/billing?customer=${id}`} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900">+ New</Link>
+              <Link href={`/portal/billing?customer=${id}`} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900">+ New</Link>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <div className="flex rounded-lg border border-neutral-300 p-0.5 dark:border-neutral-700">
@@ -174,7 +174,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </div>
           <div className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto px-4 dark:divide-neutral-800">
             {shownInvoices.map((i) => (
-              <Link key={i.id} href={`/invoices/${i.id.split("/").pop()}`} className="flex items-center justify-between py-2.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
+              <Link key={i.id} href={`/portal/invoices/${i.id.split("/").pop()}`} className="flex items-center justify-between py-2.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                 <div>
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">{i.name}</p>
                   <p className="text-xs text-neutral-500">{new Date(i.createdAt).toLocaleDateString("en-GB")} · {i.status === "COMPLETED" ? "Paid" : "Draft"}</p>

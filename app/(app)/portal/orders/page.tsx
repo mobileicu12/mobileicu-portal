@@ -159,7 +159,7 @@ export default function OrdersPage() {
             {filtered.map((o) => {
               const seg = SEGMENTS.find((x) => x.key === o.segment);
               return (
-                <tr key={o.id} onClick={() => router.push(`/orders/${encodeURIComponent(o.id)}`)} className={`cursor-pointer ${selected.has(o.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
+                <tr key={o.id} onClick={() => router.push(`/portal/orders/${encodeURIComponent(o.id)}`)} className={`cursor-pointer ${selected.has(o.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleRow(o.id)} className="h-4 w-4 accent-amber-500" /></td>
                   <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{o.name}<span className="ml-1 text-xs font-normal text-neutral-400">· {o.itemCount} item{o.itemCount === 1 ? "" : "s"}</span></td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{o.customer}</td>

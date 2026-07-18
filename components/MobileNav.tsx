@@ -7,7 +7,7 @@ import { signOut } from "next-auth/react";
 import { NAV, visibleNav, type Me, type NavItem } from "@/lib/nav";
 
 function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return href === "/portal" ? pathname === "/portal" : pathname.startsWith(href);
 }
 
 function NavIcon({ d, className }: { d: string; className?: string }) {
