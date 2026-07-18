@@ -1,4 +1,3 @@
-import CategorySidebar from "@/components/shop/CategorySidebar";
 import CollectionBrowser from "@/components/shop/CollectionBrowser";
 import { getAllProducts, getStorefrontCollections } from "@/lib/storefront";
 
@@ -15,11 +14,8 @@ export default async function AllProductsPage() {
       <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900">Shop all</h1>
       <p className="mt-1 text-neutral-500">Browse the full range — filter by brand, part or model.</p>
 
-      <div className="mt-8 flex gap-8">
-        <CategorySidebar collections={allCols} active="" />
-        <div className="min-w-0 flex-1">
-          <CollectionBrowser products={products} />
-        </div>
+      <div className="mt-8">
+        <CollectionBrowser products={products} collections={allCols} activeHandle="" />
       </div>
     </div>
   );

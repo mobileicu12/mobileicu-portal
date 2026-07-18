@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import CategorySidebar from "@/components/shop/CategorySidebar";
 import CollectionBrowser from "@/components/shop/CollectionBrowser";
 import { getStorefrontCollection, getStorefrontCollections } from "@/lib/storefront";
 
@@ -39,11 +38,8 @@ export default async function CollectionPage({ params }: { params: Promise<{ han
         </div>
       )}
 
-      <div className="mt-8 flex gap-8">
-        <CategorySidebar collections={allCols} active={c.handle} />
-        <div className="min-w-0 flex-1">
-          <CollectionBrowser products={c.products} />
-        </div>
+      <div className="mt-8">
+        <CollectionBrowser products={c.products} collections={allCols} activeHandle={c.handle} />
       </div>
     </div>
   );

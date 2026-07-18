@@ -72,16 +72,23 @@ function Branch({ node, active, depth }: { node: Node; active: string; depth: nu
   );
 }
 
-export default function CategorySidebar({ collections, active }: { collections: ShopCollectionCard[]; active: string }) {
+// Embeddable category tree (no wrapper) — used inside the unified filter rail.
+export function CategoryNav({ collections, active }: { collections: ShopCollectionCard[]; active: string }) {
   const tree = buildTree(collections.filter((c) => c.count > 0 || collections.some((x) => x.parent === c.id)));
   return (
+    <nav className="space-y-0.5">
+      <Link href="/shop/collections" className={`block rounded-lg px-2.5 py-1.5 text-sm font-medium ${active === "" ? "text-amber-700" : "text-neutral-700 hover:bg-neutral-50 hover:text-amber-600"}`}>All categories</Link>
+      {tree.map((n) => <Branch key={n.id} node={n} active={active} depth={0} />)}
+    </nav>
+  );
+}
+
+export default function CategorySidebar({ collections, active }: { collections: ShopCollectionCard[]; active: string }) {
+  return (
     <aside className="hidden w-60 shrink-0 lg:block">
-      <div className="sticky top-24 rounded-2xl border border-neutral-200 bg-white p-3">
+      <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-3">
         <p className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-neutral-400">Categories</p>
-        <nav className="space-y-0.5">
-          <Link href="/shop/collections" className={`block rounded-lg px-2.5 py-1.5 text-sm font-medium ${active === "" ? "text-amber-700" : "text-neutral-700 hover:bg-neutral-50 hover:text-amber-600"}`}>All categories</Link>
-          {tree.map((n) => <Branch key={n.id} node={n} active={active} depth={0} />)}
-        </nav>
+        <CategoryNav collections={collections} active={active} />
       </div>
     </aside>
   );

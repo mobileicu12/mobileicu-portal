@@ -1,5 +1,4 @@
 import Link from "next/link";
-import CategorySidebar from "@/components/shop/CategorySidebar";
 import CollectionBrowser from "@/components/shop/CollectionBrowser";
 import { searchStorefront, getStorefrontCollections } from "@/lib/storefront";
 
@@ -22,13 +21,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
 
       {q.trim() && <p className="mt-6 text-sm text-neutral-500">Results for “{q}”</p>}
 
-      <div className="mt-6 flex gap-8">
-        <CategorySidebar collections={allCols} active="" />
-        <div className="min-w-0 flex-1">
-          {q.trim() ? (
-            results.length ? <CollectionBrowser products={results} /> : <p className="py-16 text-center text-neutral-400">No products found. <Link href="/shop/collections" className="text-amber-600 hover:underline">Browse all →</Link></p>
-          ) : <p className="py-16 text-center text-neutral-400">Type above to search the catalogue.</p>}
-        </div>
+      <div className="mt-6">
+        {q.trim() ? (
+          results.length ? <CollectionBrowser products={results} collections={allCols} activeHandle="" /> : <p className="py-16 text-center text-neutral-400">No products found. <Link href="/shop/collections" className="text-amber-600 hover:underline">Browse all →</Link></p>
+        ) : <p className="py-16 text-center text-neutral-400">Type above to search the catalogue.</p>}
       </div>
     </div>
   );
