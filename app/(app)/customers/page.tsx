@@ -142,8 +142,8 @@ export default function CustomersPage() {
 
       {showForm && <RegisterForm onCreated={() => { setShowForm(false); load(q, segFilter); }} />}
 
-      <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <table className="w-full text-left text-sm">
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+        <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>

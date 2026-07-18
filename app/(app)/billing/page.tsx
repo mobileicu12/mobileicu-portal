@@ -302,8 +302,8 @@ export default function BillingPage() {
             )}
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-            <table className="w-full text-left text-sm">
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white">
+            <table className="w-full min-w-[640px] text-left text-sm">
               <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500">
                 <tr>
                   <th className="px-4 py-3">Item</th>

@@ -1,4 +1,5 @@
 import Sidebar from "@/components/Sidebar";
+import MobileNav from "@/components/MobileNav";
 import AppHeader from "@/components/AppHeader";
 import AppFooter from "@/components/AppFooter";
 
@@ -10,9 +11,11 @@ export default function AppLayout({
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <AppHeader />
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        {/* pb clears the floating mobile nav; removed on md+ where the sidebar is shown */}
+        <div className="flex-1 overflow-y-auto pb-24 md:pb-0">{children}</div>
         <AppFooter />
       </main>
+      <MobileNav />
     </div>
   );
 }

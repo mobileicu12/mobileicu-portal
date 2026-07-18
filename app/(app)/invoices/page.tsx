@@ -39,6 +39,8 @@ export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid">("all");
   const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
   const [staffFilter, setStaffFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [flash, setFlash] = useState("");
@@ -62,15 +64,48 @@ export default function InvoicesPage() {
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
+    const fromT = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+    const toT = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
     return invoices.filter((inv) => {
       if (statusFilter === "open" && inv.status === "COMPLETED") return false;
       if (statusFilter === "paid" && inv.status !== "COMPLETED") return false;
       if (segFilter !== "all" && inv.segment !== segFilter) return false;
       if (staffFilter !== "all" && (inv.staff || "") !== staffFilter) return false;
+      const t = new Date(inv.createdAt).getTime();
+      if (fromT !== null && t < fromT) return false;
+      if (toT !== null && t > toT) return false;
       if (!s) return true;
       return inv.invoiceNo.toLowerCase().includes(s) || inv.name.toLowerCase().includes(s) || inv.customer.toLowerCase().includes(s) || (inv.staff || "").toLowerCase().includes(s);
     });
-  }, [invoices, search, statusFilter, segFilter, staffFilter]);
+  }, [invoices, search, statusFilter, segFilter, staffFilter, dateFrom, dateTo]);
+
+  // Live summary of whatever range/filters are currently applied.
+  const rangeStats = useMemo(() => {
+    let total = 0, paid = 0, outstanding = 0;
+    for (const inv of filtered) {
+      const t = parseFloat(inv.total) || 0;
+      total += t;
+      if (inv.status === "COMPLETED") paid += t; else outstanding += t;
+    }
+    return { count: filtered.length, total, paid, outstanding };
+  }, [filtered]);
+
+  function todayStr() { return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD (local)
+  function setPreset(preset: "today" | "7d" | "month" | "all") {
+    if (preset === "all") { setDateFrom(""); setDateTo(""); return; }
+    const now = new Date();
+    const to = todayStr();
+    if (preset === "today") { setDateFrom(to); setDateTo(to); return; }
+    if (preset === "7d") { const d = new Date(now); d.setDate(d.getDate() - 6); setDateFrom(d.toLocaleDateString("en-CA")); setDateTo(to); return; }
+    if (preset === "month") { const d = new Date(now.getFullYear(), now.getMonth(), 1); setDateFrom(d.toLocaleDateString("en-CA")); setDateTo(to); }
+  }
+  function downloadReport() {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("from", dateFrom);
+    if (dateTo) params.set("to", dateTo);
+    // No range selected → report defaults to today on the server.
+    window.location.href = `/api/billing/report?${params.toString()}`;
+  }
 
   async function downloadPdf(e: React.MouseEvent, inv: Invoice) {
     e.stopPropagation();
@@ -139,8 +174,9 @@ export default function InvoicesPage() {
             <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Invoices</h1>
             <p className="text-sm text-neutral-500">Bills &amp; invoices created from the portal. Click a row to edit.</p>
           </div>
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <a href="/billing" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">+ New bill</a>
+            <button onClick={downloadReport} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400">📊 Day report</button>
             <button onClick={() => downloadXlsx()} disabled={invoices.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ Export all</button>
           </div>
         </div>
@@ -171,6 +207,20 @@ export default function InvoicesPage() {
           )}
           <span className="text-sm text-neutral-400">{filtered.length} shown</span>
         </div>
+        {/* date range */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
+            {([["today", "Today"], ["7d", "7 days"], ["month", "Month"], ["all", "All"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setPreset(k)} className="rounded-md px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800">{label}</button>
+            ))}
+          </div>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
+          <span className="text-xs text-neutral-400">to</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
+          <span className="ml-auto rounded-lg bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+            {dateFrom || dateTo ? "Range" : "All time"}: <strong>{rangeStats.count}</strong> bills · <strong>£{rangeStats.total.toFixed(2)}</strong> · paid £{rangeStats.paid.toFixed(2)} · due £{rangeStats.outstanding.toFixed(2)}
+          </span>
+        </div>
       </div>
 
       {/* stat tiles */}
@@ -186,8 +236,8 @@ export default function InvoicesPage() {
       {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
 
-      <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <table className="w-full text-left text-sm">
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+        <table className="w-full min-w-[820px] text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
