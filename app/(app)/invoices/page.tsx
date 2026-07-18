@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadBusiness, type Business } from "@/lib/business";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
+import PdfPreviewModal from "@/components/PdfPreviewModal";
+import { buildInvoicesReportDoc, type ReportRow } from "@/lib/report-pdf";
+import type { jsPDF } from "jspdf";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 
@@ -45,6 +48,7 @@ export default function InvoicesPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [flash, setFlash] = useState("");
   const [preview, setPreview] = useState<{ invoice: InvoiceDetail; business: Business } | null>(null);
+  const [report, setReport] = useState<{ doc: jsPDF; filename: string; subtitle: string } | null>(null);
 
   const staffList = useMemo(() => Array.from(new Set(invoices.map((i) => i.staff).filter(Boolean))) as string[], [invoices]);
 
@@ -105,6 +109,22 @@ export default function InvoicesPage() {
     if (dateTo) params.set("to", dateTo);
     // No range selected → report defaults to today on the server.
     window.location.href = `/api/billing/report?${params.toString()}`;
+  }
+
+  function rangeLabel() {
+    if (dateFrom && dateTo) return dateFrom === dateTo ? new Date(dateFrom).toLocaleDateString("en-GB") : `${new Date(dateFrom).toLocaleDateString("en-GB")} – ${new Date(dateTo).toLocaleDateString("en-GB")}`;
+    if (dateFrom) return `From ${new Date(dateFrom).toLocaleDateString("en-GB")}`;
+    if (dateTo) return `Until ${new Date(dateTo).toLocaleDateString("en-GB")}`;
+    return "All time";
+  }
+
+  async function openPdfReport(rows: Invoice[], label: string) {
+    if (!rows.length) { setError("No invoices to include in the report."); return; }
+    const biz = await loadBusiness();
+    const reportRows: ReportRow[] = rows.map((r) => ({ invoiceNo: r.invoiceNo, name: r.name, customer: r.customer, staff: r.staff, segment: r.segment, status: r.status, total: r.total, createdAt: r.createdAt }));
+    const doc = buildInvoicesReportDoc(reportRows, { rangeLabel: label, business: biz });
+    const stamp = (dateFrom || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+    setReport({ doc, filename: `mobileicu-report-${stamp}.pdf`, subtitle: `${rows.length} invoice(s) · ${label}` });
   }
 
   async function downloadPdf(e: React.MouseEvent, inv: Invoice) {
@@ -176,8 +196,9 @@ export default function InvoicesPage() {
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <a href="/billing" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">+ New bill</a>
-            <button onClick={downloadReport} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400">📊 Day report</button>
-            <button onClick={() => downloadXlsx()} disabled={invoices.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ Export all</button>
+            <button onClick={() => openPdfReport(filtered, rangeLabel())} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400">📄 Report PDF</button>
+            <button onClick={downloadReport} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">📊 Excel</button>
+            <button onClick={() => downloadXlsx()} disabled={invoices.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ All</button>
           </div>
         </div>
         {/* controls */}
@@ -292,7 +313,8 @@ export default function InvoicesPage() {
           <span className="font-medium">{selected.size} selected</span>
           <span className="h-4 w-px bg-white/20" />
           <button disabled={bulkBusy} onClick={bulkMarkPaid} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">✓ Mark paid</button>
-          <button disabled={bulkBusy} onClick={bulkExport} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">⬇ Export</button>
+          <button disabled={bulkBusy} onClick={() => openPdfReport(filtered.filter((i) => selected.has(i.id)), `${selected.size} selected`)} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">📄 PDF</button>
+          <button disabled={bulkBusy} onClick={bulkExport} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">⬇ Excel</button>
           <button disabled={bulkBusy} onClick={bulkDelete} className="rounded-full px-3 py-1 text-red-400 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
           <span className="h-4 w-px bg-white/20" />
           <button onClick={clearSel} className="rounded-full px-2 py-1 text-white/50 hover:text-white">✕</button>
@@ -300,6 +322,7 @@ export default function InvoicesPage() {
       )}
 
       {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}
+      {report && <PdfPreviewModal doc={report.doc} filename={report.filename} title="Sales report" subtitle={report.subtitle} onClose={() => setReport(null)} />}
     </div>
   );
 }

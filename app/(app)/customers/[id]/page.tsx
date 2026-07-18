@@ -4,7 +4,11 @@ import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { generateStatementPdf } from "@/lib/statement-pdf";
+import { buildInvoiceDoc } from "@/lib/invoice-pdf";
+import PdfPreviewModal from "@/components/PdfPreviewModal";
 import { loadBusiness } from "@/lib/business";
+import type { InvoiceDetail } from "@/lib/billing";
+import type { jsPDF } from "jspdf";
 
 type Payment = { date: string; amount: number; method: string; note: string };
 type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null; amountPaid: number; balance: number };
@@ -37,6 +41,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [invSort, setInvSort] = useState<"new" | "old" | "high">("new");
   const [invQ, setInvQ] = useState("");
   const [payMethod, setPayMethod] = useState("all");
+  const [outDoc, setOutDoc] = useState<jsPDF | null>(null);
 
   function load() {
     setLoading(true);
@@ -104,12 +109,27 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setEditing((v) => !v)} className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-200">{editing ? "Close" : "✏ Edit"}</button>
           <button
+            onClick={() => (window.location.href = `/api/customers/${id}/export`)}
+            className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-200"
+            title="Download this customer's full record (profile, invoices, payments) as Excel"
+          >
+            ⬇ Export data
+          </button>
+          <button
             onClick={async () => generateStatementPdf({ customerName: c.name || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices, openingBalance: c.openingBalance, payments: c.ledger.payments }, await loadBusiness())}
-            disabled={c.invoices.length === 0}
+            disabled={c.invoices.length === 0 && c.openingBalance <= 0}
             className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200"
           >
             📄 Statement
           </button>
+          {outstanding > 0.001 && (
+            <button
+              onClick={async () => setOutDoc(buildOutstandingInvoiceDoc(c, outstanding, await loadBusiness()))}
+              className="rounded-lg border border-amber-400 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 dark:bg-amber-500/10"
+            >
+              🧾 Invoice outstanding (£{outstanding.toFixed(2)})
+            </button>
+          )}
           <Link
             href={`/billing?customer=${id}`}
             className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
@@ -203,8 +223,49 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </section>
       </div>
+
+      {outDoc && (
+        <PdfPreviewModal
+          doc={outDoc}
+          filename={`mobileicu-outstanding-${(c.name || "customer").replace(/[^\w-]/g, "_")}.pdf`}
+          title="Outstanding balance invoice"
+          subtitle={`£${outstanding.toFixed(2)} due · ${c.name}`}
+          onClose={() => setOutDoc(null)}
+        />
+      )}
     </div>
   );
+}
+
+// A proper branded invoice for the customer's current outstanding balance —
+// one line, total = amount due. A document to hand over; it does not create a
+// new billable order (the debt already comes from existing invoices).
+function buildOutstandingInvoiceDoc(c: Detail, outstanding: number, business: import("@/lib/business").Business): jsPDF {
+  const today = new Date();
+  const amt = outstanding.toFixed(2);
+  const inv: InvoiceDetail = {
+    id: "",
+    name: `OUTSTANDING-${today.toISOString().slice(0, 10)}`,
+    invoiceNo: `BAL-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`,
+    status: "OPEN",
+    createdAt: today.toISOString(),
+    note: "This invoice reflects the total outstanding balance on the account. Please settle at your earliest convenience.",
+    currency: "GBP",
+    customerName: c.name || "Customer",
+    customerEmail: c.email,
+    customerPhone: c.phone,
+    billingAddress: [c.company, ...c.address].filter(Boolean) as string[],
+    lines: [{ variantId: null, title: `Outstanding balance as of ${today.toLocaleDateString("en-GB")}`, sku: "", quantity: 1, unitPrice: amt, lineTotal: amt, image: null }],
+    subtotal: amt,
+    discount: "0.00",
+    tax: "0.00",
+    total: amt,
+    taxExempt: true,
+    payments: [],
+    amountPaid: 0,
+    balance: outstanding,
+  };
+  return buildInvoiceDoc(inv, business);
 }
 
 function SegmentEditor({ customerId, current, onSaved }: { customerId: string; current: SegmentKey[]; onSaved: () => void }) {
