@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { generateInvoicePdf } from "@/lib/invoice-pdf";
-import { loadBusiness } from "@/lib/business";
+import { loadBusiness, type Business } from "@/lib/business";
+import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import type { InvoiceDetail } from "@/lib/billing";
 
 const VAT_RATE = 0.2;
@@ -47,6 +47,7 @@ export default function InvoiceEditPage() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [preview, setPreview] = useState<{ invoice: InvoiceDetail; business: Business } | null>(null);
 
   const completed = meta?.status === "COMPLETED";
   const readOnly = completed;
@@ -251,7 +252,7 @@ export default function InvoiceEditPage() {
   async function downloadPdf() {
     const [res, biz] = await Promise.all([fetch(`/api/billing/${encId}`), loadBusiness()]);
     const d = await res.json();
-    if (res.ok) generateInvoicePdf(d.invoice as InvoiceDetail, biz);
+    if (res.ok) setPreview({ invoice: d.invoice as InvoiceDetail, business: biz });
   }
 
   if (loading) return <div className="px-8 py-7 text-sm text-neutral-400">Loading invoice…</div>;
@@ -426,6 +427,8 @@ export default function InvoiceEditPage() {
 
       {/* Payments on this invoice */}
       <PaymentsPanel invoiceId={encId} meta={meta} onChanged={load} />
+
+      {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}
     </div>
   );
 }

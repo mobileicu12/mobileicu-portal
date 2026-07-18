@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCustomer, addPayment, setCustomerSegments, setTradeCode, type Payment } from "@/lib/customers";
+import { getCustomer, addPayment, setCustomerSegments, setTradeCode, updateCustomer, type Payment } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -9,14 +9,20 @@ function gid(id: string) {
   return id.startsWith("gid://") ? id : `gid://shopify/Customer/${id}`;
 }
 
+type UpdateFields = { firstName?: string; lastName?: string; email?: string; phone?: string; company?: string; note?: string; openingBalance?: number };
+
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => null)) as { segments?: SegmentKey[]; action?: string } | null;
+  const body = (await req.json().catch(() => null)) as { segments?: SegmentKey[]; action?: string; update?: UpdateFields } | null;
   try {
     if (body?.action === "generateTradeCode") {
       const code = await setTradeCode(gid(id));
       return NextResponse.json({ ok: true, tradeCode: code });
+    }
+    if (body?.update) {
+      await updateCustomer(gid(id), body.update);
+      return NextResponse.json({ ok: true });
     }
     if (body && Array.isArray(body.segments)) {
       const segments = await setCustomerSegments(gid(id), body.segments);

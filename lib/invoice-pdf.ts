@@ -21,7 +21,17 @@ function money(n: string | number, cur = "GBP") {
   return `${sym(cur)}${(isNaN(v) ? 0 : v).toFixed(2)}`;
 }
 
+export function invoiceFilename(inv: InvoiceDetail, biz: Business = BUSINESS): string {
+  return `${biz.name.replace(/\s+/g, "_")}_${(inv.invoiceNo || inv.name).replace(/[^\w-]/g, "")}.pdf`;
+}
+
+// Backwards-compatible: build + immediately download.
 export function generateInvoicePdf(inv: InvoiceDetail, biz: Business = BUSINESS) {
+  buildInvoiceDoc(inv, biz).save(invoiceFilename(inv, biz));
+}
+
+// Build the jsPDF document (for preview or download).
+export function buildInvoiceDoc(inv: InvoiceDetail, biz: Business = BUSINESS): jsPDF {
   const B = biz;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
@@ -244,5 +254,5 @@ export function generateInvoicePdf(inv: InvoiceDetail, biz: Business = BUSINESS)
   doc.text(B.name + (B.website ? `  ·  ${B.website}` : ""), M, fy);
   doc.text("Thank you for your business.", W - M, fy, { align: "right" });
 
-  doc.save(`${B.name.replace(/\s+/g, "_")}_${invNo.replace(/[^\w-]/g, "")}.pdf`);
+  return doc;
 }

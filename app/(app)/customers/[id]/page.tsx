@@ -11,6 +11,8 @@ type Invoice = { id: string; name: string; status: string; total: string; create
 type Detail = {
   id: string;
   name: string;
+  firstName: string;
+  lastName: string;
   company: string;
   email: string;
   phone: string;
@@ -30,6 +32,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [c, setC] = useState<Detail | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
 
   function load() {
     setLoading(true);
@@ -66,23 +69,25 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           {c.address.length > 0 && <p className="mt-0.5 text-sm text-neutral-400">{c.address.join(", ")}</p>}
           {c.openingBalance > 0 && <p className="mt-0.5 text-xs text-amber-600">Opening balance brought forward: £{c.openingBalance.toFixed(2)}</p>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setEditing((v) => !v)} className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-200">{editing ? "Close" : "✏ Edit"}</button>
           <button
             onClick={async () => generateStatementPdf({ customerName: c.name || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices }, await loadBusiness())}
             disabled={c.invoices.length === 0}
             className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200"
           >
-            📄 Statement (PDF)
+            📄 Statement
           </button>
           <Link
             href={`/billing?customer=${id}`}
             className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
           >
-            New bill
+            + New bill
           </Link>
         </div>
       </div>
 
+      {editing && <EditCard customerId={id} c={c} onSaved={() => { setEditing(false); load(); }} />}
       <SegmentEditor customerId={id} current={c.segments} onSaved={load} />
       {c.segments.includes("online") && <TradeCodeCard customerId={id} code={c.tradeCode} onSaved={load} />}
 
@@ -189,6 +194,43 @@ function SegmentEditor({ customerId, current, onSaved }: { customerId: string; c
         </button>
       )}
       {msg && <span className="text-xs text-neutral-400">{msg}</span>}
+    </div>
+  );
+}
+
+function EditCard({ customerId, c, onSaved }: { customerId: string; c: Detail; onSaved: () => void }) {
+  const [f, setF] = useState({ firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone, company: c.company, note: c.note, openingBalance: String(c.openingBalance || "") });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  function set(k: keyof typeof f, v: string) { setF((p) => ({ ...p, [k]: v })); }
+  async function save() {
+    setSaving(true); setErr("");
+    try {
+      const res = await fetch(`/api/customers/${customerId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ update: { ...f, openingBalance: f.openingBalance ? Number(f.openingBalance) : 0 } }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); } finally { setSaving(false); }
+  }
+  const inp = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100";
+  const F = ({ label, children }: { label: string; children: React.ReactNode }) => (<label className="block"><span className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">{label}</span>{children}</label>);
+  return (
+    <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Edit customer</h2>
+      {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{err}</p>}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <F label="First name"><input className={inp} value={f.firstName} onChange={(e) => set("firstName", e.target.value)} /></F>
+        <F label="Last name"><input className={inp} value={f.lastName} onChange={(e) => set("lastName", e.target.value)} /></F>
+        <F label="Company"><input className={inp} value={f.company} onChange={(e) => set("company", e.target.value)} /></F>
+        <F label="Email"><input className={inp} value={f.email} onChange={(e) => set("email", e.target.value)} /></F>
+        <F label="Phone"><input className={inp} value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+44 7911 123456" /></F>
+        <F label="Opening balance (£)"><input type="number" step="0.01" className={inp} value={f.openingBalance} onChange={(e) => set("openingBalance", e.target.value)} /></F>
+        <div className="sm:col-span-2"><F label="Note"><input className={inp} value={f.note} onChange={(e) => set("note", e.target.value)} /></F></div>
+      </div>
+      <button onClick={save} disabled={saving} className="mt-4 rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">{saving ? "Saving…" : "Save changes"}</button>
     </div>
   );
 }

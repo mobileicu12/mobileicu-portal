@@ -17,6 +17,8 @@ export type Payment = { date: string; amount: number; method: string; note: stri
 export type Ledger = { payments: Payment[]; creditLimit?: number };
 
 export type CustomerDetail = CustomerSummary & {
+  firstName: string;
+  lastName: string;
   note: string;
   tags: string[];
   tradeCode: string;
@@ -93,6 +95,35 @@ export async function createCustomer(input: {
   if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
   if (!data.customerCreate.customer) throw new ShopifyError("Failed to create customer.");
   return { id: data.customerCreate.customer.id };
+}
+
+// Edit a customer's core details (name/email/phone/company/note/opening balance).
+export async function updateCustomer(id: string, input: {
+  firstName?: string; lastName?: string; email?: string; phone?: string;
+  company?: string; note?: string; openingBalance?: number;
+}): Promise<void> {
+  const cInput: Record<string, unknown> = { id };
+  if (input.firstName !== undefined) cInput.firstName = input.firstName.trim();
+  if (input.lastName !== undefined) cInput.lastName = input.lastName.trim();
+  if (input.email !== undefined) cInput.email = input.email.trim() || null;
+  if (input.phone !== undefined) cInput.phone = input.phone.trim() || null;
+  if (input.note !== undefined) cInput.note = input.note.trim();
+  const res = await adminGraphQL<{ customerUpdate: { userErrors: { field: string[]; message: string }[] } }>(
+    `mutation($input: CustomerInput!) { customerUpdate(input: $input) { userErrors { field message } } }`,
+    { input: cInput },
+  );
+  if (res.customerUpdate.userErrors.length) throw new ShopifyError(res.customerUpdate.userErrors.map((e) => e.message).join("; "));
+
+  const mfs: { ownerId: string; namespace: string; key: string; type: string; value: string }[] = [];
+  if (input.company !== undefined && input.company.trim()) mfs.push({ ownerId: id, namespace: LEDGER_NS, key: "company", type: "single_line_text_field", value: input.company.trim() });
+  if (input.openingBalance !== undefined) mfs.push({ ownerId: id, namespace: LEDGER_NS, key: "opening_balance", type: "number_decimal", value: String(Math.max(0, input.openingBalance)) });
+  if (mfs.length) {
+    const mr = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+      `mutation($m: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $m) { userErrors { field message } } }`,
+      { m: mfs },
+    );
+    if (mr.metafieldsSet.userErrors.length) throw new ShopifyError(mr.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+  }
 }
 
 // Verify a storefront trade login: email + access code, and must be an approved
@@ -231,6 +262,8 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     customer: {
       id: string;
       displayName: string;
+      firstName: string | null;
+      lastName: string | null;
       email: string | null;
       phone: string | null;
       note: string | null;
@@ -251,7 +284,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   }>(
     `query($id: ID!) {
       customer(id: $id) {
-        id displayName email phone note numberOfOrders tags
+        id displayName firstName lastName email phone note numberOfOrders tags
         amountSpent { amount }
         company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
         tradeCode: metafield(namespace: "${LEDGER_NS}", key: "trade_code") { value }
@@ -279,6 +312,8 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   return {
     id: c.id,
     name: c.displayName,
+    firstName: c.firstName ?? "",
+    lastName: c.lastName ?? "",
     company: c.company?.value ?? "",
     email: c.email ?? "",
     phone: c.phone ?? "",

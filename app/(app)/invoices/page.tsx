@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { generateInvoicePdf } from "@/lib/invoice-pdf";
-import { loadBusiness } from "@/lib/business";
+import { loadBusiness, type Business } from "@/lib/business";
+import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 
@@ -40,6 +40,7 @@ export default function InvoicesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [flash, setFlash] = useState("");
+  const [preview, setPreview] = useState<{ invoice: InvoiceDetail; business: Business } | null>(null);
 
   function reload() {
     setLoading(true);
@@ -74,7 +75,7 @@ export default function InvoicesPage() {
       const [res, biz] = await Promise.all([fetch(`/api/billing/${encodeURIComponent(inv.id)}`), loadBusiness()]);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load invoice");
-      generateInvoicePdf(data.invoice as InvoiceDetail, biz);
+      setPreview({ invoice: data.invoice as InvoiceDetail, business: biz });
     } catch (err) {
       setError(err instanceof Error ? err.message : "PDF failed");
     } finally {
@@ -234,6 +235,8 @@ export default function InvoicesPage() {
           <button onClick={clearSel} className="rounded-full px-2 py-1 text-white/50 hover:text-white">✕</button>
         </div>
       )}
+
+      {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}
     </div>
   );
 }
