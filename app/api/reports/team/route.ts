@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { isOwner } from "@/lib/portal-users";
+import { isOwnerRequest } from "@/lib/guard";
 import { listInvoices, summarizeByStaff } from "@/lib/billing";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -8,8 +7,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   if (!shopifyConfigured()) return NextResponse.json({ byStaff: [] });
-  const session = await auth();
-  if (!isOwner(session?.user?.email)) {
+  if (!(await isOwnerRequest())) {
     return NextResponse.json({ error: "Owner only." }, { status: 403 });
   }
   try {

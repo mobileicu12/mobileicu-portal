@@ -5,17 +5,15 @@ import {
   addPortalUser,
   updatePortalUser,
   removePortalUser,
-  isOwner,
   type PermKey,
 } from "@/lib/portal-users";
+import { isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
 async function ownerGuard() {
-  const session = await auth().catch(() => null);
-  const email = session?.user?.email;
-  return { ok: isOwner(email), email };
+  return { ok: await isOwnerRequest() };
 }
 
 export async function GET() {
@@ -24,7 +22,7 @@ export async function GET() {
   try {
     return NextResponse.json({
       users: await getPublicUsers(),
-      canManage: isOwner(session?.user?.email),
+      canManage: await isOwnerRequest(),
       me: session?.user?.email ?? null,
     });
   } catch (e) {
