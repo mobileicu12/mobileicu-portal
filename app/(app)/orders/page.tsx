@@ -43,9 +43,13 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
   const [fulFilter, setFulFilter] = useState<"all" | "unfulfilled" | "fulfilled">("all");
+  const [payFilter, setPayFilter] = useState<"all" | "paid" | "unpaid">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [flash, setFlash] = useState("");
 
-  useEffect(() => {
+  function reload() {
+    setLoading(true);
     fetch("/api/orders")
       .then((r) => r.json())
       .then((d) => {
@@ -55,7 +59,8 @@ export default function OrdersPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(reload, []);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -63,14 +68,30 @@ export default function OrdersPage() {
       if (segFilter !== "all" && o.segment !== segFilter) return false;
       if (fulFilter === "unfulfilled" && o.fulfillmentStatus === "FULFILLED") return false;
       if (fulFilter === "fulfilled" && o.fulfillmentStatus !== "FULFILLED") return false;
+      if (payFilter === "paid" && o.financialStatus !== "PAID") return false;
+      if (payFilter === "unpaid" && (o.financialStatus === "PAID" || o.financialStatus === "REFUNDED")) return false;
       if (!s) return true;
       return o.name.toLowerCase().includes(s) || o.customer.toLowerCase().includes(s);
     });
-  }, [orders, search, segFilter, fulFilter]);
+  }, [orders, search, segFilter, fulFilter, payFilter]);
 
   const allSelected = filtered.length > 0 && filtered.every((o) => selected.has(o.id));
   function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   function toggleAll() { setSelected(allSelected ? new Set() : new Set(filtered.map((o) => o.id))); }
+  function clearSel() { setSelected(new Set()); }
+  async function bulkAction(action: "archive" | "unarchive" | "delete") {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (action === "delete" && !confirm(`Delete ${ids.length} order(s)? Shopify only allows deleting some orders (e.g. cancelled/test). This cannot be undone.`)) return;
+    setBulkBusy(true); setError(""); setFlash("");
+    try {
+      const res = await fetch("/api/orders/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ids }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      setFlash(`${action === "archive" ? "Archived" : action === "unarchive" ? "Reopened" : "Deleted"}: ${d.ok}${d.failed ? `, ${d.failed} not allowed/failed` : ""}.`);
+      clearSel(); reload();
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setBulkBusy(false); }
+  }
   function bulkExport() {
     const ids = Array.from(selected).map((x) => encodeURIComponent(x)).join(",");
     if (ids) window.location.href = `/api/orders/export?ids=${ids}`;
@@ -96,12 +117,18 @@ export default function OrdersPage() {
       )}
 
       {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+      {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order # or customer…" className="w-64 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order # or customer…" className="w-56 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
         <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
           {(["all", "unfulfilled", "fulfilled"] as const).map((f) => (
             <button key={f} onClick={() => setFulFilter(f)} className={`rounded-md px-3 py-1 text-sm font-medium capitalize ${fulFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
+          ))}
+        </div>
+        <div className="flex rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
+          {(["all", "paid", "unpaid"] as const).map((f) => (
+            <button key={f} onClick={() => setPayFilter(f)} className={`rounded-md px-3 py-1 text-sm font-medium capitalize ${payFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
           ))}
         </div>
         <div className="flex flex-wrap rounded-lg border border-neutral-300 p-1 dark:border-neutral-700">
@@ -155,9 +182,12 @@ export default function OrdersPage() {
         <div className="fixed bottom-14 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
           <span className="font-medium">{selected.size} selected</span>
           <span className="h-4 w-px bg-white/20" />
-          <button onClick={bulkExport} className="rounded-full px-3 py-1 hover:bg-white/10">⬇ Export selected</button>
+          <button disabled={bulkBusy} onClick={bulkExport} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">⬇ Export</button>
+          <button disabled={bulkBusy} onClick={() => bulkAction("archive")} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">Archive</button>
+          <button disabled={bulkBusy} onClick={() => bulkAction("unarchive")} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">Reopen</button>
+          <button disabled={bulkBusy} onClick={() => bulkAction("delete")} className="rounded-full px-3 py-1 text-red-400 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
           <span className="h-4 w-px bg-white/20" />
-          <button onClick={() => setSelected(new Set())} className="rounded-full px-2 py-1 text-white/50 hover:text-white">✕</button>
+          <button onClick={clearSel} className="rounded-full px-2 py-1 text-white/50 hover:text-white">✕</button>
         </div>
       )}
     </div>

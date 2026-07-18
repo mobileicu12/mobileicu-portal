@@ -83,6 +83,49 @@ export async function listOrders(opts: { query?: string; segment?: SegmentKey } 
   }));
 }
 
+// ---- bulk order actions ----
+export async function closeOrders(ids: string[]): Promise<{ ok: number; failed: number }> {
+  let ok = 0, failed = 0;
+  for (const id of ids) {
+    try {
+      const r = await adminGraphQL<{ orderClose: { userErrors: { message: string }[] } }>(
+        `mutation($input: OrderCloseInput!) { orderClose(input: $input) { userErrors { field message } } }`,
+        { input: { id } },
+      );
+      r.orderClose.userErrors.length ? failed++ : ok++;
+    } catch { failed++; }
+  }
+  return { ok, failed };
+}
+
+export async function reopenOrders(ids: string[]): Promise<{ ok: number; failed: number }> {
+  let ok = 0, failed = 0;
+  for (const id of ids) {
+    try {
+      const r = await adminGraphQL<{ orderOpen: { userErrors: { message: string }[] } }>(
+        `mutation($input: OrderOpenInput!) { orderOpen(input: $input) { userErrors { field message } } }`,
+        { input: { id } },
+      );
+      r.orderOpen.userErrors.length ? failed++ : ok++;
+    } catch { failed++; }
+  }
+  return { ok, failed };
+}
+
+export async function deleteOrders(ids: string[]): Promise<{ ok: number; failed: number }> {
+  let ok = 0, failed = 0;
+  for (const id of ids) {
+    try {
+      const r = await adminGraphQL<{ orderDelete: { deletedId: string | null; userErrors: { message: string }[] } }>(
+        `mutation($orderId: ID!) { orderDelete(orderId: $orderId) { deletedId userErrors { field message } } }`,
+        { orderId: id },
+      );
+      r.orderDelete.userErrors.length ? failed++ : ok++;
+    } catch { failed++; }
+  }
+  return { ok, failed };
+}
+
 export type OrderStats = { count: number; sales: number; unfulfilled: number; unpaid: number };
 
 export function summarizeOrders(rows: OrderRow[]): OrderStats {

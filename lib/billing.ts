@@ -103,7 +103,19 @@ export type CreateBillInput = {
   discountPercent?: number;
   complete?: boolean; // POS: complete immediately (creates order, deducts stock)
   segment?: SegmentKey; // where this sale comes from (online/shop/ebay/amazon)
+  staff?: string; // portal user (email) who created the sale
 };
+
+// Safe tag value from an email/name.
+function staffTag(staff?: string): string[] {
+  if (!staff) return [];
+  const v = staff.trim().toLowerCase().replace(/[^a-z0-9@._-]/g, "");
+  return v ? [`staff:${v}`] : [];
+}
+export function staffFromTags(tags: string[]): string | null {
+  const t = tags.find((x) => x.startsWith("staff:"));
+  return t ? t.slice("staff:".length) : null;
+}
 
 export type BillResult = {
   id: string;
@@ -124,7 +136,7 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
     lineItems: input.lines.map(lineItemInput),
     taxExempt: !input.vat,
     note: input.note || undefined,
-    tags: ["portal-billing", ...(input.segment ? [`seg:${input.segment}`] : [])],
+    tags: ["portal-billing", ...(input.segment ? [`seg:${input.segment}`] : []), ...staffTag(input.staff)],
     metafields: [{ namespace: "portal", key: "invoice_no", type: "single_line_text_field", value: invoiceNo }],
   };
   if (input.customerId?.trim()) draftInput.purchasingEntity = { customerId: input.customerId.trim() };
@@ -236,6 +248,7 @@ export type InvoiceRow = {
   createdAt: string;
   invoiceUrl: string | null;
   segment: SegmentKey | null;
+  staff: string | null;
 };
 
 export async function listInvoices(): Promise<InvoiceRow[]> {
@@ -278,7 +291,23 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     createdAt: e.node.createdAt,
     invoiceUrl: e.node.invoiceUrl,
     segment: segmentsFromTags(e.node.tags ?? [])[0] ?? null,
+    staff: staffFromTags(e.node.tags ?? []),
   }));
+}
+
+export type StaffSales = { staff: string; count: number; total: number; paid: number; open: number };
+
+export function summarizeByStaff(rows: InvoiceRow[]): StaffSales[] {
+  const m = new Map<string, StaffSales>();
+  for (const r of rows) {
+    const key = r.staff || "unattributed";
+    if (!m.has(key)) m.set(key, { staff: key, count: 0, total: 0, paid: 0, open: 0 });
+    const s = m.get(key)!;
+    const t = parseFloat(r.total) || 0;
+    s.count++; s.total += t;
+    if (r.status === "COMPLETED") s.paid += t; else s.open += t;
+  }
+  return [...m.values()].sort((a, b) => b.total - a.total);
 }
 
 export type InvoiceLine = {

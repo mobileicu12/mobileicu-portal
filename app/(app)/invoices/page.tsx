@@ -17,6 +17,7 @@ type Invoice = {
   createdAt: string;
   invoiceUrl: string | null;
   segment: SegmentKey | null;
+  staff: string | null;
 };
 
 type Stats = {
@@ -37,10 +38,13 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid">("all");
   const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
+  const [staffFilter, setStaffFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [flash, setFlash] = useState("");
   const [preview, setPreview] = useState<{ invoice: InvoiceDetail; business: Business } | null>(null);
+
+  const staffList = useMemo(() => Array.from(new Set(invoices.map((i) => i.staff).filter(Boolean))) as string[], [invoices]);
 
   function reload() {
     setLoading(true);
@@ -62,10 +66,11 @@ export default function InvoicesPage() {
       if (statusFilter === "open" && inv.status === "COMPLETED") return false;
       if (statusFilter === "paid" && inv.status !== "COMPLETED") return false;
       if (segFilter !== "all" && inv.segment !== segFilter) return false;
+      if (staffFilter !== "all" && (inv.staff || "") !== staffFilter) return false;
       if (!s) return true;
-      return inv.invoiceNo.toLowerCase().includes(s) || inv.name.toLowerCase().includes(s) || inv.customer.toLowerCase().includes(s);
+      return inv.invoiceNo.toLowerCase().includes(s) || inv.name.toLowerCase().includes(s) || inv.customer.toLowerCase().includes(s) || (inv.staff || "").toLowerCase().includes(s);
     });
-  }, [invoices, search, statusFilter, segFilter]);
+  }, [invoices, search, statusFilter, segFilter, staffFilter]);
 
   async function downloadPdf(e: React.MouseEvent, inv: Invoice) {
     e.stopPropagation();
@@ -158,6 +163,12 @@ export default function InvoicesPage() {
               <button key={s.key} onClick={() => setSegFilter(s.key)} className={`rounded-md px-3 py-1 text-sm font-medium ${segFilter === s.key ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{s.short}</button>
             ))}
           </div>
+          {staffList.length > 0 && (
+            <select value={staffFilter} onChange={(e) => setStaffFilter(e.target.value)} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
+              <option value="all">All staff</option>
+              {staffList.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           <span className="text-sm text-neutral-400">{filtered.length} shown</span>
         </div>
       </div>
@@ -183,6 +194,7 @@ export default function InvoicesPage() {
               <th className="px-4 py-3">Invoice</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Source</th>
+              <th className="px-4 py-3">Staff</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3 text-right">Total</th>
@@ -201,6 +213,7 @@ export default function InvoicesPage() {
                     return s ? <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${s.badge}`}>{s.short}</span> : <span className="text-neutral-300">—</span>;
                   })()}
                 </td>
+                <td className="px-4 py-3 text-xs text-neutral-500">{inv.staff ? inv.staff.split("@")[0] : "—"}</td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${inv.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                     {inv.status === "COMPLETED" ? "PAID" : "DRAFT"}
@@ -217,7 +230,7 @@ export default function InvoicesPage() {
               </tr>
             ))}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-neutral-400">{invoices.length === 0 ? "No invoices yet. Create one in Billing / POS." : "No invoices match."}</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-neutral-400">{invoices.length === 0 ? "No invoices yet. Create one in Billing / POS." : "No invoices match."}</td></tr>
             )}
           </tbody>
         </table>

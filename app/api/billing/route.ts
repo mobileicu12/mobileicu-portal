@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createBill, listInvoices, summarizeInvoices, type CreateBillInput } from "@/lib/billing";
+import { auth } from "@/auth";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -24,7 +25,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Add at least one product." }, { status: 400 });
   }
   try {
-    const result = await createBill(body);
+    const session = await auth().catch(() => null);
+    const staff = session?.user?.email || undefined;
+    const result = await createBill({ ...body, staff });
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to create bill.";

@@ -45,23 +45,25 @@ export default function BillingPage() {
   const [custHits, setCustHits] = useState<{ id: string; name: string; company: string }[]>([]);
   const custDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [custOutstanding, setCustOutstanding] = useState<number | null>(null);
+  const [custIsOnline, setCustIsOnline] = useState(false);
   const [received, setReceived] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
 
-  // Load the selected customer's current account outstanding.
+  // Load the selected customer's account outstanding + whether they're Online/Registered.
   useEffect(() => {
-    if (!customerId) { setCustOutstanding(null); return; }
+    if (!customerId) { setCustOutstanding(null); setCustIsOnline(false); return; }
     const numId = customerId.split("/").pop();
     fetch(`/api/customers/${numId}`)
       .then((r) => r.json())
       .then((d) => {
         const c = d.customer;
-        if (!c) { setCustOutstanding(null); return; }
+        if (!c) { setCustOutstanding(null); setCustIsOnline(false); return; }
         const billed = (c.openingBalance || 0) + (c.invoices ?? []).reduce((s: number, i: { total: string }) => s + Number(i.total || 0), 0);
         const paid = (c.ledger?.payments ?? []).reduce((s: number, p: { amount: number }) => s + Number(p.amount || 0), 0);
         setCustOutstanding(billed - paid);
+        setCustIsOnline((c.segments ?? []).includes("online"));
       })
-      .catch(() => setCustOutstanding(null));
+      .catch(() => { setCustOutstanding(null); setCustIsOnline(false); });
   }, [customerId]);
 
   // Pre-fill customer from ?customer=<id> (e.g. coming from a customer page).
@@ -173,6 +175,10 @@ export default function BillingPage() {
     }
     if (mode === "invoice" && !customerId) {
       setError("Wholesale invoices are for registered customers only — select a customer, or switch to POS for a walk-in sale.");
+      return;
+    }
+    if (mode === "invoice" && !custIsOnline) {
+      setError("Wholesale is for Online / Registered customers only. Set this customer's segment to 'Online / Registered', or use POS.");
       return;
     }
     setSubmitting(true);

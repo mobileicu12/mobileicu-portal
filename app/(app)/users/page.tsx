@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 type User = { email: string; role: "owner" | "member"; addedAt: string };
+type StaffSales = { staff: string; count: number; total: number; paid: number; open: number };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -12,12 +13,17 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [sales, setSales] = useState<StaffSales[] | null>(null);
 
   function load() {
     setLoading(true);
     fetch("/api/users")
       .then((r) => r.json())
-      .then((d) => { if (d.error) setError(d.error); setUsers(d.users ?? []); setCanManage(!!d.canManage); setMe(d.me ?? null); })
+      .then((d) => {
+        if (d.error) setError(d.error);
+        setUsers(d.users ?? []); setCanManage(!!d.canManage); setMe(d.me ?? null);
+        if (d.canManage) fetch("/api/reports/team").then((r) => r.json()).then((s) => setSales(s.byStaff ?? [])).catch(() => {});
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }
@@ -79,6 +85,33 @@ export default function UsersPage() {
           </tbody>
         </table>
       </div>
+
+      {canManage && sales && (
+        <div className="mt-8 max-w-2xl">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Sales by teammate</h2>
+          <p className="mt-1 text-sm text-neutral-500">Every bill records who created it. Totals below.</p>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
+                <tr><th className="px-4 py-3">Teammate</th><th className="px-4 py-3 text-right">Bills</th><th className="px-4 py-3 text-right">Paid</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-right">Total</th></tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {sales.map((s) => (
+                  <tr key={s.staff}>
+                    <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{s.staff === "unattributed" ? <span className="text-neutral-400">Unattributed</span> : s.staff}</td>
+                    <td className="px-4 py-3 text-right text-neutral-600 dark:text-neutral-300">{s.count}</td>
+                    <td className="px-4 py-3 text-right text-emerald-600">£{s.paid.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-amber-600">£{s.open.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-neutral-900 dark:text-neutral-100">£{s.total.toFixed(2)}</td>
+                  </tr>
+                ))}
+                {sales.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-neutral-400">No sales recorded yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-neutral-400">Only bills created after Google login are attributed to a teammate. Older/password-created bills show as “Unattributed”.</p>
+        </div>
+      )}
     </div>
   );
 }
