@@ -22,12 +22,16 @@ export type StatementInvoice = {
   balance: number;
 };
 
+export type StatementPayment = { date: string; amount: number; method: string; note?: string };
+
 export type StatementInput = {
   customerName: string;
   company?: string;
   email?: string;
   phone?: string;
   invoices: StatementInvoice[];
+  openingBalance?: number;
+  payments?: StatementPayment[]; // on-account (ledger) payments
 };
 
 export function generateStatementPdf(s: StatementInput, business: Business = BUSINESS) {
@@ -77,25 +81,41 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
   const to = [s.company, s.email, s.phone].filter(Boolean) as string[];
   to.forEach((line, i) => doc.text(line, pageW - M, y + 29 + i * 12, { align: "right" }));
 
-  // Table with running balance
-  const sorted = [...s.invoices].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
-  let running = 0;
-  const body = sorted.map((inv) => {
+  // Build a chronological account ledger: opening balance, invoices (net of any
+  // payment recorded on the invoice) and on-account payments — with a running balance.
+  const opening = s.openingBalance || 0;
+  type Entry = { date: number; row: [string, string, string, string, string]; delta: number };
+  const entries: Entry[] = [];
+
+  for (const inv of s.invoices) {
     const charge = parseFloat(inv.total) || 0;
-    running += charge - inv.amountPaid;
-    return [
-      new Date(inv.createdAt).toLocaleDateString("en-GB"),
-      inv.name,
-      inv.status === "COMPLETED" ? "Paid" : "Draft",
-      money(charge),
-      money(inv.amountPaid),
-      money(running),
-    ];
-  });
+    const delta = charge - inv.amountPaid; // completed → 0, draft → outstanding
+    entries.push({
+      date: +new Date(inv.createdAt),
+      row: [new Date(inv.createdAt).toLocaleDateString("en-GB"), inv.name, inv.status === "COMPLETED" ? "Paid" : "Draft", money(charge), money(inv.amountPaid)],
+      delta,
+    });
+  }
+  for (const p of s.payments || []) {
+    entries.push({
+      date: +new Date(p.date),
+      row: [new Date(p.date).toLocaleDateString("en-GB"), `Payment received — ${p.method}`, "Credit", "", money(p.amount)],
+      delta: -(Number(p.amount) || 0),
+    });
+  }
+  entries.sort((a, b) => a.date - b.date);
+
+  let running = opening;
+  const body: string[][] = [];
+  if (opening > 0) body.push(["", "Opening balance brought forward", "", money(opening), "", money(running)]);
+  for (const e of entries) {
+    running += e.delta;
+    body.push([...e.row, money(running)]);
+  }
 
   autoTable(doc, {
     startY: Math.max(y + biz.length * 13, y + 60) + 10,
-    head: [["Date", "Invoice", "Status", "Charge", "Paid", "Balance"]],
+    head: [["Date", "Detail", "Type", "Charge", "Paid", "Balance"]],
     body,
     theme: "grid",
     headStyles: { fillColor: INK, textColor: "#ffffff", fontSize: 9 },
@@ -109,9 +129,9 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
     margin: { left: M, right: M },
   });
 
-  const totalCharged = sorted.reduce((s2, i) => s2 + (parseFloat(i.total) || 0), 0);
-  const totalPaid = sorted.reduce((s2, i) => s2 + i.amountPaid, 0);
-  const outstanding = Math.max(0, totalCharged - totalPaid);
+  const totalCharged = opening + s.invoices.reduce((s2, i) => s2 + (parseFloat(i.total) || 0), 0);
+  const totalPaid = s.invoices.reduce((s2, i) => s2 + i.amountPaid, 0) + (s.payments || []).reduce((s2, p) => s2 + (Number(p.amount) || 0), 0);
+  const outstanding = totalCharged - totalPaid;
 
   // @ts-expect-error autotable augments doc
   let ty = (doc.lastAutoTable?.finalY ?? 300) + 20;

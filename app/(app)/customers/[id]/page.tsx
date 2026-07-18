@@ -33,6 +33,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [invFilter, setInvFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [invSort, setInvSort] = useState<"new" | "old" | "high">("new");
+  const [invQ, setInvQ] = useState("");
+  const [payMethod, setPayMethod] = useState("all");
 
   function load() {
     setLoading(true);
@@ -61,6 +65,29 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   // Owed = old opening balance + still-unpaid invoices − on-account payments received.
   const outstanding = c.openingBalance + invoiceOutstanding - ledgerPaid;
 
+  // --- Invoices: filter + search + sort ---
+  const shownInvoices = c.invoices
+    .filter((i) => {
+      if (invFilter === "paid" && i.balance > 0.001) return false;
+      if (invFilter === "unpaid" && i.balance <= 0.001) return false;
+      if (invQ.trim()) return i.name.toLowerCase().includes(invQ.trim().toLowerCase());
+      return true;
+    })
+    .sort((a, b) =>
+      invSort === "high"
+        ? Number(b.total) - Number(a.total)
+        : invSort === "old"
+          ? +new Date(a.createdAt) - +new Date(b.createdAt)
+          : +new Date(b.createdAt) - +new Date(a.createdAt),
+    );
+
+  // --- Payments: filter by method ---
+  const methods = Array.from(new Set(c.ledger.payments.map((p) => p.method)));
+  const shownPayments = [...c.ledger.payments]
+    .filter((p) => payMethod === "all" || p.method === payMethod)
+    .reverse();
+  const shownPaymentsTotal = shownPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+
   return (
     <div className="px-8 py-7">
       <Link href="/customers" className="text-sm text-neutral-500 hover:text-neutral-900">← Customers</Link>
@@ -77,7 +104,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setEditing((v) => !v)} className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-200">{editing ? "Close" : "✏ Edit"}</button>
           <button
-            onClick={async () => generateStatementPdf({ customerName: c.name || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices }, await loadBusiness())}
+            onClick={async () => generateStatementPdf({ customerName: c.name || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices, openingBalance: c.openingBalance, payments: c.ledger.payments }, await loadBusiness())}
             disabled={c.invoices.length === 0}
             className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200"
           >
@@ -105,10 +132,28 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
       <div className="mt-7 grid gap-5 lg:grid-cols-2">
         {/* Invoices */}
-        <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-neutral-900">Invoices</h2>
-          <div className="mt-3 divide-y divide-neutral-100">
-            {c.invoices.map((i) => (
+        <section className="flex max-h-[520px] flex-col rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Invoices <span className="text-sm font-normal text-neutral-400">({shownInvoices.length})</span></h2>
+              <Link href={`/billing?customer=${id}`} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900">+ New</Link>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="flex rounded-lg border border-neutral-300 p-0.5 dark:border-neutral-700">
+                {(["all", "unpaid", "paid"] as const).map((f) => (
+                  <button key={f} onClick={() => setInvFilter(f)} className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${invFilter === f ? "bg-neutral-900 text-white" : "text-neutral-600 dark:text-neutral-300"}`}>{f}</button>
+                ))}
+              </div>
+              <select value={invSort} onChange={(e) => setInvSort(e.target.value as "new" | "old" | "high")} className="rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
+                <option value="new">Newest</option>
+                <option value="old">Oldest</option>
+                <option value="high">Highest £</option>
+              </select>
+              <input value={invQ} onChange={(e) => setInvQ(e.target.value)} placeholder="Search #" className="w-24 flex-1 rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto px-4 dark:divide-neutral-800">
+            {shownInvoices.map((i) => (
               <Link key={i.id} href={`/invoices/${i.id.split("/").pop()}`} className="flex items-center justify-between py-2.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                 <div>
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">{i.name}</p>
@@ -124,24 +169,37 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 </div>
               </Link>
             ))}
-            {c.invoices.length === 0 && <p className="py-4 text-sm text-neutral-400">No invoices yet.</p>}
+            {shownInvoices.length === 0 && <p className="py-6 text-center text-sm text-neutral-400">{c.invoices.length === 0 ? "No invoices yet." : "None match this filter."}</p>}
           </div>
         </section>
 
         {/* Payments */}
-        <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-neutral-900">Payment history</h2>
-          <RecordPayment customerId={id} outstanding={outstanding} onAdded={load} />
-          <div className="mt-3 divide-y divide-neutral-100">
-            {[...c.ledger.payments].reverse().map((p, idx) => (
+        <section className="flex max-h-[520px] flex-col rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Payment history</h2>
+              <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10">Received £{shownPaymentsTotal.toFixed(2)}</span>
+            </div>
+            {methods.length > 1 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                <button onClick={() => setPayMethod("all")} className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${payMethod === "all" ? "bg-neutral-900 text-white" : "border border-neutral-300 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"}`}>All</button>
+                {methods.map((m) => (
+                  <button key={m} onClick={() => setPayMethod(m)} className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${payMethod === m ? "bg-neutral-900 text-white" : "border border-neutral-300 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"}`}>{m}</button>
+                ))}
+              </div>
+            )}
+            <RecordPayment customerId={id} outstanding={outstanding} onAdded={load} />
+          </div>
+          <div className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto px-4 dark:divide-neutral-800">
+            {shownPayments.map((p, idx) => (
               <div key={idx} className="flex items-center justify-between py-2.5 text-sm">
                 <div>
-                  <p className="font-medium text-neutral-900">£{Number(p.amount).toFixed(2)} <span className="font-normal text-neutral-500">· {p.method}</span></p>
+                  <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(p.amount).toFixed(2)} <span className="font-normal text-neutral-500">· {p.method}</span></p>
                   <p className="text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
                 </div>
               </div>
             ))}
-            {c.ledger.payments.length === 0 && <p className="py-4 text-sm text-neutral-400">No payments recorded.</p>}
+            {shownPayments.length === 0 && <p className="py-6 text-center text-sm text-neutral-400">{c.ledger.payments.length === 0 ? "No payments recorded." : "None match this filter."}</p>}
           </div>
         </section>
       </div>

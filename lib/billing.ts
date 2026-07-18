@@ -422,8 +422,11 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
       if (Array.isArray(parsed)) payments = parsed;
     } catch { /* ignore */ }
   }
-  const amountPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-  const balance = Math.max(0, (parseFloat(d.totalPrice) || 0) - amountPaid);
+  const total = parseFloat(d.totalPrice) || 0;
+  // A COMPLETED draft order is a finished, fully-paid sale regardless of whether
+  // partial payments were also logged against it.
+  const amountPaid = d.status === "COMPLETED" ? total : payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const balance = Math.max(0, total - amountPaid);
 
   return {
     id: d.id,

@@ -58,9 +58,11 @@ export default function BillingPage() {
       .then((d) => {
         const c = d.customer;
         if (!c) { setCustOutstanding(null); setCustIsOnline(false); return; }
-        const billed = (c.openingBalance || 0) + (c.invoices ?? []).reduce((s: number, i: { total: string }) => s + Number(i.total || 0), 0);
-        const paid = (c.ledger?.payments ?? []).reduce((s: number, p: { amount: number }) => s + Number(p.amount || 0), 0);
-        setCustOutstanding(billed - paid);
+        // Owed = opening balance + still-unpaid invoice balances − on-account payments.
+        // (A completed invoice already counts as paid, so use its balance, not total.)
+        const invoiceDue = (c.invoices ?? []).reduce((s: number, i: { balance?: number }) => s + Number(i.balance || 0), 0);
+        const ledgerPaid = (c.ledger?.payments ?? []).reduce((s: number, p: { amount: number }) => s + Number(p.amount || 0), 0);
+        setCustOutstanding((c.openingBalance || 0) + invoiceDue - ledgerPaid);
         setCustIsOnline((c.segments ?? []).includes("online"));
       })
       .catch(() => { setCustOutstanding(null); setCustIsOnline(false); });
