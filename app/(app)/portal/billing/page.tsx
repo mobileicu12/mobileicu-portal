@@ -38,6 +38,9 @@ export default function BillingPage() {
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
+  // Walk-in / one-off customer details (POS, no registered account).
+  const [walkName, setWalkName] = useState("");
+  const [walkPhone, setWalkPhone] = useState("");
 
   const [customerId, setCustomerId] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -198,6 +201,8 @@ export default function BillingPage() {
           vat,
           email,
           customerId,
+          customerName: !customerId ? walkName : undefined,
+          customerPhone: !customerId ? walkPhone : undefined,
           note,
           discountPercent: discount,
           complete: mode === "pos",
@@ -224,6 +229,8 @@ export default function BillingPage() {
       setEmail("");
       setNote("");
       setReceived("");
+      setWalkName("");
+      setWalkPhone("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -442,14 +449,15 @@ export default function BillingPage() {
                 )}
               </div>
             )}
-            {mode === "invoice" && !customerId && (
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="…or just an email for a one-off"
-                className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-              />
+            {mode === "pos" && !customerId && (
+              <div className="mt-2 space-y-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-3">
+                <p className="text-xs font-medium text-neutral-500">Walk-in / one-off customer <span className="font-normal">(optional — no account needed)</span></p>
+                <input value={walkName} onChange={(e) => setWalkName(e.target.value)} placeholder="Customer name" className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" />
+                <div className="flex gap-2">
+                  <input value={walkPhone} onChange={(e) => setWalkPhone(e.target.value)} placeholder="Phone" className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" />
+                </div>
+              </div>
             )}
           </div>
 

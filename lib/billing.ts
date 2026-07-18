@@ -99,6 +99,8 @@ export type CreateBillInput = {
   vat: boolean;
   email?: string;
   customerId?: string;
+  customerName?: string; // walk-in / one-off name (when no registered customer)
+  customerPhone?: string; // walk-in phone
   note?: string;
   discountPercent?: number;
   complete?: boolean; // POS: complete immediately (creates order, deducts stock)
@@ -132,15 +134,24 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
   if (!input.lines.length) throw new ShopifyError("Add at least one product.");
 
   const invoiceNo = await nextInvoiceNumber();
+  const mfs: { namespace: string; key: string; type: string; value: string }[] = [
+    { namespace: "portal", key: "invoice_no", type: "single_line_text_field", value: invoiceNo },
+  ];
   const draftInput: Record<string, unknown> = {
     lineItems: input.lines.map(lineItemInput),
     taxExempt: !input.vat,
     note: input.note || undefined,
     tags: ["portal-billing", ...(input.segment ? [`seg:${input.segment}`] : []), ...staffTag(input.staff)],
-    metafields: [{ namespace: "portal", key: "invoice_no", type: "single_line_text_field", value: invoiceNo }],
   };
-  if (input.customerId?.trim()) draftInput.purchasingEntity = { customerId: input.customerId.trim() };
-  else if (input.email?.trim()) draftInput.email = input.email.trim();
+  if (input.customerId?.trim()) {
+    draftInput.purchasingEntity = { customerId: input.customerId.trim() };
+  } else {
+    // Walk-in / one-off: no registered account, just capture their details on the bill.
+    if (input.email?.trim()) draftInput.email = input.email.trim();
+    if (input.customerName?.trim()) mfs.push({ namespace: "portal", key: "cust_name", type: "single_line_text_field", value: input.customerName.trim().slice(0, 200) });
+    if (input.customerPhone?.trim()) mfs.push({ namespace: "portal", key: "cust_phone", type: "single_line_text_field", value: input.customerPhone.trim().slice(0, 60) });
+  }
+  draftInput.metafields = mfs;
   if (input.discountPercent && input.discountPercent > 0) {
     draftInput.appliedDiscount = {
       valueType: "PERCENTAGE",
@@ -265,6 +276,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
           invoiceUrl: string | null;
           tags: string[];
           invoiceNo: { value: string } | null;
+          custName: { value: string } | null;
           customer: { displayName: string | null } | null;
           email: string | null;
         };
@@ -276,6 +288,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
         edges { node {
           id name status totalPrice createdAt invoiceUrl tags
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
+          custName: metafield(namespace: "portal", key: "cust_name") { value }
           customer { displayName }
           email
         } }
@@ -286,7 +299,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     id: e.node.id,
     name: e.node.name,
     invoiceNo: e.node.invoiceNo?.value || e.node.name,
-    customer: e.node.customer?.displayName || e.node.email || "—",
+    customer: e.node.customer?.displayName || e.node.custName?.value || e.node.email || "—",
     status: e.node.status,
     total: e.node.totalPrice,
     createdAt: e.node.createdAt,
@@ -369,6 +382,8 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
       email: string | null;
       payments: { value: string } | null;
       invoiceNo: { value: string } | null;
+      custName: { value: string } | null;
+      custPhone: { value: string } | null;
       billingAddress: {
         company: string | null; address1: string | null; address2: string | null;
         city: string | null; zip: string | null; province: string | null; country: string | null;
@@ -396,6 +411,8 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
         email
         payments: metafield(namespace: "portal", key: "payments") { value }
         invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
+        custName: metafield(namespace: "portal", key: "cust_name") { value }
+        custPhone: metafield(namespace: "portal", key: "cust_phone") { value }
         billingAddress { company address1 address2 city zip province country phone }
         lineItems(first: 100) {
           edges { node {
@@ -436,9 +453,9 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     createdAt: d.createdAt,
     note: d.note2 || "",
     currency,
-    customerName: d.customer?.displayName || "—",
+    customerName: d.customer?.displayName || d.custName?.value || (d.email ? d.email : "Walk-in customer"),
     customerEmail: d.customer?.email || d.email || "",
-    customerPhone: d.customer?.phone || d.billingAddress?.phone || "",
+    customerPhone: d.customer?.phone || d.custPhone?.value || d.billingAddress?.phone || "",
     billingAddress: addrLines(d.billingAddress),
     lines: d.lineItems.edges.map((e) => ({
       variantId: e.node.variant?.id ?? null,
