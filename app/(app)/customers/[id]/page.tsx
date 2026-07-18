@@ -19,6 +19,8 @@ type Detail = {
   totalSpent: string;
   segments: SegmentKey[];
   tradeCode: string;
+  openingBalance: number;
+  address: string[];
   ledger: { payments: Payment[] };
   invoices: Invoice[];
 };
@@ -46,7 +48,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (error) return <div className="px-8 py-7"><p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p></div>;
   if (!c) return null;
 
-  const billed = c.invoices.reduce((s, i) => s + Number(i.total || 0), 0);
+  const invoiceTotal = c.invoices.reduce((s, i) => s + Number(i.total || 0), 0);
+  const billed = c.openingBalance + invoiceTotal;
   const paid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const outstanding = billed - paid;
 
@@ -57,9 +60,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900">{c.name || "(no name)"}</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            {c.company && <span className="font-medium text-neutral-700">{c.company} · </span>}
+            {c.company && <span className="font-medium text-neutral-700 dark:text-neutral-300">{c.company} · </span>}
             {c.email || "no email"}{c.phone ? ` · ${c.phone}` : ""}
           </p>
+          {c.address.length > 0 && <p className="mt-0.5 text-sm text-neutral-400">{c.address.join(", ")}</p>}
+          {c.openingBalance > 0 && <p className="mt-0.5 text-xs text-amber-600">Opening balance brought forward: £{c.openingBalance.toFixed(2)}</p>}
         </div>
         <div className="flex gap-2">
           <button

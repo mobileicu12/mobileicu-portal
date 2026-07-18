@@ -20,6 +20,8 @@ export type CustomerDetail = CustomerSummary & {
   note: string;
   tags: string[];
   tradeCode: string;
+  openingBalance: number;
+  address: string[];
   ledger: Ledger;
   invoices: {
     id: string;
@@ -44,6 +46,11 @@ export async function createCustomer(input: {
   company?: string;
   note?: string;
   segments?: SegmentKey[];
+  address1?: string;
+  city?: string;
+  zip?: string;
+  country?: string; // ISO code e.g. GB
+  openingBalance?: number; // old outstanding brought forward
 }): Promise<{ id: string }> {
   if (!input.email?.trim() && !input.phone?.trim() && !input.firstName?.trim()) {
     throw new ShopifyError("Provide at least a name, email, or phone.");
@@ -57,11 +64,23 @@ export async function createCustomer(input: {
     note: input.note?.trim() || undefined,
     tags: ["portal", ...tagsForSegments(segs)],
   };
-  if (input.company?.trim()) {
-    customerInput.metafields = [
-      { namespace: LEDGER_NS, key: "company", type: "single_line_text_field", value: input.company.trim() },
-    ];
+  if (input.address1?.trim() || input.city?.trim() || input.zip?.trim()) {
+    customerInput.addresses = [{
+      address1: input.address1?.trim() || undefined,
+      city: input.city?.trim() || undefined,
+      zip: input.zip?.trim() || undefined,
+      countryCode: input.country?.trim() || undefined,
+      firstName: input.firstName?.trim() || undefined,
+      lastName: input.lastName?.trim() || undefined,
+      company: input.company?.trim() || undefined,
+      phone: input.phone?.trim() || undefined,
+    }];
   }
+  const mfs: { namespace: string; key: string; type: string; value: string }[] = [];
+  if (input.company?.trim()) mfs.push({ namespace: LEDGER_NS, key: "company", type: "single_line_text_field", value: input.company.trim() });
+  if (input.openingBalance && input.openingBalance > 0) mfs.push({ namespace: LEDGER_NS, key: "opening_balance", type: "number_decimal", value: String(input.openingBalance) });
+  if (mfs.length) customerInput.metafields = mfs;
+
   const data = await adminGraphQL<{
     customerCreate: { customer: { id: string } | null; userErrors: { field: string[]; message: string }[] };
   }>(
@@ -220,6 +239,8 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
       amountSpent: { amount: string } | null;
       company: { value: string } | null;
       tradeCode: { value: string } | null;
+      opening: { value: string } | null;
+      defaultAddress: { address1: string | null; address2: string | null; city: string | null; zip: string | null; province: string | null; country: string | null } | null;
       ledger: { value: string } | null;
       draftOrders: {
         edges: {
@@ -234,6 +255,8 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         amountSpent { amount }
         company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
         tradeCode: metafield(namespace: "${LEDGER_NS}", key: "trade_code") { value }
+        opening: metafield(namespace: "${LEDGER_NS}", key: "opening_balance") { value }
+        defaultAddress { address1 address2 city zip province country }
         ledger: metafield(namespace: "${LEDGER_NS}", key: "${LEDGER_KEY}") { value }
         draftOrders(first: 100, reverse: true) {
           edges { node { id name status totalPrice createdAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
@@ -262,6 +285,10 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     note: c.note ?? "",
     tags: c.tags ?? [],
     tradeCode: c.tradeCode?.value ?? "",
+    openingBalance: c.opening?.value ? parseFloat(c.opening.value) || 0 : 0,
+    address: c.defaultAddress
+      ? [c.defaultAddress.address1, c.defaultAddress.address2, [c.defaultAddress.city, c.defaultAddress.province].filter(Boolean).join(", "), c.defaultAddress.zip, c.defaultAddress.country].map((s) => (s || "").trim()).filter(Boolean)
+      : [],
     segments: segmentsFromTags(c.tags ?? []),
     orders: Number(c.numberOfOrders ?? 0),
     totalSpent: c.amountSpent?.amount ?? "0",

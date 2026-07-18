@@ -128,7 +128,7 @@ export function generateInvoicePdf(inv: InvoiceDetail, biz: Business = BUSINESS)
   // ============ ITEMS TABLE ============
   autoTable(doc, {
     startY: startY + 14,
-    head: [["#", "Description", "SKU", "Qty", "Unit", "Amount"]],
+    head: [["#", "Description", "SKU", "Qty", "Unit Price", "Amount"]],
     body: inv.lines.map((l, i) => [
       String(i + 1),
       l.title,

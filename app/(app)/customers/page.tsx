@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
+import { COUNTRIES, DEFAULT_COUNTRY } from "@/lib/countries";
 
 type Customer = {
   id: string;
@@ -216,6 +217,15 @@ export default function CustomersPage() {
   );
 }
 
+function L({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 function SegTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
   return (
     <button
@@ -232,23 +242,32 @@ function SegTab({ active, onClick, label }: { active: boolean; onClick: () => vo
 }
 
 function RegisterForm({ onCreated }: { onCreated: () => void }) {
-  const [f, setF] = useState({ firstName: "", lastName: "", company: "", email: "", phone: "", note: "" });
+  const [f, setF] = useState({ firstName: "", lastName: "", company: "", email: "", phoneNumber: "", note: "", address1: "", city: "", zip: "", openingBalance: "" });
+  const [countryIso, setCountryIso] = useState(DEFAULT_COUNTRY);
   const [segments, setSegments] = useState<SegmentKey[]>(["online"]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const dial = COUNTRIES.find((c) => c.iso === countryIso)?.dial ?? "";
   function toggleSeg(k: SegmentKey) {
     setSegments((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
   }
 
   async function save() {
+    if (!f.firstName.trim() || !f.lastName.trim()) { setError("First and last name are required."); return; }
     setSaving(true);
     setError("");
     try {
+      const phone = f.phoneNumber.trim() ? `${dial} ${f.phoneNumber.trim()}` : "";
       const res = await fetch("/api/customers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...f, segments }),
+        body: JSON.stringify({
+          firstName: f.firstName, lastName: f.lastName, company: f.company, email: f.email, note: f.note,
+          phone, address1: f.address1, city: f.city, zip: f.zip, country: countryIso,
+          openingBalance: f.openingBalance ? Number(f.openingBalance) : 0,
+          segments,
+        }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
@@ -267,12 +286,25 @@ function RegisterForm({ onCreated }: { onCreated: () => void }) {
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Register customer</h2>
       {error && <p className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
       <div className="mt-4 grid max-w-3xl gap-4 sm:grid-cols-2">
-        <input className={input} placeholder="First name" value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} />
-        <input className={input} placeholder="Last name" value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} />
-        <input className={input} placeholder="Company (for wholesale)" value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} />
-        <input className={input} placeholder="Phone" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
-        <input className={input} placeholder="Email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-        <input className={input} placeholder="Note (optional)" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
+        <L label="First name *"><input className={input} value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} /></L>
+        <L label="Last name *"><input className={input} value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} /></L>
+        <L label="Company (for wholesale)"><input className={input} value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} /></L>
+        <L label="Email"><input type="email" className={input} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></L>
+        <L label="Phone">
+          <div className="flex gap-2">
+            <select value={countryIso} onChange={(e) => setCountryIso(e.target.value)} className={`${input} w-32 shrink-0`}>
+              {COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>{c.flag} {c.dial}</option>)}
+            </select>
+            <input className={input} placeholder="7911 123456" value={f.phoneNumber} onChange={(e) => setF({ ...f, phoneNumber: e.target.value })} />
+          </div>
+        </L>
+        <L label="Opening balance (£) — old outstanding brought forward">
+          <input type="number" step="0.01" className={input} value={f.openingBalance} onChange={(e) => setF({ ...f, openingBalance: e.target.value })} placeholder="0.00" />
+        </L>
+        <L label="Address" className="sm:col-span-2"><input className={input} value={f.address1} onChange={(e) => setF({ ...f, address1: e.target.value })} placeholder="Street address" /></L>
+        <L label="City / Town"><input className={input} value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></L>
+        <L label="Postcode"><input className={input} value={f.zip} onChange={(e) => setF({ ...f, zip: e.target.value })} /></L>
+        <L label="Note (optional)" className="sm:col-span-2"><input className={input} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></L>
       </div>
 
       <div className="mt-4">

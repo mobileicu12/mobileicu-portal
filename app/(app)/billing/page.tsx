@@ -44,6 +44,25 @@ export default function BillingPage() {
   const [custQ, setCustQ] = useState("");
   const [custHits, setCustHits] = useState<{ id: string; name: string; company: string }[]>([]);
   const custDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [custOutstanding, setCustOutstanding] = useState<number | null>(null);
+  const [received, setReceived] = useState("");
+  const [payMethod, setPayMethod] = useState("cash");
+
+  // Load the selected customer's current account outstanding.
+  useEffect(() => {
+    if (!customerId) { setCustOutstanding(null); return; }
+    const numId = customerId.split("/").pop();
+    fetch(`/api/customers/${numId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const c = d.customer;
+        if (!c) { setCustOutstanding(null); return; }
+        const billed = (c.openingBalance || 0) + (c.invoices ?? []).reduce((s: number, i: { total: string }) => s + Number(i.total || 0), 0);
+        const paid = (c.ledger?.payments ?? []).reduce((s: number, p: { amount: number }) => s + Number(p.amount || 0), 0);
+        setCustOutstanding(billed - paid);
+      })
+      .catch(() => setCustOutstanding(null));
+  }, [customerId]);
 
   // Pre-fill customer from ?customer=<id> (e.g. coming from a customer page).
   useEffect(() => {
@@ -152,6 +171,10 @@ export default function BillingPage() {
       setError("Add at least one product.");
       return;
     }
+    if (mode === "invoice" && !customerId) {
+      setError("Wholesale invoices are for registered customers only — select a customer, or switch to POS for a walk-in sale.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     setResult(null);
@@ -175,11 +198,24 @@ export default function BillingPage() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
+
+      // Record the amount received now against the customer's account.
+      const recv = Number(received);
+      if (customerId && recv > 0) {
+        const numId = customerId.split("/").pop();
+        await fetch(`/api/customers/${numId}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: recv, method: payMethod, note: `Payment with ${d.invoiceNo || d.name || "sale"}`, date: new Date().toISOString() }),
+        }).catch(() => {});
+        setCustOutstanding((prev) => (prev ?? 0) + total - recv);
+      }
+
       setResult(d);
       setLines([]);
       setDiscount(0);
       setEmail("");
       setNote("");
+      setReceived("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -266,7 +302,7 @@ export default function BillingPage() {
                 <tr>
                   <th className="px-4 py-3">Item</th>
                   <th className="px-4 py-3 w-24">Qty</th>
-                  <th className="px-4 py-3 text-right">Unit</th>
+                  <th className="px-4 py-3 text-right">Unit Price</th>
                   <th className="px-4 py-3 text-right">Total</th>
                   <th className="px-2"></th>
                 </tr>
@@ -424,10 +460,36 @@ export default function BillingPage() {
             {discount > 0 && <Row label={`Discount (${discount}%)`} value={-discountAmt} />}
             {vat && <Row label="VAT (20%)" value={vatAmt} />}
             <div className="flex items-center justify-between border-t border-neutral-200 pt-2 text-base font-semibold text-neutral-900">
-              <span>Total</span>
+              <span>This bill</span>
               <span>£{total.toFixed(2)}</span>
             </div>
           </div>
+
+          {/* Account payment (registered customer) */}
+          {customerId && (
+            <div className="mt-4 space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-600">Old outstanding</span>
+                <span className="font-medium text-neutral-900">£{(custOutstanding ?? 0).toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between font-medium text-neutral-800">
+                <span>Total due (old + this bill)</span>
+                <span>£{((custOutstanding ?? 0) + total).toFixed(2)}</span>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <span className="shrink-0 text-neutral-600">Received now £</span>
+                <input type="number" step="0.01" value={received} onChange={(e) => setReceived(e.target.value)} placeholder="0.00" className="w-24 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm" />
+                <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1.5 text-sm">
+                  <option value="cash">Cash</option><option value="card">Card</option><option value="bank transfer">Bank</option><option value="cheque">Cheque</option>
+                </select>
+                <button type="button" onClick={() => setReceived(((custOutstanding ?? 0) + total).toFixed(2))} className="text-xs text-amber-600 hover:underline">pay all</button>
+              </div>
+              <div className="flex items-center justify-between border-t border-amber-200 pt-2 text-base font-semibold">
+                <span className="text-neutral-700">New outstanding</span>
+                <span className={((custOutstanding ?? 0) + total - Number(received || 0)) > 0.001 ? "text-red-600" : "text-emerald-600"}>£{Math.max(0, (custOutstanding ?? 0) + total - Number(received || 0)).toFixed(2)}</span>
+              </div>
+            </div>
+          )}
 
           <button
             onClick={submit}

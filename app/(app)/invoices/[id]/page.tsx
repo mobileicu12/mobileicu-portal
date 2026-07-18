@@ -313,7 +313,7 @@ export default function InvoiceEditPage() {
                 <tr>
                   <th className="px-4 py-3">Item</th>
                   <th className="px-4 py-3 w-24">Qty</th>
-                  <th className="px-4 py-3 text-right">Unit</th>
+                  <th className="px-4 py-3 text-right">Unit Price</th>
                   <th className="px-4 py-3 text-right">Total</th>
                   {!readOnly && <th className="px-2"></th>}
                 </tr>
