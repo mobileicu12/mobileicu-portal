@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
+import InvoicePreviewModal from "@/components/InvoicePreviewModal";
+import { loadBusiness, type Business } from "@/lib/business";
+import type { InvoiceDetail } from "@/lib/billing";
 
 const VAT_RATE = 0.2;
 
@@ -25,6 +28,8 @@ type Line = {
 };
 
 type BillResult = {
+  id: string;
+  invoiceNo?: string;
   name: string;
   invoiceUrl: string | null;
   completed: boolean;
@@ -108,6 +113,35 @@ export default function BillingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<BillResult | null>(null);
+  const [resultBusy, setResultBusy] = useState("");
+  const [preview, setPreview] = useState<{ invoice: InvoiceDetail; business: Business } | null>(null);
+
+  // Open the branded PDF of the bill we just created (preview → download / print / share).
+  async function openInvoicePdf() {
+    if (!result) return;
+    setResultBusy("pdf"); setError("");
+    try {
+      const [res, biz] = await Promise.all([fetch(`/api/billing/${encodeURIComponent(result.id)}`), loadBusiness()]);
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed to load invoice");
+      setPreview({ invoice: d.invoice as InvoiceDetail, business: biz });
+    } catch (e) { setError(e instanceof Error ? e.message : "PDF failed"); } finally { setResultBusy(""); }
+  }
+
+  // Mark a just-created (draft) invoice as PAID — for a customer who paid in person.
+  async function markResultPaid() {
+    if (!result) return;
+    if (!confirm("Mark this invoice as PAID? This records the sale and deducts stock.")) return;
+    setResultBusy("paid"); setError("");
+    try {
+      const res = await fetch(`/api/billing/${encodeURIComponent(result.id)}/action`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "complete" }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      setResult({ ...result, completed: true });
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setResultBusy(""); }
+  }
 
   function onSearch(value: string) {
     setQ(value);
@@ -260,13 +294,18 @@ export default function BillingPage() {
 
       {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {result && (
-        <div className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {result.completed ? "Sale completed" : "Invoice created"} — <strong>{result.name}</strong>.{" "}
-          {result.invoiceUrl && (
-            <a className="underline" href={result.invoiceUrl} target="_blank" rel="noreferrer">
-              Open invoice
-            </a>
-          )}
+        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>{result.completed ? "✓ Sale completed (paid)" : "Invoice created"} — <strong>{result.invoiceNo || result.name}</strong>.</span>
+            {result.invoiceUrl && <a className="underline" href={result.invoiceUrl} target="_blank" rel="noreferrer">Open in Shopify</a>}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button onClick={openInvoicePdf} disabled={!!resultBusy} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">{resultBusy === "pdf" ? "…" : "📄 Invoice PDF"}</button>
+            {!result.completed && (
+              <button onClick={markResultPaid} disabled={!!resultBusy} className="rounded-lg border border-emerald-400 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50">{resultBusy === "paid" ? "…" : "✓ Paid in person (mark paid)"}</button>
+            )}
+            <button onClick={() => { setResult(null); setError(""); }} className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">+ New bill</button>
+          </div>
         </div>
       )}
 
@@ -525,6 +564,8 @@ export default function BillingPage() {
           </p>
         </div>
       </div>
+
+      {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}
     </div>
   );
 }
