@@ -477,23 +477,30 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
   };
 }
 
+async function writeInvoicePayments(id: string, payments: InvoicePayment[]): Promise<InvoicePayment[]> {
+  const res = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf: [{ ownerId: toGid(id), namespace: "portal", key: "payments", type: "json", value: JSON.stringify(payments) }] },
+  );
+  if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+  return payments;
+}
+
 // Record a (partial) payment against a specific invoice (draft order metafield).
 export async function addInvoicePayment(id: string, payment: InvoicePayment): Promise<InvoicePayment[]> {
   const detail = await getInvoiceDetail(id);
-  const payments = [...detail.payments, payment];
-  const res = await adminGraphQL<{
-    metafieldsSet: { userErrors: { field: string[]; message: string }[] };
-  }>(
-    `mutation($mf: [MetafieldsSetInput!]!) {
-      metafieldsSet(metafields: $mf) { userErrors { field message } }
-    }`,
-    {
-      mf: [{ ownerId: toGid(id), namespace: "portal", key: "payments", type: "json", value: JSON.stringify(payments) }],
-    },
-  );
-  const errs = res.metafieldsSet.userErrors;
-  if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
-  return payments;
+  return writeInvoicePayments(id, [...detail.payments, payment]);
+}
+
+// Revoke (delete) a recorded invoice payment by index. Reads the raw stored list
+// (not the status-adjusted amountPaid) so a COMPLETED invoice's manual payments
+// can still be corrected.
+export async function removeInvoicePayment(id: string, index: number): Promise<InvoicePayment[]> {
+  const detail = await getInvoiceDetail(id);
+  const payments = [...detail.payments];
+  if (index < 0 || index >= payments.length) throw new ShopifyError("Payment not found.");
+  payments.splice(index, 1);
+  return writeInvoicePayments(id, payments);
 }
 
 function toGid(id: string) {

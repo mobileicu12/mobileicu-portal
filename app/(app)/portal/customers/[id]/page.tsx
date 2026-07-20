@@ -86,12 +86,24 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           : +new Date(b.createdAt) - +new Date(a.createdAt),
     );
 
-  // --- Payments: filter by method ---
+  // --- Payments: filter by method (keep the original ledger index for edit/revoke) ---
   const methods = Array.from(new Set(c.ledger.payments.map((p) => p.method)));
-  const shownPayments = [...c.ledger.payments]
+  const shownPayments = c.ledger.payments
+    .map((p, i) => ({ ...p, _i: i }))
     .filter((p) => payMethod === "all" || p.method === payMethod)
     .reverse();
   const shownPaymentsTotal = shownPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+  async function paymentAction(body: Record<string, unknown>) {
+    const res = await fetch(`/api/customers/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await res.json();
+    if (!res.ok) { setError(d.error || "Failed"); return; }
+    load();
+  }
+  async function revokePayment(index: number) {
+    if (!confirm("Revoke (delete) this payment? The customer's outstanding will be recalculated.")) return;
+    await paymentAction({ action: "removePayment", index });
+  }
 
   return (
     <div className="px-8 py-7">
@@ -146,7 +158,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total billed" value={billed} />
         <Stat label="Total paid" value={paid} tone="emerald" />
-        <Stat label="Outstanding" value={outstanding} tone={outstanding > 0 ? "red" : "emerald"} />
+        <Stat label={outstanding < -0.001 ? "Account credit" : "Outstanding"} value={Math.abs(outstanding)} tone={outstanding > 0.001 ? "red" : "emerald"} />
         <Stat label="Invoices" raw={c.invoices.length} />
       </div>
 
@@ -211,11 +223,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             <RecordPayment customerId={id} outstanding={outstanding} onAdded={load} />
           </div>
           <div className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto px-4 dark:divide-neutral-800">
-            {shownPayments.map((p, idx) => (
-              <div key={idx} className="flex items-center justify-between py-2.5 text-sm">
-                <div>
+            {shownPayments.map((p) => (
+              <div key={p._i} className="group relative flex items-center justify-between gap-2 py-2.5 text-sm">
+                <div className="min-w-0">
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(p.amount).toFixed(2)} <span className="font-normal text-neutral-500">· {p.method}</span></p>
-                  <p className="text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
+                  <p className="truncate text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 text-xs">
+                  <EditPaymentButton payment={p} onSave={(patch) => paymentAction({ action: "editPayment", index: p._i, ...patch })} />
+                  <button onClick={() => revokePayment(p._i)} className="rounded-md px-2 py-1 text-red-500 hover:bg-red-50" title="Revoke / delete this payment">Revoke</button>
                 </div>
               </div>
             ))}
@@ -266,6 +282,29 @@ function buildOutstandingInvoiceDoc(c: Detail, outstanding: number, business: im
     balance: outstanding,
   };
   return buildInvoiceDoc(inv, business);
+}
+
+function EditPaymentButton({ payment, onSave }: { payment: { amount: number; method: string; note: string }; onSave: (patch: { amount: number; method: string; note: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(String(payment.amount));
+  const [method, setMethod] = useState(payment.method || "cash");
+  const [note, setNote] = useState(payment.note || "");
+  if (!open) return <button onClick={() => setOpen(true)} className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900" title="Edit this payment">Edit</button>;
+  return (
+    <div className="absolute right-4 z-20 mt-1 w-60 rounded-xl border border-neutral-200 bg-white p-3 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="space-y-2">
+        <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800" placeholder="Amount £" />
+        <select value={method} onChange={(e) => setMethod(e.target.value)} className="w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+          <option value="cash">Cash</option><option value="card">Card</option><option value="bank transfer">Bank transfer</option><option value="cheque">Cheque</option><option value="other">Other</option>
+        </select>
+        <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800" placeholder="Note" />
+        <div className="flex gap-2">
+          <button onClick={() => { const a = Number(amount); if (!a || a <= 0) return; onSave({ amount: a, method, note }); setOpen(false); }} className="flex-1 rounded-lg bg-neutral-900 py-1.5 text-xs font-semibold text-white hover:bg-amber-500 hover:text-neutral-900">Save</button>
+          <button onClick={() => setOpen(false)} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SegmentEditor({ customerId, current, onSaved }: { customerId: string; current: SegmentKey[]; onSaved: () => void }) {

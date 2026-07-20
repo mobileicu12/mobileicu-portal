@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment } from "@/lib/billing";
+import { completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment } from "@/lib/billing";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -22,6 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     method?: string;
     note?: string;
     date?: string;
+    index?: number;
   };
   try {
     switch (body.action) {
@@ -47,6 +48,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           method: body.method || "cash",
           note: body.note || "",
         });
+        return NextResponse.json({ ok: true, payments });
+      }
+      case "removePayment": {
+        if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });
+        const payments = await removeInvoicePayment(decoded, body.index);
         return NextResponse.json({ ok: true, payments });
       }
       default:

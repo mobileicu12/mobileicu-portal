@@ -462,6 +462,20 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
     }
   }
 
+  async function revoke(index: number) {
+    if (!confirm("Revoke (delete) this payment?")) return;
+    setErr("");
+    try {
+      const res = await fetch(`/api/billing/${invoiceId}/action`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "removePayment", index }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      onChanged();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+  }
+
   const paid = meta.amountPaid;
   const balance = meta.balance;
   const fully = balance <= 0.001;
@@ -495,12 +509,13 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
       </div>
 
       <div className="mt-3 divide-y divide-neutral-100 dark:divide-neutral-800">
-        {[...meta.payments].reverse().map((p, i) => (
-          <div key={i} className="flex items-center justify-between py-2.5 text-sm">
-            <div>
+        {meta.payments.map((p, i) => ({ p, i })).reverse().map(({ p, i }) => (
+          <div key={i} className="flex items-center justify-between gap-2 py-2.5 text-sm">
+            <div className="min-w-0">
               <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(p.amount).toFixed(2)} <span className="font-normal text-neutral-500">· {p.method}</span></p>
-              <p className="text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
+              <p className="truncate text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
             </div>
+            <button onClick={() => revoke(i)} className="shrink-0 rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50" title="Revoke this payment">Revoke</button>
           </div>
         ))}
         {meta.payments.length === 0 && <p className="py-4 text-sm text-neutral-400">No payments recorded on this invoice yet.</p>}

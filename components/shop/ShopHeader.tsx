@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCart } from "./cart";
+import ShopSearch from "./ShopSearch";
 
 const PAGES = [
   { href: "/shop", label: "Home", exact: true },
@@ -52,13 +53,10 @@ export default function ShopHeader({ loginUrl }: { loginUrl: string }) {
         </nav>
 
         <div className="flex items-center gap-2">
-          {/* Inline search (tablet/desktop) */}
-          <form action="/shop/search" method="get" className="hidden md:block">
-            <div className="relative">
-              <svg className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
-              <input name="q" placeholder="Search parts, brands, models…" aria-label="Search" className="w-40 rounded-full border border-neutral-300 bg-neutral-50 py-1.5 pl-8 pr-3 text-sm outline-none transition-[width,box-shadow] duration-300 focus:w-60 focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-200 lg:w-48" />
-            </div>
-          </form>
+          {/* Inline live search (tablet/desktop) */}
+          <div className="hidden md:block">
+            <ShopSearch variant="desktop" />
+          </div>
           {/* Icon-only search (phones) */}
           <Link href="/shop/search" aria-label="Search" className="rounded-lg p-2 text-neutral-600 hover:text-amber-600 md:hidden">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
@@ -75,10 +73,9 @@ export default function ShopHeader({ loginUrl }: { loginUrl: string }) {
         {mobile && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden border-t border-neutral-200 lg:hidden">
             <div className="mx-auto max-w-7xl px-4 py-2">
-              <form action="/shop/search" method="get" className="relative mb-2" onSubmit={() => setMobile(false)}>
-                <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
-                <input name="q" placeholder="Search parts, brands, models…" aria-label="Search" className="w-full rounded-full border border-neutral-300 bg-neutral-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200" />
-              </form>
+              <div className="mb-2">
+                <ShopSearch variant="mobile" onNavigate={() => setMobile(false)} />
+              </div>
               {PAGES.map((p) => (
                 <Link key={p.href} href={p.href} onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">{p.label}</Link>
               ))}

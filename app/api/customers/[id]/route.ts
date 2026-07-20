@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCustomer, addPayment, setCustomerSegments, setTradeCode, updateCustomer, type Payment } from "@/lib/customers";
+import { getCustomer, addPayment, removePayment, updatePaymentAt, setCustomerSegments, setTradeCode, updateCustomer, type Payment } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
@@ -17,11 +17,30 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => null)) as { segments?: SegmentKey[]; action?: string; update?: UpdateFields } | null;
+  const body = (await req.json().catch(() => null)) as {
+    segments?: SegmentKey[];
+    action?: string;
+    update?: UpdateFields;
+    index?: number;
+    amount?: number;
+    method?: string;
+    note?: string;
+    date?: string;
+  } | null;
   try {
     if (body?.action === "generateTradeCode") {
       const code = await setTradeCode(gid(id));
       return NextResponse.json({ ok: true, tradeCode: code });
+    }
+    if (body?.action === "removePayment") {
+      if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });
+      const ledger = await removePayment(gid(id), body.index);
+      return NextResponse.json({ ok: true, ledger });
+    }
+    if (body?.action === "editPayment") {
+      if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });
+      const ledger = await updatePaymentAt(gid(id), body.index, { amount: body.amount, method: body.method, note: body.note, date: body.date });
+      return NextResponse.json({ ok: true, ledger });
     }
     if (body?.update) {
       await updateCustomer(gid(id), body.update);

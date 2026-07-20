@@ -406,30 +406,62 @@ export async function bulkDeleteCustomers(ids: string[]): Promise<{ ok: number; 
   return { ok, failed };
 }
 
-export async function addPayment(
-  customerId: string,
-  payment: Payment,
-): Promise<Ledger> {
-  const current = await getCustomer(customerId);
-  const ledger = current.ledger;
-  ledger.payments = [...ledger.payments, payment];
-  await adminGraphQL<{
-    metafieldsSet: { userErrors: { field: string[]; message: string }[] };
-  }>(
-    `mutation($mf: [MetafieldsSetInput!]!) {
-      metafieldsSet(metafields: $mf) { userErrors { field message } }
-    }`,
-    {
-      mf: [
-        {
-          ownerId: customerId,
-          namespace: LEDGER_NS,
-          key: LEDGER_KEY,
-          type: "json",
-          value: JSON.stringify(ledger),
-        },
-      ],
-    },
+// Read just the account ledger (lighter than getCustomer).
+async function readLedger(customerId: string): Promise<Ledger> {
+  const d = await adminGraphQL<{ customer: { ledger: { value: string } | null } | null }>(
+    `query($id: ID!) { customer(id: $id) { ledger: metafield(namespace: "${LEDGER_NS}", key: "${LEDGER_KEY}") { value } } }`,
+    { id: customerId },
   );
+  let ledger: Ledger = { payments: [] };
+  if (d.customer?.ledger?.value) {
+    try {
+      const parsed = JSON.parse(d.customer.ledger.value);
+      ledger = { payments: Array.isArray(parsed.payments) ? parsed.payments : [], creditLimit: parsed.creditLimit };
+    } catch { ledger = { payments: [] }; }
+  }
+  return ledger;
+}
+
+async function writeLedger(customerId: string, ledger: Ledger): Promise<void> {
+  const res = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf: [{ ownerId: customerId, namespace: LEDGER_NS, key: LEDGER_KEY, type: "json", value: JSON.stringify(ledger) }] },
+  );
+  if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+}
+
+export async function addPayment(customerId: string, payment: Payment): Promise<Ledger> {
+  const ledger = await readLedger(customerId);
+  ledger.payments = [...ledger.payments, payment];
+  await writeLedger(customerId, ledger);
+  return ledger;
+}
+
+// Revoke (delete) an account payment by its index in the stored ledger.
+export async function removePayment(customerId: string, index: number): Promise<Ledger> {
+  const ledger = await readLedger(customerId);
+  if (index < 0 || index >= ledger.payments.length) throw new ShopifyError("Payment not found.");
+  ledger.payments.splice(index, 1);
+  await writeLedger(customerId, ledger);
+  return ledger;
+}
+
+// Edit an account payment (amount / method / note / date) by index.
+export async function updatePaymentAt(
+  customerId: string,
+  index: number,
+  patch: Partial<Payment>,
+): Promise<Ledger> {
+  const ledger = await readLedger(customerId);
+  const p = ledger.payments[index];
+  if (!p) throw new ShopifyError("Payment not found.");
+  if (patch.amount != null) {
+    if (patch.amount <= 0) throw new ShopifyError("Amount must be greater than zero.");
+    p.amount = patch.amount;
+  }
+  if (patch.method) p.method = patch.method;
+  if (patch.note != null) p.note = patch.note;
+  if (patch.date) p.date = patch.date;
+  await writeLedger(customerId, ledger);
   return ledger;
 }
