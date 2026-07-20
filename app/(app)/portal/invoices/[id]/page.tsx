@@ -213,6 +213,24 @@ export default function InvoiceEditPage() {
     }
   }
 
+  async function voidIt() {
+    if (!window.confirm(`Void invoice ${meta?.name}?\n\nThis cancels the linked order (restocking the items) and removes it from your invoices, totals and the customer's balance. This can't be undone.`)) return;
+    setBusy("void");
+    setError("");
+    try {
+      const res = await fetch(`/api/billing/${encId}/action`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "void" }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Void failed");
+      router.push("/portal/invoices");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Void failed");
+      setBusy("");
+    }
+  }
+
   async function sendEmail() {
     const to = window.prompt("Send invoice to which email?", email || meta?.customerEmail || "");
     if (to === null) return;
@@ -276,13 +294,15 @@ export default function InvoiceEditPage() {
           <a href={`/api/billing/export?id=${encId}`} className={btnGhost}>Excel</a>
           <button onClick={() => doAction("duplicate")} disabled={!!busy} className={btnGhost}>{busy === "duplicate" ? "…" : "Duplicate"}</button>
           {!completed && <button onClick={sendEmail} disabled={!!busy} className={btnGhost}>{busy === "send" ? "…" : "✉ Send"}</button>}
+          {completed && <button onClick={voidIt} disabled={!!busy} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50">{busy === "void" ? "…" : "↩ Void / undo paid"}</button>}
           <button onClick={del} disabled={!!busy} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">{busy === "delete" ? "…" : "Delete"}</button>
         </div>
       </div>
 
       {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {msg && <p className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{msg}</p>}
-      {completed && <p className="mt-4 rounded-lg bg-neutral-100 px-4 py-3 text-sm text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">This invoice is paid and locked. Duplicate it to make an editable copy.</p>}
+      {meta.voided && <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">⚠ This invoice has been voided — it no longer counts toward totals or the customer&apos;s balance.</p>}
+      {completed && !meta.voided && <p className="mt-4 rounded-lg bg-neutral-100 px-4 py-3 text-sm text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">This invoice is paid and locked. <strong>Duplicate</strong> it to make an editable copy, or <strong>Void</strong> it to undo the sale (cancels the order &amp; restocks).</p>}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         {/* Left: line items */}

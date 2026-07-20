@@ -280,6 +280,7 @@ function buildOutstandingInvoiceDoc(c: Detail, outstanding: number, business: im
     payments: [],
     amountPaid: 0,
     balance: outstanding,
+    voided: false,
   };
   return buildInvoiceDoc(inv, business);
 }

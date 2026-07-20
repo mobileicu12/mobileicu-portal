@@ -284,7 +284,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     };
   }>(
     `query {
-      draftOrders(first: 100, reverse: true, query: "tag:portal-billing") {
+      draftOrders(first: 100, reverse: true, query: "tag:portal-billing AND -tag:voided") {
         edges { node {
           id name status totalPrice createdAt invoiceUrl tags
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
@@ -357,6 +357,7 @@ export type InvoiceDetail = {
   payments: InvoicePayment[];
   amountPaid: number;
   balance: number;
+  voided: boolean;
 };
 
 function addrLines(a: {
@@ -375,6 +376,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
   const data = await adminGraphQL<{
     draftOrder: {
       id: string; name: string; status: string; createdAt: string; note2: string | null;
+      tags: string[];
       taxExempt: boolean;
       subtotalPrice: string; totalTax: string; totalPrice: string;
       totalDiscountsSet: { presentmentMoney: { amount: string; currencyCode: string } } | null;
@@ -404,7 +406,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
   }>(
     `query($id: ID!) {
       draftOrder(id: $id) {
-        id name status createdAt note2 taxExempt
+        id name status createdAt note2 tags taxExempt
         subtotalPrice totalTax totalPrice
         totalDiscountsSet { presentmentMoney { amount currencyCode } }
         customer { displayName email phone }
@@ -474,6 +476,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     payments,
     amountPaid,
     balance,
+    voided: (d.tags ?? []).includes("voided"),
   };
 }
 
@@ -603,6 +606,38 @@ export async function completeInvoice(id: string, paymentPending = false): Promi
   const orderId = res.draftOrderComplete.draftOrder?.order?.id ?? null;
   await fulfillOrder(orderId);
   return { orderId };
+}
+
+// ---- Void a completed invoice ----
+// A COMPLETED draft can't be un-completed or deleted in Shopify. Instead we cancel
+// the order it created (restocking the items) and tag the draft "voided" so it drops
+// out of the invoices list, stats and customer balances — effectively revoked.
+export async function voidInvoice(id: string): Promise<void> {
+  const gid = toGid(id);
+  const d = await adminGraphQL<{ draftOrder: { id: string; order: { id: string } | null } | null }>(
+    `query($id: ID!) { draftOrder(id: $id) { id order { id } } }`,
+    { id: gid },
+  );
+  if (!d.draftOrder) throw new ShopifyError("Invoice not found.");
+
+  const orderId = d.draftOrder.order?.id;
+  if (orderId) {
+    // Cancel the sale and restock; best-effort (some orders can't be cancelled).
+    await adminGraphQL(
+      `mutation($orderId: ID!) {
+        orderCancel(orderId: $orderId, reason: STAFF, refund: false, restock: true, notifyCustomer: false, staffNote: "Voided in portal") {
+          orderCancelUserErrors { field message }
+        }
+      }`,
+      { orderId },
+    ).catch(() => { /* best-effort */ });
+  }
+
+  const r = await adminGraphQL<{ tagsAdd: { userErrors: { message: string }[] } }>(
+    `mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }`,
+    { id: gid, tags: ["voided"] },
+  );
+  if (r.tagsAdd.userErrors.length) throw new ShopifyError(r.tagsAdd.userErrors.map((e) => e.message).join("; "));
 }
 
 // ---- Delete a draft invoice ----

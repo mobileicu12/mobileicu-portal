@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment } from "@/lib/billing";
+import { completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment, voidInvoice } from "@/lib/billing";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -54,6 +54,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });
         const payments = await removeInvoicePayment(decoded, body.index);
         return NextResponse.json({ ok: true, payments });
+      }
+      case "void": {
+        await voidInvoice(decoded);
+        return NextResponse.json({ ok: true });
       }
       default:
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });
