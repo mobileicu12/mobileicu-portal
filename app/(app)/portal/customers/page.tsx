@@ -5,6 +5,10 @@ import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { COUNTRIES, DEFAULT_COUNTRY } from "@/lib/countries";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
+import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
+import { loadBusiness } from "@/lib/business";
+
+type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[] };
 
 const CUST_COLUMNS: ColumnDef[] = [
   { key: "name", label: "Name", locked: true },
@@ -61,6 +65,54 @@ export default function CustomersPage() {
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [sendingToday, setSendingToday] = useState(false);
+  const [sendMsg, setSendMsg] = useState("");
+
+  // Send every customer their own itemised "today" statement (items per bill,
+  // today's paid/outstanding + total outstanding) by email (PDF) + WhatsApp (text).
+  async function sendTodayInvoices() {
+    if (!confirm("Send each customer their today's itemised summary (email with PDF + WhatsApp)?")) return;
+    setSendingToday(true); setSendMsg("");
+    try {
+      const res = await fetch("/api/reports/today-customers");
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed to build today's summary.");
+      const custs = (d.customers ?? []) as TodayCustomer[];
+      if (!custs.length) { setSendMsg("No customer sales today."); return; }
+      const biz = await loadBusiness();
+      const dateLabel = new Date().toLocaleDateString("en-GB");
+      let emails = 0, whats = 0, fails = 0;
+      for (const c of custs) {
+        const doc = buildCustomerDayItemisedDoc(c.name, c.bills,
+          { todayTotal: c.todayTotal, todayPaid: c.todayPaid, todayOutstanding: c.todayOutstanding, accountOutstanding: c.accountOutstanding },
+          { dateLabel, business: biz });
+        const pdfBase64 = doc.output("datauristring").split("base64,").pop();
+        const filename = `${c.name.replace(/[^\w-]/g, "_")}_${dateLabel.replace(/\//g, "-")}.pdf`;
+        if (c.email) {
+          try {
+            const er = await fetch("/api/email/invoice", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ to: c.email, subject: `Your account summary — ${dateLabel}`, message: `Hi ${c.name}, your itemised summary for ${dateLabel} is attached.\nToday's total: £${c.todayTotal.toFixed(2)} · Paid: £${c.todayPaid.toFixed(2)} · Total outstanding: £${c.accountOutstanding.toFixed(2)}`, pdfBase64, filename }),
+            });
+            er.ok ? emails++ : fails++;
+          } catch { fails++; }
+        }
+        if (c.phone) {
+          try {
+            const list = c.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
+            const msg = `Hi ${c.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nThank you.`;
+            const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: msg }) });
+            if (wr.ok) whats++;
+          } catch { /* whatsapp optional */ }
+        }
+      }
+      setSendMsg(`Done — ${emails} email(s), ${whats} WhatsApp(s)${fails ? `, ${fails} failed` : ""} across ${custs.length} customer(s).`);
+    } catch (e) {
+      setSendMsg(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setSendingToday(false);
+    }
+  }
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [segMode, setSegMode] = useState(false);
   const [segDraft, setSegDraft] = useState<SegmentKey[]>([]);
@@ -170,13 +222,24 @@ export default function CustomersPage() {
               Segmented by source. <strong>Online / Registered</strong> customers are the only ones with wholesale price access.
             </p>
           </div>
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
-          >
-            {showForm ? "Close" : "+ Register customer"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={sendTodayInvoices}
+              disabled={sendingToday}
+              title="Email each customer their itemised today's bills (PDF) + WhatsApp summary"
+              className="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400 disabled:opacity-60"
+            >
+              {sendingToday ? "Sending…" : "📤 Send today's invoices"}
+            </button>
+            <button
+              onClick={() => setShowForm((s) => !s)}
+              className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900"
+            >
+              {showForm ? "Close" : "+ Register customer"}
+            </button>
+          </div>
         </div>
+        {sendMsg && <p className="mt-2 rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10">{sendMsg}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <SegTab active={segFilter === "all"} onClick={() => pickSeg("all")} label="All" />
           {SEGMENTS.map((s) => (

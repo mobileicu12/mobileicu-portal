@@ -201,6 +201,95 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
   return doc;
 }
 
+// ---- Itemised single-customer day statement (items per bill + outstandings) ----
+export type ItemisedBill = {
+  invoiceNo: string; name: string; status: string; createdAt: string;
+  total: string; amountPaid: number; balance: number;
+  lines: { title: string; quantity: number; unitPrice: string; lineTotal: string }[];
+};
+
+export function buildCustomerDayItemisedDoc(
+  customer: string,
+  bills: ItemisedBill[],
+  totals: { todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number },
+  opts: { dateLabel: string; business?: Business },
+): jsPDF {
+  const B = opts.business || BUSINESS;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 42;
+  const gbp = (n: number) => `£${(isNaN(n) ? 0 : n).toFixed(2)}`;
+  const numv = (s: string) => parseFloat(s) || 0;
+
+  // Header
+  doc.setFillColor(GOLD); doc.circle(M + 14, 44, 14, "F");
+  doc.setTextColor("#ffffff"); doc.setFont("helvetica", "bold"); doc.setFontSize(12);
+  doc.text("MI", M + 14, 48.5, { align: "center" });
+  doc.setTextColor(INK); doc.setFontSize(18); doc.text(B.name, M + 38, 42);
+  doc.setTextColor(GOLD); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+  doc.text("Daily statement", M + 38, 56);
+  doc.setTextColor(INK); doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+  doc.text("STATEMENT", W - M, 42, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(MUTED);
+  doc.text(opts.dateLabel, W - M, 58, { align: "right" });
+  doc.setDrawColor(GOLD); doc.setLineWidth(1.4); doc.line(M, 78, W - M, 78);
+  doc.setDrawColor(LINE); doc.setLineWidth(0.6); doc.line(M, 81, W - M, 81);
+
+  doc.setTextColor(GOLD); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+  doc.text("CUSTOMER", M, 104);
+  doc.setTextColor(INK); doc.setFontSize(13); doc.text(customer || "Customer", M, 120);
+
+  // Summary tiles (4)
+  let y = 138;
+  const tiles: [string, string, boolean][] = [
+    ["Today's bills", gbp(totals.todayTotal), false],
+    ["Paid today", gbp(totals.todayPaid), false],
+    ["Today's outstanding", gbp(totals.todayOutstanding), totals.todayOutstanding > 0],
+    ["Total outstanding", gbp(totals.accountOutstanding), totals.accountOutstanding > 0],
+  ];
+  const tileW = (W - M * 2 - 30) / 4;
+  tiles.forEach(([label, val, red], i) => {
+    const x = M + i * (tileW + 10);
+    doc.setFillColor(CREAM); doc.setDrawColor(LINE); doc.roundedRect(x, y, tileW, 44, 6, 6, "FD");
+    doc.setTextColor(MUTED); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+    doc.text(label.toUpperCase(), x + 8, y + 15);
+    doc.setTextColor(red ? "#b3261e" : INK); doc.setFont("helvetica", "bold"); doc.setFontSize(12);
+    doc.text(val, x + 8, y + 33);
+  });
+  y += 62;
+
+  // Each bill with its items
+  for (const bill of bills) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(INK);
+    const when = new Date(bill.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    doc.text(`${bill.invoiceNo}  ·  ${when}  ·  ${bill.status === "COMPLETED" ? "Paid" : "Unpaid"}`, M, y);
+    autoTable(doc, {
+      startY: y + 6,
+      head: [["Item", "Qty", "Unit", "Amount"]],
+      body: bill.lines.map((l) => [l.title, String(l.quantity), gbp(numv(l.unitPrice)), gbp(numv(l.lineTotal))]),
+      theme: "grid",
+      headStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 8, lineColor: LINE, lineWidth: 0.6 },
+      bodyStyles: { fontSize: 8.5, textColor: INK, lineColor: LINE, lineWidth: 0.5 },
+      columnStyles: { 1: { halign: "center", cellWidth: 40 }, 2: { halign: "right", cellWidth: 60 }, 3: { halign: "right", cellWidth: 66, fontStyle: "bold" } },
+      margin: { left: M, right: M },
+      foot: [["", "", "Bill total", gbp(numv(bill.total))]],
+      footStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 8.5, halign: "right", lineColor: LINE, lineWidth: 0.6 },
+    });
+    // @ts-expect-error augmented
+    y = (doc.lastAutoTable?.finalY ?? y) + 18;
+    if (y > H - 90) { doc.addPage(); y = 60; }
+  }
+
+  const fy = H - 28;
+  doc.setDrawColor(LINE); doc.setLineWidth(0.6); doc.line(M, fy - 12, W - M, fy - 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(MUTED);
+  doc.text(`${B.name}${B.website ? `  ·  ${B.website}` : ""}`, M, fy);
+  doc.text(`Statement · ${opts.dateLabel}`, W - M, fy, { align: "right" });
+
+  return doc;
+}
+
 // ---- Single-customer day statement (used for the end-of-day per-customer ZIP) ----
 export type CustomerDayRow = { invoiceNo: string; createdAt: string; status: string; total: string };
 
