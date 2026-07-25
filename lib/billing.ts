@@ -358,6 +358,7 @@ export type InvoiceDetail = {
   amountPaid: number;
   balance: number;
   voided: boolean;
+  invoiceUrl: string | null;
 };
 
 function addrLines(a: {
@@ -376,7 +377,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
   const data = await adminGraphQL<{
     draftOrder: {
       id: string; name: string; status: string; createdAt: string; note2: string | null;
-      tags: string[];
+      tags: string[]; invoiceUrl: string | null;
       taxExempt: boolean;
       subtotalPrice: string; totalTax: string; totalPrice: string;
       totalDiscountsSet: { presentmentMoney: { amount: string; currencyCode: string } } | null;
@@ -406,7 +407,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
   }>(
     `query($id: ID!) {
       draftOrder(id: $id) {
-        id name status createdAt note2 tags taxExempt
+        id name status createdAt note2 tags invoiceUrl taxExempt
         subtotalPrice totalTax totalPrice
         totalDiscountsSet { presentmentMoney { amount currencyCode } }
         customer { displayName email phone }
@@ -477,6 +478,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     amountPaid,
     balance,
     voided: (d.tags ?? []).includes("voided"),
+    invoiceUrl: d.invoiceUrl ?? null,
   };
 }
 

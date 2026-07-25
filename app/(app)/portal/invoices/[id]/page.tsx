@@ -278,6 +278,11 @@ export default function InvoiceEditPage() {
   if (loading) return <div className="px-8 py-7 text-sm text-neutral-400">Loading invoice…</div>;
   if (!meta) return <div className="px-8 py-7 text-sm text-red-600">{error || "Not found."}</div>;
 
+  // WhatsApp click-to-send (opens WhatsApp with a prefilled message + invoice link).
+  const waPhone = (meta.customerPhone || "").replace(/[^0-9]/g, "");
+  const waText = `Hi ${meta.customerName !== "—" ? meta.customerName : "there"}, here is your invoice ${meta.invoiceNo} from MOBILE ICU — total £${Number(meta.total).toFixed(2)}${Number(meta.balance) > 0.001 ? ` (£${Number(meta.balance).toFixed(2)} due)` : " (paid)"}.${meta.invoiceUrl ? ` View it here: ${meta.invoiceUrl}` : ""}`;
+  const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : null;
+
   return (
     <div className="px-8 py-7">
       <Link href="/portal/invoices" className="text-sm text-neutral-500 hover:text-amber-600">← All invoices</Link>
@@ -294,6 +299,11 @@ export default function InvoiceEditPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={downloadPdf} className={btnGhost}>PDF</button>
           <a href={`/api/billing/export?id=${encId}`} className={btnGhost}>Excel</a>
+          {waUrl ? (
+            <a href={waUrl} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100">🟢 WhatsApp</a>
+          ) : (
+            <span title="Add a phone number to this customer to enable WhatsApp" className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-300">🟢 WhatsApp</span>
+          )}
           <button onClick={() => doAction("duplicate")} disabled={!!busy} className={btnGhost}>{busy === "duplicate" ? "…" : "Duplicate"}</button>
           {!completed && <button onClick={sendEmail} disabled={!!busy} className={btnGhost}>{busy === "send" ? "…" : "✉ Send"}</button>}
           {completed && <button onClick={voidIt} disabled={!!busy} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50">{busy === "void" ? "…" : "↩ Void / undo paid"}</button>}

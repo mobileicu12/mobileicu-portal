@@ -22,16 +22,25 @@ export default function InvoicePreviewModal({ invoice, business, onClose }: { in
   }
 
   async function email() {
-    const to = window.prompt("Email this invoice to:", invoice.customerEmail || "");
-    if (to === null) return;
+    const to = window.prompt("Email this invoice (with PDF attached) to:", invoice.customerEmail || "");
+    if (to === null || !to.trim()) return;
     setEmailing(true); setMsg("");
     try {
-      const res = await fetch(`/api/billing/${encodeURIComponent(invoice.id)}/action`, {
+      const dataUri = buildInvoiceDoc(invoice, business).output("datauristring");
+      const pdfBase64 = dataUri.split("base64,").pop() || "";
+      const name = invoice.customerName && invoice.customerName !== "—" ? invoice.customerName : "there";
+      const res = await fetch(`/api/email/invoice`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "send", to }),
+        body: JSON.stringify({
+          to: to.trim(),
+          subject: `Invoice ${invoice.invoiceNo} from MOBILE ICU`,
+          message: `Hi ${name},\n\nPlease find invoice ${invoice.invoiceNo} attached — total £${Number(invoice.total).toFixed(2)}${Number(invoice.balance) > 0.001 ? ` (£${Number(invoice.balance).toFixed(2)} due)` : ""}.\n\nThank you for your business.`,
+          pdfBase64,
+          filename: invoiceFilename(invoice, business),
+        }),
       });
       const d = await res.json();
-      setMsg(res.ok ? `✓ Invoice emailed${to ? ` to ${to}` : ""}.` : (d.error || "Send failed."));
+      setMsg(res.ok ? `✓ Invoice emailed to ${to.trim()}.` : (d.error || "Send failed."));
     } catch {
       setMsg("Send failed.");
     } finally {
