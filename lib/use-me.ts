@@ -19,3 +19,12 @@ export function useIsOwner(): boolean {
   const me = useMe();
   return me?.role === "owner";
 }
+
+// Who may see business totals — total sales / earnings / paid figures.
+// Owner always; a teammate must be granted the "reports" permission.
+// Everyone else (default staff) sees only outstanding balances + today's collection.
+export function useCanSeeFinance(): boolean {
+  const me = useMe();
+  if (!me) return false;
+  return me.role === "owner" || me.permissions.includes("reports");
+}

@@ -6,8 +6,10 @@ import autoTable from "jspdf-autotable";
 import { BUSINESS, type Business } from "./business";
 
 const INK = "#1a1a1a";
-const GOLD = "#c8952f";
-const MUTED = "#6b6b6b";
+const GOLD = "#a9791d";
+const MUTED = "#6b655c";
+const LINE = "#e2ddd3";
+const LIGHT = "#f5f3ee";
 
 function money(n: number) {
   return `£${(isNaN(n) ? 0 : n).toFixed(2)}`;
@@ -40,28 +42,38 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
   const pageW = doc.internal.pageSize.getWidth();
   const M = 40;
 
-  // Header band
-  doc.setFillColor(INK);
-  doc.rect(0, 0, pageW, 92, "F");
+  // Header (light) — monogram + name left, title right
+  doc.setFillColor(GOLD);
+  doc.circle(M + 15, 52, 15, "F");
   doc.setTextColor("#ffffff");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(24);
-  doc.text(BUSINESS.name, M, 46);
+  doc.setFontSize(13);
+  doc.text("MI", M + 15, 57, { align: "center" });
+  doc.setTextColor(INK);
+  doc.setFontSize(18);
+  doc.text(BUSINESS.name, M + 40, 50);
   doc.setTextColor(GOLD);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text(BUSINESS.tagline, M, 64);
-  doc.setTextColor("#ffffff");
+  doc.setFontSize(8.5);
+  doc.text(BUSINESS.tagline, M + 40, 64);
+  doc.setTextColor(INK);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text("STATEMENT", pageW - M, 46, { align: "right" });
+  doc.setFontSize(22);
+  doc.text("STATEMENT", pageW - M, 52, { align: "right" });
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(GOLD);
-  doc.text(new Date().toLocaleDateString("en-GB"), pageW - M, 64, { align: "right" });
+  doc.setFontSize(9.5);
+  doc.setTextColor(MUTED);
+  doc.text(`As at ${new Date().toLocaleDateString("en-GB")}`, pageW - M, 70, { align: "right" });
+
+  doc.setDrawColor(GOLD);
+  doc.setLineWidth(1.4);
+  doc.line(M, 100, pageW - M, 100);
+  doc.setDrawColor(LINE);
+  doc.setLineWidth(0.6);
+  doc.line(M, 103, pageW - M, 103);
 
   // Business (left) + Statement-to (right)
-  let y = 118;
+  let y = 128;
   doc.setTextColor(MUTED);
   doc.setFontSize(9);
   const biz = [...BUSINESS.addressLines];
@@ -118,9 +130,9 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
     head: [["Date", "Detail", "Type", "Charge", "Paid", "Balance"]],
     body,
     theme: "grid",
-    headStyles: { fillColor: INK, textColor: "#ffffff", fontSize: 9 },
-    bodyStyles: { fontSize: 9, textColor: INK },
-    alternateRowStyles: { fillColor: "#faf7f0" },
+    headStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 9, lineColor: LINE, lineWidth: 0.6 },
+    bodyStyles: { fontSize: 9, textColor: INK, lineColor: LINE, lineWidth: 0.5 },
+    alternateRowStyles: { fillColor: "#fbfaf7" },
     columnStyles: {
       3: { halign: "right" },
       4: { halign: "right" },

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useIsOwner } from "@/lib/use-me";
 
 type Stats = {
   products: number;
@@ -15,7 +14,6 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [error, setError] = useState("");
-  const isOwner = useIsOwner();
 
   useEffect(() => {
     fetch("/api/stats")
@@ -52,8 +50,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Today's takings — owner only */}
-      {isOwner && <TodayTakings />}
+      {/* Today's collection — visible to staff (today only, not all-time totals) */}
+      <TodayTakings />
 
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total products" value={stats?.products} tone="ink" />

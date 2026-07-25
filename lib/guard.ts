@@ -14,6 +14,19 @@ export async function isOwnerRequest(): Promise<boolean> {
   return !!(s && process.env.PORTAL_SESSION_SECRET && s === process.env.PORTAL_SESSION_SECRET);
 }
 
+// May the request see business totals (sales / earnings)? Owner or "reports" permission.
+export async function canSeeFinanceRequest(): Promise<boolean> {
+  if (await isOwnerRequest()) return true;
+  const session = await auth().catch(() => null);
+  const email = session?.user?.email;
+  if (!email) return false;
+  try {
+    return permsFor(await getPortalUser(email)).includes("reports");
+  } catch {
+    return false;
+  }
+}
+
 export async function requirePermission(perm: PermKey): Promise<NextResponse | null> {
   const session = await auth().catch(() => null);
   const email = session?.user?.email;

@@ -6,10 +6,12 @@ import autoTable from "jspdf-autotable";
 import { BUSINESS, type Business } from "./business";
 import { SEGMENTS } from "./segments";
 
-const INK = "#14110e";
-const GOLD = "#c8952f";
+const INK = "#1a1a1a";
+const GOLD = "#a9791d";
 const MUTED = "#6b655c";
-const CREAM = "#faf7f0";
+const CREAM = "#fbfaf7";
+const LINE = "#e2ddd3";
+const LIGHT = "#f5f3ee";
 
 export type ReportRow = {
   invoiceNo: string;
@@ -33,25 +35,35 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
   const H = doc.internal.pageSize.getHeight();
   const M = 40;
 
-  // Header band
-  doc.setFillColor(INK);
-  doc.rect(0, 0, W, 92, "F");
+  // Header (light) — monogram + name left, title right
+  doc.setFillColor(GOLD);
+  doc.circle(M + 14, 44, 14, "F");
   doc.setTextColor("#ffffff");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text(B.name, M, 44);
+  doc.setFontSize(12);
+  doc.text("MI", M + 14, 48.5, { align: "center" });
+  doc.setTextColor(INK);
+  doc.setFontSize(18);
+  doc.text(B.name, M + 38, 42);
   doc.setTextColor(GOLD);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text("Sales report", M, 62);
-  doc.setTextColor("#ffffff");
+  doc.setFontSize(8.5);
+  doc.text("Sales report", M + 38, 56);
+  doc.setTextColor(INK);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("REPORT", W - M, 44, { align: "right" });
+  doc.setFontSize(20);
+  doc.text("SALES REPORT", W - M, 42, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.setTextColor(GOLD);
-  doc.text(opts.rangeLabel, W - M, 62, { align: "right" });
+  doc.setTextColor(MUTED);
+  doc.text(opts.rangeLabel, W - M, 58, { align: "right" });
+
+  doc.setDrawColor(GOLD);
+  doc.setLineWidth(1.4);
+  doc.line(M, 78, W - M, 78);
+  doc.setDrawColor(LINE);
+  doc.setLineWidth(0.6);
+  doc.line(M, 81, W - M, 81);
 
   const num = (s: string) => parseFloat(s) || 0;
   let total = 0, paid = 0, outstanding = 0;
@@ -107,8 +119,8 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
     head: [["Teammate", "Bills", "Sales"]],
     body: [...byStaff.entries()].sort((a, b) => b[1].total - a[1].total).map(([k, v]) => [k, String(v.count), money(v.total)]),
     theme: "grid",
-    headStyles: { fillColor: INK, textColor: "#ffffff", fontSize: 8 },
-    bodyStyles: { fontSize: 8.5, textColor: INK },
+    headStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 8, lineColor: LINE, lineWidth: 0.6 },
+    bodyStyles: { fontSize: 8.5, textColor: INK, lineColor: LINE, lineWidth: 0.5 },
     columnStyles: { 1: { halign: "center" }, 2: { halign: "right" } },
     margin: { left: M, right: W / 2 + 6 },
     tableWidth: W / 2 - M - 6,
@@ -121,8 +133,8 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
     head: [["Source", "Bills", "Sales"]],
     body: bySeg.length ? bySeg : [["—", "0", money(0)]],
     theme: "grid",
-    headStyles: { fillColor: INK, textColor: "#ffffff", fontSize: 8 },
-    bodyStyles: { fontSize: 8.5, textColor: INK },
+    headStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 8, lineColor: LINE, lineWidth: 0.6 },
+    bodyStyles: { fontSize: 8.5, textColor: INK, lineColor: LINE, lineWidth: 0.5 },
     columnStyles: { 1: { halign: "center" }, 2: { halign: "right" } },
     margin: { left: W / 2 + 6, right: M },
     tableWidth: W / 2 - M - 6,
@@ -148,13 +160,13 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
       ];
     }),
     theme: "striped",
-    headStyles: { fillColor: INK, textColor: "#ffffff", fontSize: 8.5 },
+    headStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 8.5, lineColor: LINE, lineWidth: 0.6 },
     bodyStyles: { fontSize: 8.5, textColor: INK },
     alternateRowStyles: { fillColor: CREAM },
     columnStyles: { 6: { halign: "right", fontStyle: "bold" } },
     margin: { left: M, right: M },
     foot: [["", "", "", "", "", "TOTAL", money(total)]],
-    footStyles: { fillColor: "#ffffff", textColor: INK, fontStyle: "bold", fontSize: 9, halign: "right" },
+    footStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 9, halign: "right", lineColor: LINE, lineWidth: 0.6 },
   });
 
   // Footer

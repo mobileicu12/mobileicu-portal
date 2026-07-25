@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { isOwnerRequest } from "@/lib/guard";
+import { requirePermission } from "@/lib/guard";
 import { listInvoices } from "@/lib/billing";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
-// Owner-only "today's takings": retail + wholesale combined, split by how it was paid.
+// "Today's takings" / today's collection — visible to any billing-capable teammate.
+// (This is the day's collection, not the all-time earnings totals which stay finance-only.)
 export async function GET() {
   if (!shopifyConfigured()) return NextResponse.json({ error: "not configured" }, { status: 503 });
-  if (!(await isOwnerRequest())) return NextResponse.json({ error: "Owner only." }, { status: 403 });
+  const denied = await requirePermission("billing");
+  if (denied) return denied;
 
   try {
     const all = await listInvoices();
