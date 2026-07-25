@@ -4,12 +4,14 @@ import { getInvoiceDetail } from "@/lib/billing";
 import { getSettings } from "@/lib/settings";
 import { BUSINESS, type Business } from "@/lib/business";
 import { verifyStatementToken } from "@/lib/invoice-link";
+import { buildCustomerDayItemisedDoc } from "@/lib/report-pdf";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-// Public, token-protected itemised day statement for a customer (for WhatsApp links).
+// Public, token-protected itemised day-statement PDF (for WhatsApp links). Returns
+// a real application/pdf so it opens directly in the phone's PDF viewer.
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!shopifyConfigured()) return NextResponse.json({ error: "Unavailable." }, { status: 503 });
   const { id } = await ctx.params;
@@ -44,7 +46,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       ? { name: s.bizName || BUSINESS.name, tagline: s.tagline || BUSINESS.tagline, addressLines: String(s.address || "").split("\n").map((x) => x.trim()).filter(Boolean), email: s.email || "", phone: s.phone || "", website: s.website || "", vatNumber: s.vatNumber || "", bank: s.bank || s.invoiceFooter || "" }
       : BUSINESS;
 
-    return NextResponse.json({ statement: { name: c.name || c.company || "Customer", dateLabel: day.toLocaleDateString("en-GB"), todayTotal, todayPaid, todayOutstanding, accountOutstanding, bills }, business });
+    const name = c.name || c.company || "Customer";
+    const doc = buildCustomerDayItemisedDoc(name, bills, { todayTotal, todayPaid, todayOutstanding, accountOutstanding }, { dateLabel: day.toLocaleDateString("en-GB"), business });
+    const buf = doc.output("arraybuffer");
+    return new NextResponse(buf as ArrayBuffer, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${name.replace(/[^\w-]/g, "_")}_${date}.pdf"`,
+        "Cache-Control": "private, no-store",
+      },
+    });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Statement not found.";
     return NextResponse.json({ error: msg }, { status: 404 });

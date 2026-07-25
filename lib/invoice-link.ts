@@ -18,9 +18,9 @@ export function verifyInvoiceToken(id: string, token: string | undefined | null)
   }
 }
 
-// Relative share path for an invoice (prepend the origin on the client).
+// Relative share path for an invoice PDF (prepend the origin on the client).
 export function invoiceSharePath(numericId: string): string {
-  return `/i/${numericId}?t=${signInvoiceToken(numericId)}`;
+  return `/api/public/invoice/${numericId}?t=${signInvoiceToken(numericId)}`;
 }
 
 // ---- Day-statement links (customer's itemised bills for a given date) ----
@@ -36,5 +36,5 @@ export function verifyStatementToken(id: string, date: string, token: string | u
   }
 }
 export function statementSharePath(numericId: string, date: string): string {
-  return `/s/${numericId}?d=${date}&t=${signStatementToken(numericId, date)}`;
+  return `/api/public/statement/${numericId}?d=${date}&t=${signStatementToken(numericId, date)}`;
 }

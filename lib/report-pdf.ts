@@ -1,6 +1,5 @@
-// Client-side multi-invoice business report PDF (selected invoices or a date range).
-"use client";
-
+// Multi-invoice business report + customer statement PDFs (jsPDF + autotable).
+// Universal (no browser APIs) so these can render on the server for public links.
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { BUSINESS, type Business } from "./business";

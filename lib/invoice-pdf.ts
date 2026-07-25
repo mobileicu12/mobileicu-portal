@@ -1,7 +1,6 @@
 // Clean, professional A4 invoice PDF via jsPDF + autotable.
 // Light layout — white background, no dark header band, subtle gold accents.
-"use client";
-
+// Universal (no browser APIs) so it can render on the server for public PDF links.
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { BUSINESS, type Business } from "./business";
