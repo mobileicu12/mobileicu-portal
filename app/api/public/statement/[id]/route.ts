@@ -20,7 +20,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!verifyStatementToken(numId, date, token)) return NextResponse.json({ error: "Invalid or expired link." }, { status: 403 });
 
   try {
-    const c = await getCustomer(numId);
+    const c = await getCustomer(`gid://shopify/Customer/${numId}`);
     const invoiceDue = c.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
     const ledgerPaid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
     const accountOutstanding = Math.max(0, (c.openingBalance || 0) + invoiceDue - ledgerPaid);
