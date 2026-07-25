@@ -355,6 +355,7 @@ export default function InventoryPage() {
                 onToggle={() => toggleRow(row.key)}
                 onStockSaved={(qty) => setRows((prev) => prev.map((r) => r.key === row.key ? { ...r, levels: r.levels.map((l) => l.locationId === locationId ? { ...l, available: qty } : l) } : r))}
                 onPriceSaved={(p) => setRows((prev) => prev.map((r) => r.key === row.key ? { ...r, price: p } : r))}
+                onTierSaved={(tierKey, value) => setRows((prev) => prev.map((r) => r.productId === row.productId ? { ...r, tiers: { ...r.tiers, [tierKey]: value } } : r))}
               />
             ))}
             {rows.length === 0 && !loading && (
@@ -430,26 +431,56 @@ function BulkValue({ label, placeholder, onApply, disabled }: { label: string; p
   );
 }
 
-// Read-only channel-price cell. Blank tier → dim dash (falls back to the online price).
-function TierCell({ base, value }: { base: string; value: string | null | undefined }) {
-  const n = value != null && String(value).trim() ? Number(value) : null;
-  const set = n != null && Number.isFinite(n) && n > 0;
+const TIER_FIELD: Record<string, string> = { wholesale: "wholesalePrice", shop: "shopPrice", ebay: "ebayPrice", amazon: "amazonPrice" };
+
+// Inline-editable channel-price cell. Blank = fall back to the online price;
+// type a number and hit ✓ to save that tier's metafield.
+function TierCell({
+  productId, base, tierKey, value, onSaved,
+}: {
+  productId: string; base: string; tierKey: string; value: string | null | undefined;
+  onSaved: (tierKey: string, value: string) => void;
+}) {
+  const norm = (v: string | null | undefined) =>
+    v != null && String(v).trim() && Number(v) > 0 ? String(Number(v)) : "";
+  const [val, setVal] = useState(norm(value));
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setVal(norm(value)); setDirty(false); }, [value]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/products/${productId.split("/").pop()}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", [TIER_FIELD[tierKey]]: val }),
+      });
+      if (res.ok) { onSaved(tierKey, val); setDirty(false); }
+    } finally { setSaving(false); }
+  }
+
   return (
-    <td className="px-4 py-3 text-right tabular-nums">
-      {set ? (
-        <span className="font-medium text-ink">£{n!.toFixed(2)}</span>
-      ) : (
-        <span className="text-muted/50" title={`Uses online price (£${Number(base || 0).toFixed(2)})`}>—</span>
-      )}
+    <td className="px-4 py-3 text-right">
+      <div className="flex items-center justify-end gap-1.5">
+        <input
+          type="number" step="0.01" value={val} placeholder="base"
+          onChange={(e) => { setVal(e.target.value); setDirty(true); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && dirty) save(); }}
+          title={`Blank = use online price (£${Number(base || 0).toFixed(2)})`}
+          className="w-20 rounded-lg border border-line bg-surface px-2 py-1.5 text-right text-sm text-ink placeholder:text-muted/50"
+        />
+        {dirty && <button onClick={save} disabled={saving} className="rounded-lg bg-accent px-2 py-1.5 text-xs font-semibold text-accentfg disabled:opacity-60">✓</button>}
+      </div>
     </td>
   );
 }
 
 function StockRow({
-  row, show, available, locationId, lowStock, checked, onToggle, onStockSaved, onPriceSaved,
+  row, show, available, locationId, lowStock, checked, onToggle, onStockSaved, onPriceSaved, onTierSaved,
 }: {
   row: FlatRow; show: (k: string) => boolean; available: number; locationId: string; lowStock: number; checked: boolean;
   onToggle: () => void; onStockSaved: (qty: number) => void; onPriceSaved: (p: string) => void;
+  onTierSaved: (tierKey: string, value: string) => void;
 }) {
   const [stockVal, setStockVal] = useState(String(available));
   const [stockDirty, setStockDirty] = useState(false);
@@ -507,10 +538,10 @@ function StockRow({
           </div>
         </td>
       )}
-      {show("wholesale") && <TierCell base={row.price} value={row.tiers?.wholesale} />}
-      {show("shop") && <TierCell base={row.price} value={row.tiers?.shop} />}
-      {show("ebay") && <TierCell base={row.price} value={row.tiers?.ebay} />}
-      {show("amazon") && <TierCell base={row.price} value={row.tiers?.amazon} />}
+      {show("wholesale") && <TierCell productId={row.productId} base={row.price} tierKey="wholesale" value={row.tiers?.wholesale} onSaved={onTierSaved} />}
+      {show("shop") && <TierCell productId={row.productId} base={row.price} tierKey="shop" value={row.tiers?.shop} onSaved={onTierSaved} />}
+      {show("ebay") && <TierCell productId={row.productId} base={row.price} tierKey="ebay" value={row.tiers?.ebay} onSaved={onTierSaved} />}
+      {show("amazon") && <TierCell productId={row.productId} base={row.price} tierKey="amazon" value={row.tiers?.amazon} onSaved={onTierSaved} />}
       {show("status") && (
         <td className="px-4 py-3">
           {!row.tracked ? <span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-muted">Not tracked</span>
