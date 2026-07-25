@@ -14,6 +14,13 @@ export type PortalSettings = {
   invoicePrefix: string; // e.g. "MICU" -> MICU-2026-0001
   vatRate: number; // percent, e.g. 20
   lowStock: number;
+  // ---- Daily digest (end-of-day summaries) ----
+  dailyDigest: boolean; // master on/off for the scheduled 9:30pm send
+  digestCustomers: boolean; // send each wholesale customer their own day summary
+  digestOwner: boolean; // send the owner an all-customers summary report
+  digestOwnerEmail: string; // where the owner report goes (blank = business email)
+  digestOwnerPhone: string; // optional WhatsApp number for the owner report
+  digestLastRun: string; // YYYY-MM-DD of the last successful run (idempotency)
 };
 
 export const DEFAULT_SETTINGS: PortalSettings = {
@@ -29,10 +36,54 @@ export const DEFAULT_SETTINGS: PortalSettings = {
   invoicePrefix: "MICU",
   vatRate: 20,
   lowStock: 5,
+  dailyDigest: false,
+  digestCustomers: true,
+  digestOwner: true,
+  digestOwnerEmail: "",
+  digestOwnerPhone: "",
+  digestLastRun: "",
 };
 
 const NS = "portal";
 const KEY = "settings";
+const INTEG_KEY = "integrations";
+
+// ---- Integrations (secrets) ----
+// Stored in a SEPARATE metafield and never returned to the browser verbatim, so
+// the WhatsApp API token can't leak through the (staff-readable) settings endpoint.
+export type Integrations = {
+  whatsappToken: string;   // WhatsApp Cloud API access token
+  whatsappPhoneId: string; // WhatsApp Cloud API phone-number ID
+  whatsappTemplate: string; // optional approved template name (business-initiated)
+};
+
+const DEFAULT_INTEGRATIONS: Integrations = { whatsappToken: "", whatsappPhoneId: "", whatsappTemplate: "" };
+
+export async function getIntegrations(): Promise<Integrations> {
+  const d = await adminGraphQL<{ shop: { metafield: { value: string } | null } }>(
+    `query { shop { metafield(namespace: "${NS}", key: "${INTEG_KEY}") { value } } }`,
+  );
+  if (!d.shop.metafield?.value) return DEFAULT_INTEGRATIONS;
+  try { return { ...DEFAULT_INTEGRATIONS, ...JSON.parse(d.shop.metafield.value) }; }
+  catch { return DEFAULT_INTEGRATIONS; }
+}
+
+// A blank token means "leave the stored token unchanged" — the UI never echoes the secret back.
+export async function saveIntegrations(input: Partial<Integrations>): Promise<Integrations> {
+  const current = await getIntegrations();
+  const merged: Integrations = {
+    whatsappToken: input.whatsappToken?.trim() ? input.whatsappToken.trim() : current.whatsappToken,
+    whatsappPhoneId: input.whatsappPhoneId !== undefined ? input.whatsappPhoneId.trim() : current.whatsappPhoneId,
+    whatsappTemplate: input.whatsappTemplate !== undefined ? input.whatsappTemplate.trim() : current.whatsappTemplate,
+  };
+  const ownerId = await shopGid();
+  const res = await adminGraphQL<{ metafieldsSet: { userErrors: { field: string[]; message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf: [{ ownerId, namespace: NS, key: INTEG_KEY, type: "json", value: JSON.stringify(merged) }] },
+  );
+  if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+  return merged;
+}
 
 async function shopGid(): Promise<string> {
   const d = await adminGraphQL<{ shop: { id: string } }>(`query { shop { id } }`);

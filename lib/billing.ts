@@ -274,6 +274,9 @@ export type InvoiceRow = {
   name: string;
   invoiceNo: string;
   customer: string;
+  customerId: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
   status: string;
   total: string;
   createdAt: string;
@@ -298,7 +301,8 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
           invoiceNo: { value: string } | null;
           custName: { value: string } | null;
           payMethod: { value: string } | null;
-          customer: { displayName: string | null } | null;
+          custPhone: { value: string } | null;
+          customer: { id: string; displayName: string | null; email: string | null; phone: string | null } | null;
           email: string | null;
         };
       }[];
@@ -311,7 +315,8 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
           custName: metafield(namespace: "portal", key: "cust_name") { value }
           payMethod: metafield(namespace: "portal", key: "pay_method") { value }
-          customer { displayName }
+          custPhone: metafield(namespace: "portal", key: "cust_phone") { value }
+          customer { id displayName email phone }
           email
         } }
       }
@@ -322,6 +327,9 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     name: e.node.name,
     invoiceNo: e.node.invoiceNo?.value || e.node.name,
     customer: e.node.customer?.displayName || e.node.custName?.value || e.node.email || "—",
+    customerId: e.node.customer?.id ?? null,
+    customerEmail: e.node.customer?.email ?? e.node.email ?? null,
+    customerPhone: e.node.customer?.phone ?? e.node.custPhone?.value ?? null,
     status: e.node.status,
     total: e.node.totalPrice,
     createdAt: e.node.createdAt,
