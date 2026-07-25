@@ -44,6 +44,7 @@ export default function BillingPage() {
   const [segment, setSegment] = useState<SegmentKey>("online");
   const [vat, setVat] = useState(true);
   const [discount, setDiscount] = useState(0);
+  const [discountType, setDiscountType] = useState<"pct" | "amt">("pct");
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
@@ -246,8 +247,12 @@ export default function BillingPage() {
   }
 
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
-  const discountAmt = subtotal * (discount / 100);
+  const discountAmt = discountType === "pct"
+    ? subtotal * (Math.min(discount, 100) / 100)
+    : Math.min(discount, subtotal);
   const net = subtotal - discountAmt;
+  // Payload for the API: Shopify wants PERCENTAGE (value = %) or FIXED_AMOUNT (value = £).
+  const discountPayload = { discountType: discountType === "pct" ? "PERCENTAGE" : "FIXED_AMOUNT", discountValue: discount };
   const vatAmt = vat ? net * VAT_RATE : 0;
   const total = net + vatAmt;
 
@@ -305,7 +310,7 @@ export default function BillingPage() {
         }
         const upRes = await fetch(`/api/billing/${encodeURIComponent(addToInvoiceId)}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lines: merged, vat, customerId, email, note, discountPercent: discount }),
+          body: JSON.stringify({ lines: merged, vat, customerId, email, note, ...discountPayload }),
         });
         const upd = await upRes.json();
         if (!upRes.ok) throw new Error(upd.error || "Failed to add to the open invoice.");
@@ -332,7 +337,7 @@ export default function BillingPage() {
           customerName: !customerId ? walkName : undefined,
           customerPhone: !customerId ? walkPhone : undefined,
           note,
-          discountPercent: discount,
+          ...discountPayload,
           // Auto-mark PAID when the full amount for this bill is collected now.
           complete: mode === "pos" || payThisBillInFull,
           segment,
@@ -535,17 +540,24 @@ export default function BillingPage() {
 
           <label className="mt-3 block text-sm">
             <span className="flex items-center justify-between font-medium text-neutral-700">
-              <span>Discount %</span>
+              <span>Discount</span>
               {discount > 0 && <span className="text-xs font-normal text-amber-600">= £{discountAmt.toFixed(2)} off</span>}
             </span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={discount}
-              onChange={(e) => setDiscount(Math.min(100, Math.max(0, Number(e.target.value))))}
-              className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-            />
+            <div className="mt-1 flex gap-2">
+              <input
+                type="number"
+                min={0}
+                step={discountType === "pct" ? 1 : 0.01}
+                value={discount}
+                onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
+                className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+              />
+              <div className="flex shrink-0 rounded-lg border border-neutral-300 p-0.5">
+                {(["pct", "amt"] as const).map((t) => (
+                  <button key={t} type="button" onClick={() => setDiscountType(t)} className={`rounded-md px-3 py-1.5 text-sm font-semibold ${discountType === t ? "bg-neutral-900 text-white" : "text-neutral-500"}`}>{t === "pct" ? "%" : "£"}</button>
+                ))}
+              </div>
+            </div>
           </label>
 
           <div className="mt-3 text-sm">
@@ -624,7 +636,7 @@ export default function BillingPage() {
 
           <div className="mt-4 space-y-1.5 border-t border-neutral-200 pt-4 text-sm">
             <Row label="Subtotal" value={subtotal} />
-            {discount > 0 && <Row label={`Discount (${discount}%)`} value={-discountAmt} />}
+            {discount > 0 && <Row label={discountType === "pct" ? `Discount (${discount}%)` : "Discount"} value={-discountAmt} />}
             {vat && <Row label="VAT (20%)" value={vatAmt} />}
             <div className="flex items-center justify-between border-t border-neutral-200 pt-2 text-base font-semibold text-neutral-900">
               <span>This bill</span>

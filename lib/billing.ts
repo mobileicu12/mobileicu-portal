@@ -119,7 +119,9 @@ export type CreateBillInput = {
   customerName?: string; // walk-in / one-off name (when no registered customer)
   customerPhone?: string; // walk-in phone
   note?: string;
-  discountPercent?: number;
+  discountPercent?: number; // legacy % discount
+  discountType?: "PERCENTAGE" | "FIXED_AMOUNT"; // % of subtotal or a fixed £ amount
+  discountValue?: number; // value for the chosen type
   complete?: boolean; // POS: complete immediately (creates order, deducts stock)
   segment?: SegmentKey; // where this sale comes from (online/shop/ebay/amazon)
   staff?: string; // portal user (email) who created the sale
@@ -171,12 +173,10 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
   }
   if (input.payMethod?.trim()) mfs.push({ namespace: "portal", key: "pay_method", type: "single_line_text_field", value: input.payMethod.trim().slice(0, 40) });
   draftInput.metafields = mfs;
-  if (input.discountPercent && input.discountPercent > 0) {
-    draftInput.appliedDiscount = {
-      valueType: "PERCENTAGE",
-      value: input.discountPercent,
-      title: "Wholesale discount",
-    };
+  const dType = input.discountType ?? "PERCENTAGE";
+  const dValue = input.discountValue ?? input.discountPercent ?? 0;
+  if (dValue > 0) {
+    draftInput.appliedDiscount = { valueType: dType, value: dValue, title: "Discount" };
   }
 
   const created = await adminGraphQL<{
@@ -551,6 +551,8 @@ export type UpdateInvoiceInput = {
   email?: string;
   note?: string;
   discountPercent?: number;
+  discountType?: "PERCENTAGE" | "FIXED_AMOUNT";
+  discountValue?: number;
 };
 
 export async function updateInvoice(id: string, input: UpdateInvoiceInput): Promise<BillResult> {
@@ -562,10 +564,9 @@ export async function updateInvoice(id: string, input: UpdateInvoiceInput): Prom
   };
   if (input.customerId?.trim()) patch.purchasingEntity = { customerId: input.customerId.trim() };
   else if (input.email?.trim()) patch.email = input.email.trim();
-  patch.appliedDiscount =
-    input.discountPercent && input.discountPercent > 0
-      ? { valueType: "PERCENTAGE", value: input.discountPercent, title: "Wholesale discount" }
-      : null;
+  const uType = input.discountType ?? "PERCENTAGE";
+  const uValue = input.discountValue ?? input.discountPercent ?? 0;
+  patch.appliedDiscount = uValue > 0 ? { valueType: uType, value: uValue, title: "Discount" } : null;
 
   const res = await adminGraphQL<{
     draftOrderUpdate: {

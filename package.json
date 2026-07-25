@@ -9,8 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "exceljs": "^4.4.0",
     "framer-motion": "^12.42.2",
+    "jsbarcode": "^3.12.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "jszip": "^3.10.1",
