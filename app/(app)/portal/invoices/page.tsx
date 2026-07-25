@@ -164,6 +164,40 @@ export default function InvoicesPage() {
     setReport({ doc, filename: `mobileicu-report-${stamp}.pdf`, subtitle: `${rows.length} invoice(s) · ${label}` });
   }
 
+  // Download one PDF report PER CUSTOMER for the current filtered set, zipped and
+  // named by customer — so an end-of-day batch can be forwarded to each customer.
+  async function downloadPerCustomerZip(rows: Invoice[], label: string) {
+    if (!rows.length) { setError("No invoices in view to bundle."); return; }
+    setBusy("zip"); setError("");
+    try {
+      const biz = await loadBusiness();
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      // Group strictly by customer (id when present, else name) — never mixed.
+      const groups = new Map<string, Invoice[]>();
+      for (const r of rows) {
+        const key = r.customer || "Unknown";
+        const arr = groups.get(key) ?? []; arr.push(r); groups.set(key, arr);
+      }
+      const stamp = (dateFrom || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+      const used = new Set<string>();
+      for (const [customer, list] of groups) {
+        const reportRows: ReportRow[] = list.map((r) => ({ invoiceNo: r.invoiceNo, name: r.name, customer: r.customer, staff: r.staff, segment: r.segment, status: r.status, total: r.total, createdAt: r.createdAt, payMethod: r.payMethod }));
+        const doc = buildInvoicesReportDoc(reportRows, { rangeLabel: `${customer} · ${label}`, business: biz });
+        let safe = (customer || "customer").replace(/[^\w\- ]/g, "").trim().replace(/\s+/g, "_").slice(0, 60) || "customer";
+        while (used.has(safe)) safe += "_";
+        used.add(safe);
+        zip.file(`${safe}_${stamp}.pdf`, doc.output("arraybuffer"));
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `mobileicu-customer-reports-${stamp}.zip`; a.click();
+      URL.revokeObjectURL(url);
+      setFlash(`Bundled ${groups.size} customer report(s).`);
+    } catch (e) { setError(e instanceof Error ? e.message : "ZIP failed"); } finally { setBusy(""); }
+  }
+
   async function downloadPdf(e: React.MouseEvent, inv: Invoice) {
     e.stopPropagation();
     setBusy(inv.id + ":pdf");
@@ -234,6 +268,7 @@ export default function InvoicesPage() {
           <div className="flex shrink-0 flex-wrap gap-2">
             <a href="/portal/billing" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">+ New bill</a>
             <button onClick={() => openPdfReport(filtered, rangeLabel())} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400">📄 Report PDF</button>
+            <button onClick={() => downloadPerCustomerZip(filtered, rangeLabel())} disabled={busy === "zip"} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200" title="One PDF per customer, zipped and named by customer">{busy === "zip" ? "Zipping…" : "📦 By customer (ZIP)"}</button>
             <button onClick={downloadReport} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">📊 Excel</button>
             <button onClick={() => downloadXlsx()} disabled={invoices.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ All</button>
           </div>
