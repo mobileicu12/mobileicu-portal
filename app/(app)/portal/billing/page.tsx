@@ -57,7 +57,7 @@ export default function BillingPage() {
   const [received, setReceived] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
   // Open (unpaid) invoices for the selected customer — lets you add to a running tab.
-  const [openInvoices, setOpenInvoices] = useState<{ id: string; name: string; total: string; balance: number }[]>([]);
+  const [openInvoices, setOpenInvoices] = useState<{ id: string; name: string; invoiceNo?: string; total: string; balance: number; createdAt: string }[]>([]);
   const [addToInvoiceId, setAddToInvoiceId] = useState("");
 
   // Load the selected customer's account outstanding + whether they're Online/Registered.
@@ -75,8 +75,13 @@ export default function BillingPage() {
         const ledgerPaid = (c.ledger?.payments ?? []).reduce((s: number, p: { amount: number }) => s + Number(p.amount || 0), 0);
         setCustOutstanding((c.openingBalance || 0) + invoiceDue - ledgerPaid);
         setCustIsOnline((c.segments ?? []).includes("online"));
-        // Draft (unpaid) invoices this customer can add more items to.
-        setOpenInvoices((c.invoices ?? []).filter((i: { status: string }) => i.status !== "COMPLETED").map((i: { id: string; name: string; total: string; balance: number }) => ({ id: i.id, name: i.name, total: i.total, balance: i.balance })));
+        // Today's draft (unpaid) invoices this customer can add more items to (a running tab).
+        const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+        setOpenInvoices(
+          (c.invoices ?? [])
+            .filter((i: { status: string; createdAt: string }) => i.status !== "COMPLETED" && new Date(i.createdAt) >= startOfToday)
+            .map((i: { id: string; name: string; total: string; balance: number; createdAt: string }) => ({ id: i.id, name: i.name, total: i.total, balance: i.balance, createdAt: i.createdAt })),
+        );
         setAddToInvoiceId("");
       })
       .catch(() => { setCustOutstanding(null); setCustIsOnline(false); setOpenInvoices([]); });
@@ -526,11 +531,11 @@ export default function BillingPage() {
             )}
             {mode === "invoice" && customerId && openInvoices.length > 0 && (
               <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
-                <p className="text-xs font-medium text-sky-700">This customer has {openInvoices.length} open invoice{openInvoices.length === 1 ? "" : "s"} — add these items to a running tab, or start a new one:</p>
+                <p className="text-xs font-medium text-sky-700">This customer has {openInvoices.length} open invoice{openInvoices.length === 1 ? "" : "s"} from today — add these items to a running tab, or start a new one:</p>
                 <select value={addToInvoiceId} onChange={(e) => setAddToInvoiceId(e.target.value)} className="mt-1 w-full rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm">
                   <option value="">➕ Create a new invoice</option>
                   {openInvoices.map((i) => (
-                    <option key={i.id} value={i.id}>Add to {i.name} — £{i.total}{i.balance > 0.001 ? ` (£${i.balance.toFixed(2)} due)` : ""}</option>
+                    <option key={i.id} value={i.id}>{i.name} · {new Date(i.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} — £{i.total}{i.balance > 0.001 ? ` (£${i.balance.toFixed(2)} due)` : ""}</option>
                   ))}
                 </select>
               </div>

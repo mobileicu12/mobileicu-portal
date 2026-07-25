@@ -58,6 +58,7 @@ export function useSort<K extends string>(initial: K, initialDir: "asc" | "desc"
     if (k === key) setDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setKey(k); setDir("asc"); }
   }
+  function setSort(k: K, d: "asc" | "desc") { setKey(k); setDir(d); }
   const arrow = (k: K) => (k === key ? (dir === "asc" ? " ▲" : " ▼") : "");
-  return { key, dir, onSort, arrow };
+  return { key, dir, onSort, setSort, arrow };
 }

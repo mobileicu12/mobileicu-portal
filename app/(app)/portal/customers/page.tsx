@@ -24,6 +24,8 @@ type Customer = {
   orders: number;
   totalSpent: string;
   segments: SegmentKey[];
+  updatedAt: string;
+  lastOrderAt: string | null;
 };
 
 function numericId(gid: string) {
@@ -50,8 +52,8 @@ function SegBadges({ segments }: { segments: SegmentKey[] }) {
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const cols = useColumns("cols:customers", CUST_COLUMNS);
-  // Default: "" = keep the server's recent-first order (latest customers on top).
-  const sort = useSort<"" | "name" | "company" | "orders" | "totalSpent">("", "asc");
+  // Default: most recently active customers on top.
+  const sort = useSort<"recent" | "sold" | "name" | "company" | "orders" | "totalSpent">("recent", "desc");
   const [q, setQ] = useState("");
   const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
   const [loading, setLoading] = useState(true);
@@ -120,10 +122,11 @@ export default function CustomersPage() {
   }
 
   const shown = useMemo(() => {
-    if (!sort.key) return customers; // server order (recent first)
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = (c: Customer): string | number => {
       switch (sort.key) {
+        case "recent": return +new Date(c.updatedAt);
+        case "sold": return c.lastOrderAt ? +new Date(c.lastOrderAt) : 0;
         case "name": return c.name.toLowerCase();
         case "company": return c.company.toLowerCase();
         case "orders": return c.orders;
@@ -164,8 +167,21 @@ export default function CustomersPage() {
             value={q}
             onChange={(e) => onSearch(e.target.value)}
             placeholder="Search name, company, email or phone…"
-            className="ml-auto w-64 rounded-lg border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+            className="ml-auto w-56 rounded-lg border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
           />
+          <select
+            value={`${sort.key}:${sort.dir}`}
+            onChange={(e) => { const [k, d] = e.target.value.split(":"); sort.setSort(k as typeof sort.key, d as "asc" | "desc"); }}
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+            title="Sort customers"
+          >
+            <option value="recent:desc">Recently active</option>
+            <option value="sold:desc">Recently sold to</option>
+            <option value="orders:desc">Most orders</option>
+            <option value="totalSpent:desc">Highest spend</option>
+            <option value="name:asc">Name A–Z</option>
+            <option value="company:asc">Company A–Z</option>
+          </select>
           <ColumnChooser columns={CUST_COLUMNS} isVisible={cols.isVisible} toggle={cols.toggle} />
         </div>
       </div>

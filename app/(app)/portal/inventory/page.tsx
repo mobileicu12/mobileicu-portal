@@ -4,8 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProductRow, Location } from "@/lib/shopify";
 import { CHANNELS, channelKeysFromTags } from "@/lib/channels";
+import ColumnChooser, { useColumns, type ColumnDef } from "@/components/ColumnChooser";
 
 const LOW_STOCK_DEFAULT = 5;
+
+const STOCK_COLUMNS: ColumnDef[] = [
+  { key: "product", label: "Product", locked: true },
+  { key: "sku", label: "SKU" },
+  { key: "price", label: "Price" },
+  { key: "status", label: "Stock status" },
+  { key: "channels", label: "Channels" },
+  { key: "available", label: "Available", locked: true },
+];
 
 type FlatRow = {
   key: string;
@@ -51,6 +61,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
 type ManualCollection = { id: string; title: string };
 
 export default function InventoryPage() {
+  const cols = useColumns("cols:inventory", STOCK_COLUMNS);
   const [rows, setRows] = useState<FlatRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<string>("");
@@ -293,6 +304,7 @@ export default function InventoryPage() {
               <option value="CREATED_AT:1">Newest</option>
             </select>
           </div>
+          <ColumnChooser columns={STOCK_COLUMNS} isVisible={cols.isVisible} toggle={cols.toggle} />
           {(statusFilter || stockFilter || channelFilter || collectionFilter) && (
             <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); setCollectionFilter(""); reload(buildQuery(query, "", "", "", "")); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear filters</button>
           )}
@@ -308,10 +320,10 @@ export default function InventoryPage() {
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
               <th className="px-4 py-3 font-medium">Product</th>
-              <th className="px-4 py-3 font-medium">SKU</th>
-              <th className="px-4 py-3 font-medium">Price (£)</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Channels</th>
+              {cols.isVisible("sku") && <th className="px-4 py-3 font-medium">SKU</th>}
+              {cols.isVisible("price") && <th className="px-4 py-3 font-medium">Price (£)</th>}
+              {cols.isVisible("status") && <th className="px-4 py-3 font-medium">Status</th>}
+              {cols.isVisible("channels") && <th className="px-4 py-3 font-medium">Channels</th>}
               <th className="px-4 py-3 text-right font-medium">Available</th>
             </tr>
           </thead>
@@ -320,6 +332,7 @@ export default function InventoryPage() {
               <StockRow
                 key={row.key}
                 row={row}
+                show={cols.isVisible}
                 available={availableAt(row)}
                 locationId={locationId}
                 lowStock={lowStock}
@@ -330,7 +343,7 @@ export default function InventoryPage() {
               />
             ))}
             {rows.length === 0 && !loading && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">No products found.</td></tr>
+              <tr><td colSpan={2 + ["sku", "price", "status", "channels"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-muted">No products found.</td></tr>
             )}
           </tbody>
         </table>
@@ -403,9 +416,9 @@ function BulkValue({ label, placeholder, onApply, disabled }: { label: string; p
 }
 
 function StockRow({
-  row, available, locationId, lowStock, checked, onToggle, onStockSaved, onPriceSaved,
+  row, show, available, locationId, lowStock, checked, onToggle, onStockSaved, onPriceSaved,
 }: {
-  row: FlatRow; available: number; locationId: string; lowStock: number; checked: boolean;
+  row: FlatRow; show: (k: string) => boolean; available: number; locationId: string; lowStock: number; checked: boolean;
   onToggle: () => void; onStockSaved: (qty: number) => void; onPriceSaved: (p: string) => void;
 }) {
   const [stockVal, setStockVal] = useState(String(available));
@@ -455,31 +468,37 @@ function StockRow({
           </div>
         </div>
       </td>
-      <td className="px-4 py-3 text-muted">{row.sku || "—"}</td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <input type="number" step="0.01" value={priceVal} onChange={(e) => { setPriceVal(e.target.value); setPriceDirty(true); }} className="w-24 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink" />
-          {priceDirty && <button onClick={savePrice} disabled={saving} className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accentfg disabled:opacity-60">Save</button>}
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        {!row.tracked ? <span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-muted">Not tracked</span>
-          : status === "out" ? <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-500">Out</span>
-          : status === "low" ? <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600">Low</span>
-          : <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-600">In stock</span>}
-      </td>
-      <td className="px-4 py-3">
-        {row.channels.length === 0 ? (
-          <span className="text-xs text-muted/60">—</span>
-        ) : (
-          <div className="flex flex-wrap gap-1">
-            {row.channels.map((k) => {
-              const c = CHANNELS.find((x) => x.key === k);
-              return c ? <span key={k} className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">{c.short}</span> : null;
-            })}
+      {show("sku") && <td className="px-4 py-3 text-muted">{row.sku || "—"}</td>}
+      {show("price") && (
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <input type="number" step="0.01" value={priceVal} onChange={(e) => { setPriceVal(e.target.value); setPriceDirty(true); }} className="w-24 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink" />
+            {priceDirty && <button onClick={savePrice} disabled={saving} className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accentfg disabled:opacity-60">Save</button>}
           </div>
-        )}
-      </td>
+        </td>
+      )}
+      {show("status") && (
+        <td className="px-4 py-3">
+          {!row.tracked ? <span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-muted">Not tracked</span>
+            : status === "out" ? <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-500">Out</span>
+            : status === "low" ? <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600">Low</span>
+            : <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-600">In stock</span>}
+        </td>
+      )}
+      {show("channels") && (
+        <td className="px-4 py-3">
+          {row.channels.length === 0 ? (
+            <span className="text-xs text-muted/60">—</span>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {row.channels.map((k) => {
+                const c = CHANNELS.find((x) => x.key === k);
+                return c ? <span key={k} className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">{c.short}</span> : null;
+              })}
+            </div>
+          )}
+        </td>
+      )}
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-2">
           <input type="number" value={stockVal} disabled={!row.tracked || !row.inventoryItemId} onChange={(e) => { setStockVal(e.target.value); setStockDirty(true); }} className="w-20 rounded-lg border border-line bg-surface px-2 py-1.5 text-right text-sm text-ink disabled:opacity-50" />

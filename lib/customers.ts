@@ -11,6 +11,8 @@ export type CustomerSummary = {
   orders: number;
   totalSpent: string;
   segments: SegmentKey[];
+  updatedAt: string;
+  lastOrderAt: string | null;
 };
 
 export type Payment = { date: string; amount: number; method: string; note: string };
@@ -206,8 +208,10 @@ export async function listCustomers(q?: string, segment?: SegmentKey): Promise<C
           phone: string | null;
           numberOfOrders: string;
           tags: string[];
+          updatedAt: string;
           amountSpent: { amount: string } | null;
           company: { value: string } | null;
+          lastOrder: { createdAt: string } | null;
         };
       }[];
     };
@@ -215,9 +219,10 @@ export async function listCustomers(q?: string, segment?: SegmentKey): Promise<C
     `query($q: String) {
       customers(first: 100, query: $q, sortKey: UPDATED_AT, reverse: true) {
         edges { node {
-          id displayName email phone numberOfOrders tags
+          id displayName email phone numberOfOrders tags updatedAt
           amountSpent { amount }
           company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
+          lastOrder { createdAt }
         } }
       }
     }`,
@@ -232,6 +237,8 @@ export async function listCustomers(q?: string, segment?: SegmentKey): Promise<C
     orders: Number(e.node.numberOfOrders ?? 0),
     totalSpent: e.node.amountSpent?.amount ?? "0",
     segments: segmentsFromTags(e.node.tags ?? []),
+    updatedAt: e.node.updatedAt,
+    lastOrderAt: e.node.lastOrder?.createdAt ?? null,
   }));
 }
 
@@ -269,17 +276,20 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
       note: string | null;
       numberOfOrders: string;
       tags: string[];
+      updatedAt: string;
       amountSpent: { amount: string } | null;
       company: { value: string } | null;
       tradeCode: { value: string } | null;
       opening: { value: string } | null;
       defaultAddress: { address1: string | null; address2: string | null; city: string | null; zip: string | null; province: string | null; country: string | null } | null;
       ledger: { value: string } | null;
+      lastOrder: { createdAt: string } | null;
     } | null;
   }>(
     `query($id: ID!) {
       customer(id: $id) {
-        id displayName firstName lastName email phone note numberOfOrders tags
+        id displayName firstName lastName email phone note numberOfOrders tags updatedAt
+        lastOrder { createdAt }
         amountSpent { amount }
         company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
         tradeCode: metafield(namespace: "${LEDGER_NS}", key: "trade_code") { value }
@@ -338,6 +348,8 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     segments: segmentsFromTags(c.tags ?? []),
     orders: Number(c.numberOfOrders ?? 0),
     totalSpent: c.amountSpent?.amount ?? "0",
+    updatedAt: c.updatedAt,
+    lastOrderAt: c.lastOrder?.createdAt ?? null,
     ledger,
     invoices: dd.draftOrders.edges.map((e) => {
       const total = parseFloat(e.node.totalPrice) || 0;
