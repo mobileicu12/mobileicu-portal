@@ -10,6 +10,17 @@ import type { jsPDF } from "jspdf";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useIsOwner } from "@/lib/use-me";
+import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
+
+const INV_COLUMNS: ColumnDef[] = [
+  { key: "invoice", label: "Invoice", locked: true },
+  { key: "customer", label: "Customer" },
+  { key: "source", label: "Source" },
+  { key: "staff", label: "Staff" },
+  { key: "status", label: "Status" },
+  { key: "date", label: "Date" },
+  { key: "total", label: "Total", locked: true },
+];
 
 type Invoice = {
   id: string;
@@ -35,6 +46,8 @@ type Stats = {
 export default function InvoicesPage() {
   const router = useRouter();
   const isOwner = useIsOwner();
+  const cols = useColumns("cols:invoices", INV_COLUMNS);
+  const sort = useSort<"invoice" | "customer" | "source" | "staff" | "status" | "date" | "total">("date", "desc");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [stats, setStats] = useState<Stats>(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +97,27 @@ export default function InvoicesPage() {
       return inv.invoiceNo.toLowerCase().includes(s) || inv.name.toLowerCase().includes(s) || inv.customer.toLowerCase().includes(s) || (inv.staff || "").toLowerCase().includes(s);
     });
   }, [invoices, search, statusFilter, segFilter, staffFilter, dateFrom, dateTo]);
+
+  const sorted = useMemo(() => {
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const val = (inv: Invoice): string | number => {
+      switch (sort.key) {
+        case "invoice": return inv.invoiceNo;
+        case "customer": return inv.customer.toLowerCase();
+        case "source": return inv.segment || "";
+        case "staff": return inv.staff || "";
+        case "status": return inv.status;
+        case "date": return +new Date(inv.createdAt);
+        case "total": return Number(inv.total) || 0;
+        default: return 0;
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [filtered, sort.key, sort.dir]);
 
   // Live summary of whatever range/filters are currently applied.
   const rangeStats = useMemo(() => {
@@ -229,6 +263,7 @@ export default function InvoicesPage() {
             </select>
           )}
           <span className="text-sm text-neutral-400">{filtered.length} shown</span>
+          <div className="ml-auto"><ColumnChooser columns={INV_COLUMNS} isVisible={cols.isVisible} toggle={cols.toggle} /></div>
         </div>
         {/* date range */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -268,35 +303,39 @@ export default function InvoicesPage() {
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
-              <th className="px-4 py-3">Invoice</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Staff</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3 text-right">Total</th>
+              <th className="px-4 py-3"><button onClick={() => sort.onSort("invoice")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Invoice{sort.arrow("invoice")}</button></th>
+              {cols.isVisible("customer") && <th className="px-4 py-3"><button onClick={() => sort.onSort("customer")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Customer{sort.arrow("customer")}</button></th>}
+              {cols.isVisible("source") && <th className="px-4 py-3"><button onClick={() => sort.onSort("source")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Source{sort.arrow("source")}</button></th>}
+              {cols.isVisible("staff") && <th className="px-4 py-3"><button onClick={() => sort.onSort("staff")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Staff{sort.arrow("staff")}</button></th>}
+              {cols.isVisible("status") && <th className="px-4 py-3"><button onClick={() => sort.onSort("status")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Status{sort.arrow("status")}</button></th>}
+              {cols.isVisible("date") && <th className="px-4 py-3"><button onClick={() => sort.onSort("date")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Date{sort.arrow("date")}</button></th>}
+              <th className="px-4 py-3 text-right"><button onClick={() => sort.onSort("total")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Total{sort.arrow("total")}</button></th>
               <th className="px-4 py-3 text-right">Export</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {filtered.map((inv) => (
+            {sorted.map((inv) => (
               <tr key={inv.id} onClick={() => router.push(`/portal/invoices/${encodeURIComponent(inv.id)}`)} className={`cursor-pointer ${selected.has(inv.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggleRow(inv.id)} className="h-4 w-4 accent-amber-500" /></td>
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{inv.invoiceNo}<span className="ml-1 text-xs font-normal text-neutral-400">{inv.name}</span></td>
-                <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{inv.customer}</td>
-                <td className="px-4 py-3">
-                  {(() => {
-                    const s = SEGMENTS.find((x) => x.key === inv.segment);
-                    return s ? <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${s.badge}`}>{s.short}</span> : <span className="text-neutral-300">—</span>;
-                  })()}
-                </td>
-                <td className="px-4 py-3 text-xs text-neutral-500">{inv.staff ? inv.staff.split("@")[0] : "—"}</td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${inv.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                    {inv.status === "COMPLETED" ? "PAID" : "DRAFT"}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-neutral-500">{new Date(inv.createdAt).toLocaleDateString("en-GB")}</td>
+                {cols.isVisible("customer") && <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{inv.customer}</td>}
+                {cols.isVisible("source") && (
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const s = SEGMENTS.find((x) => x.key === inv.segment);
+                      return s ? <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${s.badge}`}>{s.short}</span> : <span className="text-neutral-300">—</span>;
+                    })()}
+                  </td>
+                )}
+                {cols.isVisible("staff") && <td className="px-4 py-3 text-xs text-neutral-500">{inv.staff ? inv.staff.split("@")[0] : "—"}</td>}
+                {cols.isVisible("status") && (
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${inv.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {inv.status === "COMPLETED" ? "PAID" : "DRAFT"}
+                    </span>
+                  </td>
+                )}
+                {cols.isVisible("date") && <td className="px-4 py-3 text-neutral-500">{new Date(inv.createdAt).toLocaleDateString("en-GB")}</td>}
                 <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{inv.total}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
@@ -307,7 +346,7 @@ export default function InvoicesPage() {
               </tr>
             ))}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={9} className="px-4 py-10 text-center text-neutral-400">{invoices.length === 0 ? "No invoices yet. Create one in Billing / POS." : "No invoices match."}</td></tr>
+              <tr><td colSpan={4 + ["customer", "source", "staff", "status", "date"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-neutral-400">{invoices.length === 0 ? "No invoices yet. Create one in Billing / POS." : "No invoices match."}</td></tr>
             )}
           </tbody>
         </table>
