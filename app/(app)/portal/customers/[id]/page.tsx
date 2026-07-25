@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { generateStatementPdf } from "@/lib/statement-pdf";
 import { buildInvoiceDoc } from "@/lib/invoice-pdf";
+import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
 import PdfPreviewModal from "@/components/PdfPreviewModal";
 import { loadBusiness } from "@/lib/business";
 import type { InvoiceDetail } from "@/lib/billing";
@@ -42,6 +43,58 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [invQ, setInvQ] = useState("");
   const [payMethod, setPayMethod] = useState("all");
   const [outDoc, setOutDoc] = useState<jsPDF | null>(null);
+  const [todayBusy, setTodayBusy] = useState("");
+  const [todayMsg, setTodayMsg] = useState("");
+
+  type TodayData = { name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[] };
+  async function loadToday(): Promise<TodayData | null> {
+    const res = await fetch(`/api/customers/${id}/today`);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || "Failed to load today's statement.");
+    const t = d.today as TodayData | null;
+    if (!t || !t.bills.length) { setTodayMsg("No bills for this customer today."); return null; }
+    return t;
+  }
+
+  async function generateToday() {
+    setTodayBusy("gen"); setTodayMsg("");
+    try {
+      const t = await loadToday();
+      if (!t) return;
+      const doc = buildCustomerDayItemisedDoc(t.name, t.bills,
+        { todayTotal: t.todayTotal, todayPaid: t.todayPaid, todayOutstanding: t.todayOutstanding, accountOutstanding: t.accountOutstanding },
+        { dateLabel: new Date().toLocaleDateString("en-GB"), business: await loadBusiness() });
+      setOutDoc(doc);
+    } catch (e) { setTodayMsg(e instanceof Error ? e.message : "Failed."); } finally { setTodayBusy(""); }
+  }
+
+  async function sendToday() {
+    if (!confirm("Send this customer their today's itemised statement (email PDF + WhatsApp)?")) return;
+    setTodayBusy("send"); setTodayMsg("");
+    try {
+      const t = await loadToday();
+      if (!t) return;
+      const dateLabel = new Date().toLocaleDateString("en-GB");
+      const doc = buildCustomerDayItemisedDoc(t.name, t.bills,
+        { todayTotal: t.todayTotal, todayPaid: t.todayPaid, todayOutstanding: t.todayOutstanding, accountOutstanding: t.accountOutstanding },
+        { dateLabel, business: await loadBusiness() });
+      const pdfBase64 = doc.output("datauristring").split("base64,").pop();
+      const filename = `${t.name.replace(/[^\w-]/g, "_")}_${dateLabel.replace(/\//g, "-")}.pdf`;
+      let sent = "";
+      if (t.email) {
+        const er = await fetch("/api/email/invoice", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: t.email, subject: `Your account summary — ${dateLabel}`, message: `Hi ${t.name}, your itemised summary for ${dateLabel} is attached.\nToday's total: £${t.todayTotal.toFixed(2)} · Total outstanding: £${t.accountOutstanding.toFixed(2)}`, pdfBase64, filename }) });
+        if (er.ok) sent += "email ";
+      }
+      if (t.phone) {
+        const list = t.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
+        const msg = `Hi ${t.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${t.todayTotal.toFixed(2)}\nPaid today: £${t.todayPaid.toFixed(2)}\nToday's outstanding: £${t.todayOutstanding.toFixed(2)}\nTotal outstanding: £${t.accountOutstanding.toFixed(2)}\n\nThank you.`;
+        const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: t.phone, message: msg }) });
+        if (wr.ok) sent += "WhatsApp";
+      }
+      setTodayMsg(sent.trim() ? `Sent via ${sent.trim().replace(" ", " + ")}.` : "No email or phone on file to send to.");
+    } catch (e) { setTodayMsg(e instanceof Error ? e.message : "Failed."); } finally { setTodayBusy(""); }
+  }
 
   function load() {
     setLoading(true);
@@ -134,6 +187,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           >
             📄 Statement
           </button>
+          <button onClick={generateToday} disabled={!!todayBusy} className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200" title="Preview / download this customer's itemised bills for today">
+            {todayBusy === "gen" ? "…" : "📅 Today's statement"}
+          </button>
+          <button onClick={sendToday} disabled={!!todayBusy} className="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400 disabled:opacity-60" title="Email the PDF + WhatsApp this customer their today's summary">
+            {todayBusy === "send" ? "Sending…" : "📤 Send today"}
+          </button>
           {outstanding > 0.001 && (
             <button
               onClick={async () => setOutDoc(buildOutstandingInvoiceDoc(c, outstanding, await loadBusiness()))}
@@ -150,6 +209,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </Link>
         </div>
       </div>
+
+      {todayMsg && <p className="mt-3 rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10">{todayMsg}</p>}
 
       {editing && <EditCard customerId={id} c={c} onSaved={() => { setEditing(false); load(); }} />}
       <SegmentEditor customerId={id} current={c.segments} onSaved={load} />

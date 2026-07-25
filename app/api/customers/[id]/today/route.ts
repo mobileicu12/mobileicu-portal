@@ -1,0 +1,56 @@
+import { NextResponse } from "next/server";
+import { requirePermission } from "@/lib/guard";
+import { getCustomer } from "@/lib/customers";
+import { getInvoiceDetail } from "@/lib/billing";
+import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+
+export const runtime = "nodejs";
+export const maxDuration = 120;
+
+function gid(id: string) {
+  return id.startsWith("gid://") ? id : `gid://shopify/Customer/${id}`;
+}
+
+// One customer's itemised TODAY activity (items per bill) + today's paid/outstanding
+// and total account outstanding. Powers the per-customer "today's statement".
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await requirePermission("customers");
+  if (denied) return denied;
+  if (!shopifyConfigured()) return NextResponse.json({ today: null });
+  const { id } = await ctx.params;
+  try {
+    const c = await getCustomer(gid(id));
+    const invoiceDue = c.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
+    const ledgerPaid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const accountOutstanding = Math.max(0, (c.openingBalance || 0) + invoiceDue - ledgerPaid);
+
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const todaysInv = c.invoices.filter((i) => new Date(i.createdAt) >= start);
+
+    const num = (s: string) => parseFloat(s) || 0;
+    let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
+    const bills = [];
+    for (const i of todaysInv) {
+      let inv;
+      try { inv = await getInvoiceDetail(i.id); } catch { continue; }
+      todayTotal += num(inv.total);
+      todayPaid += inv.amountPaid;
+      todayOutstanding += inv.balance;
+      bills.push({
+        invoiceNo: inv.invoiceNo, name: inv.name, status: inv.status, createdAt: inv.createdAt,
+        total: inv.total, amountPaid: inv.amountPaid, balance: inv.balance,
+        lines: inv.lines.map((l) => ({ title: l.title, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })),
+      });
+    }
+
+    return NextResponse.json({
+      today: {
+        id: c.id, name: c.name || c.company || "Customer", email: c.email || "", phone: c.phone || "",
+        todayTotal, todayPaid, todayOutstanding, accountOutstanding, bills,
+      },
+    });
+  } catch (e) {
+    const msg = e instanceof ShopifyError ? e.message : "Failed to load today's statement.";
+    return NextResponse.json({ error: msg }, { status: 502 });
+  }
+}
