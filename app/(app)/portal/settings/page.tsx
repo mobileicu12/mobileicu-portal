@@ -22,7 +22,10 @@ type Settings = {
   digestOwnerEmail: string;
   digestOwnerPhone: string;
   reportButtonHour: number;
+  requireTapIn: boolean;
 };
+
+type Shift = { email: string; name?: string; tapIn: string; tapOut?: string; open: boolean; autoOut?: boolean; minutes: number };
 
 export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
@@ -36,6 +39,9 @@ export default function SettingsPage() {
   const [waToken, setWaToken] = useState("");
   const [waSaving, setWaSaving] = useState(false);
   const [digestBusy, setDigestBusy] = useState(false);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+
+  const loadShifts = () => fetch("/api/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => d && setShifts(d.today ?? [])).catch(() => {});
 
   useEffect(() => {
     fetch("/api/settings")
@@ -44,6 +50,7 @@ export default function SettingsPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     fetch("/api/settings/whatsapp").then((r) => (r.ok ? r.json() : null)).then((d) => d && setWa({ configured: !!d.configured, phoneId: d.phoneId || "", template: d.template || "" })).catch(() => {});
+    loadShifts();
   }, []);
 
   async function saveWhatsApp() {
@@ -189,6 +196,34 @@ export default function SettingsPage() {
           <p className="text-xs text-neutral-500">Download a full snapshot of everything — products, collections, customers (with balances &amp; ledgers), invoices and settings — as one JSON file. Keep it safe; if anything goes wrong you can restore from it.</p>
           <a href="/api/backup" className="inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">⬇ Download full backup (.json)</a>
           <p className="text-xs text-neutral-400">Products &amp; collections can be re-imported from Excel. Customer balances and invoice history are preserved in the file for assisted restore.</p>
+        </Section>
+
+        <Section title="Staff time-clock (tap in / out)">
+          <p className="text-xs text-neutral-500">When on, everyone must re-enter their password to <strong>tap in</strong> after login before the portal opens. Staff tap out manually, and everyone is auto-tapped-out at ~21:30.</p>
+          <label className="flex items-center justify-between text-sm"><span className="font-medium text-neutral-700 dark:text-neutral-300">Require tap in</span><input type="checkbox" checked={s.requireTapIn} onChange={(e) => set("requireTapIn", e.target.checked)} className="h-4 w-4 accent-amber-500" /></label>
+          <div className="flex items-center gap-3">
+            <button onClick={save} disabled={saving} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">{saving ? "Saving…" : "Save"}</button>
+            <button onClick={loadShifts} className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-600 hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-300">↻ Refresh</button>
+          </div>
+          <div className="mt-1">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Today&apos;s shifts</p>
+            {shifts.length === 0 ? (
+              <p className="text-xs text-neutral-400">No one has tapped in today.</p>
+            ) : (
+              <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
+                {shifts.map((sh, i) => (
+                  <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <span className="truncate text-neutral-800 dark:text-neutral-200">{sh.name || sh.email}</span>
+                    <span className="flex items-center gap-2 text-xs text-neutral-500">
+                      <span>{new Date(sh.tapIn).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}{sh.tapOut ? `–${new Date(sh.tapOut).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+                      <span>· {Math.floor(sh.minutes / 60)}h {sh.minutes % 60}m</span>
+                      {sh.open ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-700">in</span> : <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-500 dark:bg-neutral-800">{sh.autoOut ? "auto-out" : "out"}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </Section>
       </div>
 

@@ -59,7 +59,10 @@ export default auth((req) => {
     }
   }
 
-  return NextResponse.next();
+  // Pass the path to server components (the portal layout uses it for the tap-in gate).
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 });
 
 export const config = {

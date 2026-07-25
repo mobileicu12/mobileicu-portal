@@ -23,6 +23,7 @@ export type PortalSettings = {
   digestOwnerPhone: string; // optional WhatsApp number for the owner report
   digestLastRun: string; // YYYY-MM-DD of the last successful run (idempotency)
   reportButtonHour: number; // hour (0-23) after which the header "Today's reports" ZIP button shows
+  requireTapIn: boolean; // staff must tap in (re-enter password) after login before using the portal
 };
 
 export const DEFAULT_SETTINGS: PortalSettings = {
@@ -46,6 +47,7 @@ export const DEFAULT_SETTINGS: PortalSettings = {
   digestOwnerPhone: "",
   digestLastRun: "",
   reportButtonHour: 21,
+  requireTapIn: false,
 };
 
 const NS = "portal";

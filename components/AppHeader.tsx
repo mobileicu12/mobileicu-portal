@@ -29,6 +29,15 @@ export default function AppHeader() {
   // Only for owner / teammates with invoice access (it contains customer money data).
   const me = useMe();
   const canSeeReports = !!me && (me.role === "owner" || me.permissions.includes("invoices"));
+  const [tappedIn, setTappedIn] = useState(false);
+  useEffect(() => {
+    fetch("/api/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => setTappedIn(!!d?.me?.tappedIn)).catch(() => {});
+  }, []);
+  async function tapOut() {
+    if (!confirm("Tap out / end your shift now?")) return;
+    await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "out" }) }).catch(() => {});
+    window.location.href = "/portal/tap-in";
+  }
   const [afterNine, setAfterNine] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState("");
@@ -77,6 +86,9 @@ export default function AppHeader() {
               {busy ? "Zipping…" : "⬇ Today's reports"}
             </button>
           </div>
+        )}
+        {tappedIn && (
+          <button onClick={tapOut} title="Tap out / end shift" className="rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition hover:border-red-400 hover:text-red-600 dark:border-neutral-700 dark:text-neutral-300">Tap out</button>
         )}
         <span className="hidden items-center gap-2 text-xs text-muted sm:flex">
           <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px] shadow-emerald-500/50"></span>

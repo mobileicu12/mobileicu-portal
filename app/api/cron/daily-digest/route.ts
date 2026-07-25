@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runDailyDigest } from "@/lib/digest";
+import { autoTapOutAll } from "@/lib/attendance";
 import { isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured } from "@/lib/shopify";
 
@@ -24,11 +25,13 @@ async function handle(req: Request) {
   if (!shopifyConfigured()) return NextResponse.json({ error: "not configured" }, { status: 503 });
   if (!(await authorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const force = new URL(req.url).searchParams.get("force") === "1";
+  // Auto tap-out all staff still clocked in (best-effort, never blocks the digest).
+  const tappedOut = await autoTapOutAll().catch(() => 0);
   try {
     const result = await runDailyDigest({ force });
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, tappedOut });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Digest failed." }, { status: 502 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Digest failed.", tappedOut }, { status: 502 });
   }
 }
 
