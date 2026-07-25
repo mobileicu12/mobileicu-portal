@@ -6,6 +6,7 @@ import { loadBusiness, type Business } from "@/lib/business";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import PdfPreviewModal from "@/components/PdfPreviewModal";
 import { buildInvoicesReportDoc, buildCustomerDayDoc, type ReportRow } from "@/lib/report-pdf";
+import { Menu, MenuItem } from "@/components/Menu";
 import type { jsPDF } from "jspdf";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
@@ -268,12 +269,14 @@ export default function InvoicesPage() {
             <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Invoices</h1>
             <p className="text-sm text-neutral-500">Bills &amp; invoices created from the portal. Click a row to edit.</p>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <a href="/portal/billing" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">+ New bill</a>
-            <button onClick={() => openPdfReport(filtered, rangeLabel())} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400">📄 Report PDF</button>
-            <button onClick={() => downloadPerCustomerZip(filtered, rangeLabel())} disabled={busy === "zip"} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200" title="One PDF per customer, zipped and named by customer">{busy === "zip" ? "Zipping…" : "📦 By customer (ZIP)"}</button>
-            <button onClick={downloadReport} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">📊 Excel</button>
-            <button onClick={() => downloadXlsx()} disabled={invoices.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ All</button>
+            <Menu label="Export / Reports">
+              <MenuItem onClick={() => openPdfReport(filtered, rangeLabel())}>📄 Sales report PDF</MenuItem>
+              <MenuItem onClick={() => downloadPerCustomerZip(filtered, rangeLabel())}>📦 Per-customer PDFs (ZIP)</MenuItem>
+              <MenuItem onClick={downloadReport}>📊 Export view to Excel</MenuItem>
+              <MenuItem onClick={() => downloadXlsx()}>⬇ Export all to Excel</MenuItem>
+            </Menu>
           </div>
         </div>
         {/* controls */}
@@ -339,7 +342,23 @@ export default function InvoicesPage() {
       {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
 
-      <div className="mt-4 max-h-[70vh] overflow-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      {/* Persistent action ribbon — always above the table (not a floating-on-select bar) */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-300">
+          <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" />
+          {selected.size ? `${selected.size} selected` : "Select all"}
+        </label>
+        <span className="h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
+        <div className="flex flex-wrap items-center gap-1">
+          <button disabled={!selected.size || bulkBusy} onClick={bulkMarkPaid} className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800">✓ Mark paid</button>
+          <button disabled={!selected.size || bulkBusy} onClick={() => openPdfReport(filtered.filter((i) => selected.has(i.id)), `${selected.size} selected`)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800">📄 PDF</button>
+          <button disabled={!selected.size || bulkBusy} onClick={bulkExport} className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800">⬇ Excel</button>
+          <button disabled={!selected.size || bulkBusy} onClick={bulkDelete} className="rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-40 dark:hover:bg-red-500/10">Delete</button>
+        </div>
+        {selected.size > 0 && <button onClick={clearSel} className="ml-auto text-xs font-medium text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">Clear</button>}
+      </div>
+
+      <div className="mt-2 max-h-[70vh] overflow-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead className="sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
@@ -392,20 +411,6 @@ export default function InvoicesPage() {
           </tbody>
         </table>
       </div>
-
-      {/* Bulk action bar — sticky so it never hides or covers rows */}
-      {selected.size > 0 && (
-        <div className="sticky bottom-4 z-40 mx-auto mt-4 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-2xl">
-          <span className="font-medium">{selected.size} selected</span>
-          <span className="h-4 w-px bg-white/20" />
-          <button disabled={bulkBusy} onClick={bulkMarkPaid} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">✓ Mark paid</button>
-          <button disabled={bulkBusy} onClick={() => openPdfReport(filtered.filter((i) => selected.has(i.id)), `${selected.size} selected`)} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">📄 PDF</button>
-          <button disabled={bulkBusy} onClick={bulkExport} className="rounded-full px-3 py-1 hover:bg-white/10 disabled:opacity-50">⬇ Excel</button>
-          <button disabled={bulkBusy} onClick={bulkDelete} className="rounded-full px-3 py-1 text-red-400 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
-          <span className="h-4 w-px bg-white/20" />
-          <button onClick={clearSel} className="rounded-full px-2 py-1 text-white/50 hover:text-white">✕</button>
-        </div>
-      )}
 
       {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}
       {report && <PdfPreviewModal doc={report.doc} filename={report.filename} title="Sales report" subtitle={report.subtitle} onClose={() => setReport(null)} />}

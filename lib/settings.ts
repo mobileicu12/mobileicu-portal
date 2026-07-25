@@ -21,6 +21,7 @@ export type PortalSettings = {
   digestOwnerEmail: string; // where the owner report goes (blank = business email)
   digestOwnerPhone: string; // optional WhatsApp number for the owner report
   digestLastRun: string; // YYYY-MM-DD of the last successful run (idempotency)
+  reportButtonHour: number; // hour (0-23) after which the header "Today's reports" ZIP button shows
 };
 
 export const DEFAULT_SETTINGS: PortalSettings = {
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS: PortalSettings = {
   digestOwnerEmail: "",
   digestOwnerPhone: "",
   digestLastRun: "",
+  reportButtonHour: 21,
 };
 
 const NS = "portal";

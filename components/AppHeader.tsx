@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import { downloadCustomerReportsZip } from "@/lib/customer-zip";
@@ -32,8 +32,13 @@ export default function AppHeader() {
   const [afterNine, setAfterNine] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState("");
+  const hourRef = useRef(21);
   useEffect(() => {
-    const check = () => setAfterNine(new Date().getHours() >= 21);
+    fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      const h = Number(d?.settings?.reportButtonHour);
+      if (Number.isFinite(h) && h >= 0 && h <= 23) hourRef.current = h;
+    }).catch(() => {});
+    const check = () => setAfterNine(new Date().getHours() >= hourRef.current);
     check();
     const t = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(t);

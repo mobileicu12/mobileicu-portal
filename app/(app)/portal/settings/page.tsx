@@ -20,6 +20,7 @@ type Settings = {
   digestOwner: boolean;
   digestOwnerEmail: string;
   digestOwnerPhone: string;
+  reportButtonHour: number;
 };
 
 export default function SettingsPage() {
@@ -162,6 +163,9 @@ export default function SettingsPage() {
           <label className="flex items-center justify-between text-sm"><span className="font-medium text-neutral-700 dark:text-neutral-300">Send me the owner report</span><input type="checkbox" checked={s.digestOwner} onChange={(e) => set("digestOwner", e.target.checked)} className="h-4 w-4 accent-amber-500" /></label>
           <Field label="Owner report email (blank = business email)"><input className={inp} value={s.digestOwnerEmail} onChange={(e) => set("digestOwnerEmail", e.target.value)} placeholder={s.email} /></Field>
           <Field label="Owner WhatsApp number (optional)"><input className={inp} value={s.digestOwnerPhone} onChange={(e) => set("digestOwnerPhone", e.target.value)} placeholder="+44…" /></Field>
+          <Field label="Show the header 'Today's reports' button after (hour, 0–23)">
+            <input type="number" min={0} max={23} className={inp} value={s.reportButtonHour} onChange={(e) => set("reportButtonHour", Math.min(23, Math.max(0, Number(e.target.value))))} />
+          </Field>
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button onClick={save} disabled={saving} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:border-neutral-900 dark:border-neutral-600 dark:text-neutral-200">Save digest settings</button>
             <button onClick={sendDigestNow} disabled={digestBusy} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400 disabled:opacity-60">{digestBusy ? "Sending…" : "Send today's digest now"}</button>
