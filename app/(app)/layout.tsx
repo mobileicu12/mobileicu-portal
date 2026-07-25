@@ -2,6 +2,7 @@ import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav";
 import AppHeader from "@/components/AppHeader";
 import AppFooter from "@/components/AppFooter";
+import TodaySendDrawer from "@/components/TodaySendDrawer";
 
 export default function AppLayout({
   children,
@@ -16,6 +17,7 @@ export default function AppLayout({
         <AppFooter />
       </main>
       <MobileNav />
+      <TodaySendDrawer />
     </div>
   );
 }
