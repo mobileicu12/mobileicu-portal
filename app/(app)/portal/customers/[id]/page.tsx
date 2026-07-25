@@ -8,6 +8,7 @@ import { buildInvoiceDoc } from "@/lib/invoice-pdf";
 import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
 import PdfPreviewModal from "@/components/PdfPreviewModal";
 import { loadBusiness } from "@/lib/business";
+import { SITE_URL } from "@/lib/site";
 import type { InvoiceDetail } from "@/lib/billing";
 import type { jsPDF } from "jspdf";
 
@@ -54,7 +55,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     if (!res.ok) throw new Error(d.error || "Failed to load today's statement.");
     const t = d.today as TodayData | null;
     if (!t || !t.bills.length) { setTodayMsg("No bills for this customer today."); return null; }
-    return { t, shareUrl: `${window.location.origin}${d.shareUrl}`, waConfigured: !!d.waConfigured };
+    return { t, shareUrl: `${SITE_URL}${d.shareUrl}`, waConfigured: !!d.waConfigured };
   }
 
   async function generateToday() {

@@ -213,7 +213,7 @@ export function buildCustomerDayItemisedDoc(
   totals: { todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number },
   opts: { dateLabel: string; business?: Business },
 ): jsPDF {
-  const B = opts.business || BUSINESS;
+  void opts.business; // customer statements are issued without seller identity
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -221,26 +221,20 @@ export function buildCustomerDayItemisedDoc(
   const gbp = (n: number) => `£${(isNaN(n) ? 0 : n).toFixed(2)}`;
   const numv = (s: string) => parseFloat(s) || 0;
 
-  // Header
-  doc.setFillColor(GOLD); doc.circle(M + 14, 44, 14, "F");
-  doc.setTextColor("#ffffff"); doc.setFont("helvetica", "bold"); doc.setFontSize(12);
-  doc.text("MI", M + 14, 48.5, { align: "center" });
-  doc.setTextColor(INK); doc.setFontSize(18); doc.text(B.name, M + 38, 42);
-  doc.setTextColor(GOLD); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
-  doc.text("Daily statement", M + 38, 56);
+  // Header — no logo / shop details on customer statements.
   doc.setTextColor(INK); doc.setFont("helvetica", "bold"); doc.setFontSize(20);
-  doc.text("STATEMENT", W - M, 42, { align: "right" });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(MUTED);
-  doc.text(opts.dateLabel, W - M, 58, { align: "right" });
-  doc.setDrawColor(GOLD); doc.setLineWidth(1.4); doc.line(M, 78, W - M, 78);
-  doc.setDrawColor(LINE); doc.setLineWidth(0.6); doc.line(M, 81, W - M, 81);
+  doc.text("STATEMENT", M, 46);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(MUTED);
+  doc.text(opts.dateLabel, W - M, 46, { align: "right" });
+  doc.setDrawColor(GOLD); doc.setLineWidth(1.4); doc.line(M, 62, W - M, 62);
+  doc.setDrawColor(LINE); doc.setLineWidth(0.6); doc.line(M, 65, W - M, 65);
 
   doc.setTextColor(GOLD); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
-  doc.text("CUSTOMER", M, 104);
-  doc.setTextColor(INK); doc.setFontSize(13); doc.text(customer || "Customer", M, 120);
+  doc.text("CUSTOMER", M, 88);
+  doc.setTextColor(INK); doc.setFontSize(13); doc.text(customer || "Customer", M, 104);
 
   // Summary tiles (4)
-  let y = 138;
+  let y = 122;
   const tiles: [string, string, boolean][] = [
     ["Today's bills", gbp(totals.todayTotal), false],
     ["Paid today", gbp(totals.todayPaid), false],
@@ -283,7 +277,6 @@ export function buildCustomerDayItemisedDoc(
   const fy = H - 28;
   doc.setDrawColor(LINE); doc.setLineWidth(0.6); doc.line(M, fy - 12, W - M, fy - 12);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(MUTED);
-  doc.text(`${B.name}${B.website ? `  ·  ${B.website}` : ""}`, M, fy);
   doc.text(`Statement · ${opts.dateLabel}`, W - M, fy, { align: "right" });
 
   return doc;
@@ -297,7 +290,7 @@ export function buildCustomerDayDoc(
   rows: CustomerDayRow[],
   opts: { dateLabel: string; business?: Business; outstanding?: number },
 ): jsPDF {
-  const B = opts.business || BUSINESS;
+  void opts.business; // customer statements are issued without seller identity
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -314,44 +307,31 @@ export function buildCustomerDayDoc(
   // Overall account outstanding if provided, else today's unpaid.
   const outstanding = opts.outstanding ?? dueToday;
 
-  // Header (light)
-  doc.setFillColor(GOLD);
-  doc.circle(M + 14, 44, 14, "F");
-  doc.setTextColor("#ffffff");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("MI", M + 14, 48.5, { align: "center" });
-  doc.setTextColor(INK);
-  doc.setFontSize(18);
-  doc.text(B.name, M + 38, 42);
-  doc.setTextColor(GOLD);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.text("Daily statement", M + 38, 56);
+  // Header — no logo / shop details on customer statements.
   doc.setTextColor(INK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
-  doc.text("STATEMENT", W - M, 42, { align: "right" });
+  doc.text("STATEMENT", M, 46);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
+  doc.setFontSize(9.5);
   doc.setTextColor(MUTED);
-  doc.text(opts.dateLabel, W - M, 58, { align: "right" });
+  doc.text(opts.dateLabel, W - M, 46, { align: "right" });
 
   doc.setDrawColor(GOLD);
   doc.setLineWidth(1.4);
-  doc.line(M, 78, W - M, 78);
+  doc.line(M, 62, W - M, 62);
   doc.setDrawColor(LINE);
   doc.setLineWidth(0.6);
-  doc.line(M, 81, W - M, 81);
+  doc.line(M, 65, W - M, 65);
 
   // Customer
   doc.setTextColor(GOLD);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text("CUSTOMER", M, 104);
+  doc.text("CUSTOMER", M, 88);
   doc.setTextColor(INK);
   doc.setFontSize(13);
-  doc.text(customer || "Customer", M, 120);
+  doc.text(customer || "Customer", M, 104);
 
   // Summary tiles: today's bills, paid, outstanding
   const tiles: [string, string][] = [
@@ -359,7 +339,7 @@ export function buildCustomerDayDoc(
     ["Paid today", money2(paid)],
     ["Outstanding", money2(outstanding)],
   ];
-  let ty = 138;
+  let ty = 122;
   const tileW = (W - M * 2 - 20) / 3;
   tiles.forEach(([label, val], i) => {
     const x = M + i * (tileW + 10);
@@ -404,7 +384,6 @@ export function buildCustomerDayDoc(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(MUTED);
-  doc.text(`${B.name}${B.website ? `  ·  ${B.website}` : ""}`, M, fy);
   doc.text(`Statement · ${opts.dateLabel}`, W - M, fy, { align: "right" });
 
   return doc;

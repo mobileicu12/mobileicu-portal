@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { loadBusiness, type Business } from "@/lib/business";
+import { SITE_URL } from "@/lib/site";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import type { InvoiceDetail } from "@/lib/billing";
 
@@ -67,7 +68,7 @@ export default function InvoiceEditPage() {
       if (!res.ok) throw new Error(d.error || "Failed to load");
       const inv = d.invoice as InvoiceDetail;
       setMeta(inv);
-      if (d.shareUrl) setShareUrl(`${window.location.origin}${d.shareUrl}`);
+      if (d.shareUrl) setShareUrl(`${SITE_URL}${d.shareUrl}`);
       setLines(
         inv.lines.map((l) => ({
           variantId: l.variantId,

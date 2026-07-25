@@ -37,50 +37,30 @@ export type StatementInput = {
 };
 
 export function generateStatementPdf(s: StatementInput, business: Business = BUSINESS) {
-  const BUSINESS = business;
+  void business; // customer statements are issued without seller identity
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const M = 40;
 
-  // Header (light) — monogram + name left, title right
-  doc.setFillColor(GOLD);
-  doc.circle(M + 15, 52, 15, "F");
-  doc.setTextColor("#ffffff");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text("MI", M + 15, 57, { align: "center" });
-  doc.setTextColor(INK);
-  doc.setFontSize(18);
-  doc.text(BUSINESS.name, M + 40, 50);
-  doc.setTextColor(GOLD);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.text(BUSINESS.tagline, M + 40, 64);
+  // Header — no logo / shop details on customer statements.
   doc.setTextColor(INK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
-  doc.text("STATEMENT", pageW - M, 52, { align: "right" });
+  doc.text("STATEMENT", M, 50);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(MUTED);
-  doc.text(`As at ${new Date().toLocaleDateString("en-GB")}`, pageW - M, 70, { align: "right" });
+  doc.text(`As at ${new Date().toLocaleDateString("en-GB")}`, pageW - M, 50, { align: "right" });
 
   doc.setDrawColor(GOLD);
   doc.setLineWidth(1.4);
-  doc.line(M, 100, pageW - M, 100);
+  doc.line(M, 66, pageW - M, 66);
   doc.setDrawColor(LINE);
   doc.setLineWidth(0.6);
-  doc.line(M, 103, pageW - M, 103);
+  doc.line(M, 69, pageW - M, 69);
 
-  // Business (left) + Statement-to (right)
-  let y = 128;
-  doc.setTextColor(MUTED);
-  doc.setFontSize(9);
-  const biz = [...BUSINESS.addressLines];
-  if (BUSINESS.email) biz.push(BUSINESS.email);
-  if (BUSINESS.website) biz.push(BUSINESS.website);
-  biz.forEach((line, i) => doc.text(line, M, y + i * 13));
-
+  // Statement-to (right) — seller identity intentionally omitted.
+  const y = 94;
   doc.setTextColor(GOLD);
   doc.setFont("helvetica", "bold");
   doc.text("STATEMENT FOR", pageW - M, y, { align: "right" });
@@ -126,7 +106,7 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
   }
 
   autoTable(doc, {
-    startY: Math.max(y + biz.length * 13, y + 60) + 10,
+    startY: y + 70,
     head: [["Date", "Detail", "Type", "Charge", "Paid", "Balance"]],
     body,
     theme: "grid",
@@ -172,8 +152,7 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(MUTED);
-  doc.text(BUSINESS.bank || "Please settle any outstanding balance at your earliest convenience.", M, footY);
-  doc.text(`${BUSINESS.name} · ${BUSINESS.website}`, pageW - M, footY, { align: "right" });
+  doc.text("Please settle any outstanding balance at your earliest convenience.", M, footY);
 
-  doc.save(`${BUSINESS.name.replace(/\s+/g, "_")}_Statement_${s.customerName.replace(/[^\w-]/g, "_")}.pdf`);
+  doc.save(`Statement_${s.customerName.replace(/[^\w-]/g, "_")}.pdf`);
 }

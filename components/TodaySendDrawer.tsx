@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
 import { loadBusiness } from "@/lib/business";
+import { SITE_URL } from "@/lib/site";
 import { useMe } from "@/lib/use-me";
 
 type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[]; shareUrl: string };
@@ -98,7 +99,7 @@ export default function TodaySendDrawer() {
     }
     if (c.phone) {
       const list = c.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
-      const link = `${window.location.origin}${c.shareUrl}`;
+      const link = `${SITE_URL}${c.shareUrl}`;
       const text = `Hi ${c.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nView / download: ${link}`;
       if (waOn) {
         try { await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: text }) }); } catch { /* ignore */ }
