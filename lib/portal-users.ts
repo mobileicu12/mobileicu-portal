@@ -34,7 +34,14 @@ export type PublicUser = {
   permissions: PermKey[];
 };
 
-export const OWNER_EMAIL = (process.env.PORTAL_OWNER_EMAIL || "mobileicu12@gmail.com").toLowerCase();
+// Owner accounts (full access, can't be edited/removed as members). Supports a
+// comma-separated PORTAL_OWNER_EMAIL env; defaults include the two business owners.
+export const OWNER_EMAILS: Set<string> = new Set(
+  (process.env.PORTAL_OWNER_EMAIL || "mobileicu12@gmail.com,rudraxdevelopment98@gmail.com")
+    .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+);
+// Primary owner (first) — used where a single canonical value is needed.
+export const OWNER_EMAIL = [...OWNER_EMAILS][0] || "mobileicu12@gmail.com";
 const NS = "portal";
 const KEY = "users";
 
@@ -87,10 +94,11 @@ export async function getPortalUsers(): Promise<PortalUser[]> {
       passwordHash: typeof u.passwordHash === "string" ? u.passwordHash : undefined,
       permissions: normPerms(u.permissions),
     }));
-  if (!list.some((u) => u.email === OWNER_EMAIL)) {
-    list = [{ email: OWNER_EMAIL, role: "owner", addedAt: "", permissions: ALL_PERMS }, ...list];
+  // Ensure every configured owner exists as an owner row.
+  for (const owner of OWNER_EMAILS) {
+    if (!list.some((u) => u.email === owner)) list = [{ email: owner, role: "owner", addedAt: "", permissions: ALL_PERMS }, ...list];
   }
-  return list.map((u) => (u.email === OWNER_EMAIL ? { ...u, role: "owner", permissions: ALL_PERMS } : u));
+  return list.map((u) => (OWNER_EMAILS.has(u.email) ? { ...u, role: "owner", permissions: ALL_PERMS } : u));
 }
 
 export function toPublic(u: PortalUser): PublicUser {
@@ -118,7 +126,7 @@ export async function getPortalUser(email?: string | null): Promise<PortalUser |
 export async function isAuthorizedEmail(email?: string | null): Promise<boolean> {
   if (!email) return false;
   const e = email.toLowerCase();
-  if (e === OWNER_EMAIL) return true;
+  if (OWNER_EMAILS.has(e)) return true;
   try {
     return (await getPortalUsers()).some((u) => u.email === e);
   } catch {
@@ -127,7 +135,7 @@ export async function isAuthorizedEmail(email?: string | null): Promise<boolean>
 }
 
 export function isOwner(email?: string | null): boolean {
-  return !!email && email.toLowerCase() === OWNER_EMAIL;
+  return !!email && OWNER_EMAILS.has(email.toLowerCase());
 }
 
 // Resolve a user's effective permissions (owner = all; legacy undefined = all).
@@ -147,7 +155,7 @@ export async function verifyPortalPassword(email: string, password: string): Pro
 async function save(users: PortalUser[]): Promise<void> {
   const ownerId = await shopGid();
   const clean = users
-    .filter((u) => u.email !== OWNER_EMAIL)
+    .filter((u) => !OWNER_EMAILS.has(u.email))
     .map((u) => ({
       email: u.email,
       name: u.name || undefined,
@@ -169,7 +177,7 @@ export async function addPortalUser(input: AddUserInput | string): Promise<Publi
   const data: AddUserInput = typeof input === "string" ? { email: input } : input;
   const e = data.email.trim().toLowerCase();
   if (!e.includes("@") || e.length < 5) throw new ShopifyError("Enter a valid email address.");
-  if (e === OWNER_EMAIL) throw new ShopifyError("The owner already has full access.");
+  if (OWNER_EMAILS.has(e)) throw new ShopifyError("The owner already has full access.");
   if (data.password && data.password.length < 6) throw new ShopifyError("Password must be at least 6 characters.");
   const users = await getPortalUsers();
   const existing = users.find((u) => u.email === e);
@@ -197,7 +205,7 @@ export type UpdateUserInput = { email?: string; name?: string; phone?: string; p
 
 export async function updatePortalUser(email: string, patch: UpdateUserInput): Promise<PublicUser[]> {
   const e = email.trim().toLowerCase();
-  if (e === OWNER_EMAIL) throw new ShopifyError("The owner's access can't be changed here.");
+  if (OWNER_EMAILS.has(e)) throw new ShopifyError("The owner's access can't be changed here.");
   const users = await getPortalUsers();
   const u = users.find((x) => x.email === e);
   if (!u) throw new ShopifyError("Teammate not found.");
@@ -206,7 +214,7 @@ export async function updatePortalUser(email: string, patch: UpdateUserInput): P
     const ne = patch.email.trim().toLowerCase();
     if (ne && ne !== e) {
       if (!ne.includes("@") || ne.length < 5) throw new ShopifyError("Enter a valid email address.");
-      if (ne === OWNER_EMAIL) throw new ShopifyError("That email belongs to the owner.");
+      if (OWNER_EMAILS.has(ne)) throw new ShopifyError("That email belongs to the owner.");
       if (users.some((x) => x.email === ne)) throw new ShopifyError("Another teammate already uses that email.");
       u.email = ne;
     }
@@ -240,7 +248,7 @@ export async function changeOwnPassword(email: string, oldPassword: string, newP
 
 export async function removePortalUser(email: string): Promise<PublicUser[]> {
   const e = email.trim().toLowerCase();
-  if (e === OWNER_EMAIL) throw new ShopifyError("You can't remove the owner.");
+  if (OWNER_EMAILS.has(e)) throw new ShopifyError("You can't remove the owner.");
   const users = (await getPortalUsers()).filter((u) => u.email !== e);
   await save(users);
   return getPublicUsers();

@@ -16,7 +16,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
     <CartProvider domain={STORE_DOMAIN} trade={trade}>
       <div className="flex min-h-dvh flex-col bg-white text-neutral-900">
         {trade && <TradeBar />}
-        <ShopHeader loginUrl={loginUrl} />
+        <ShopHeader loginUrl={loginUrl} trade={trade} />
         <main className="flex-1">{children}</main>
         <footer className="border-t border-neutral-200 bg-neutral-50">
           <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-10 sm:px-6 md:flex-row md:justify-between">
@@ -46,7 +46,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
           <div className="border-t border-neutral-200">
             <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4 text-xs text-neutral-400 sm:flex-row sm:justify-between sm:px-6">
               <span>© {year} MOBILE ICU. All rights reserved.</span>
-              <span>Wholesale phone &amp; laptop accessories</span>
+              <span>Developed &amp; managed by Kuldeep J @ <a href="https://share.google/n242crm1dbgPcKwF4" target="_blank" rel="noreferrer" className="font-medium text-neutral-500 underline hover:text-amber-600">RD-IT-Lab</a></span>
             </div>
           </div>
         </footer>

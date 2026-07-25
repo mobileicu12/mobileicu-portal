@@ -15,11 +15,16 @@ const PAGES = [
   { href: "/shop/contact", label: "Contact" },
 ];
 
-export default function ShopHeader({ loginUrl }: { loginUrl: string }) {
+export default function ShopHeader({ loginUrl, trade = false }: { loginUrl: string; trade?: boolean }) {
   const { count, setOpen } = useCart();
   const pathname = usePathname();
   const [mobile, setMobile] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+
+  async function logout() {
+    await fetch("/api/shop/trade-logout", { method: "POST" }).catch(() => {});
+    window.location.href = "/shop";
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -61,7 +66,14 @@ export default function ShopHeader({ loginUrl }: { loginUrl: string }) {
           <Link href="/shop/search" aria-label="Search" className="rounded-lg p-2 text-neutral-600 hover:text-amber-600 md:hidden">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
           </Link>
-          <a href={loginUrl} className="hidden rounded-full border border-neutral-300 px-3.5 py-1.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 sm:block">Trade login</a>
+          {trade ? (
+            <>
+              <Link href="/shop/account" className="hidden rounded-full border border-neutral-300 px-3.5 py-1.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 sm:block">My account</Link>
+              <button onClick={logout} className="hidden rounded-full px-3 py-1.5 text-sm font-medium text-neutral-500 transition hover:text-red-600 sm:block">Log out</button>
+            </>
+          ) : (
+            <a href={loginUrl} className="hidden rounded-full border border-neutral-300 px-3.5 py-1.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 sm:block">Trade login</a>
+          )}
           <button onClick={() => setOpen(true)} className="relative rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">
             Cart
             {count > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-xs font-bold text-neutral-900">{count}</span>}
@@ -79,8 +91,17 @@ export default function ShopHeader({ loginUrl }: { loginUrl: string }) {
               {PAGES.map((p) => (
                 <Link key={p.href} href={p.href} onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">{p.label}</Link>
               ))}
-              <a href={loginUrl} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Trade login</a>
-              <Link href="/shop/register" onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-amber-600">Register for wholesale</Link>
+              {trade ? (
+                <>
+                  <Link href="/shop/account" onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">My account</Link>
+                  <button onClick={logout} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-red-600">Log out</button>
+                </>
+              ) : (
+                <>
+                  <a href={loginUrl} className="block rounded-lg px-3 py-2 text-sm text-neutral-600">Trade login</a>
+                  <Link href="/shop/register" onClick={() => setMobile(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-amber-600">Register for wholesale</Link>
+                </>
+              )}
             </div>
           </motion.div>
         )}
