@@ -1,6 +1,7 @@
 // Customer management (Shopify customers) + payment ledger via metafield.
 import { adminGraphQL, ShopifyError } from "./shopify";
 import { segmentsFromTags, tagsForSegments, isSegmentTag, type SegmentKey } from "./segments";
+import { completeInvoice } from "./billing";
 
 export type CustomerSummary = {
   id: string;
@@ -447,6 +448,46 @@ export async function addPayment(customerId: string, payment: Payment): Promise<
   ledger.payments = [...ledger.payments, payment];
   await writeLedger(customerId, ledger);
   return ledger;
+}
+
+export type PaymentAllocation = {
+  settled: { id: string; name: string; amount: number }[]; // invoices auto-marked paid
+  creditedToAccount: number; // leftover recorded as an account credit
+};
+
+// Apply a payment to a customer's OPEN invoices oldest-first: every invoice the
+// payment fully covers is auto-completed (marked PAID), and any remainder is
+// recorded as an account credit. e.g. £35 against £10/£25/£15/£5/£10 bills clears
+// the £10 + £25 (oldest two) and leaves £0 over.
+export async function allocatePayment(
+  customerId: string,
+  amount: number,
+  opts: { method?: string; date?: string; note?: string } = {},
+): Promise<{ ledger: Ledger; allocation: PaymentAllocation }> {
+  const method = opts.method || "cash";
+  const date = opts.date || new Date().toISOString();
+  const detail = await getCustomer(customerId);
+  const open = detail.invoices
+    .filter((i) => i.status !== "COMPLETED" && Number(i.balance) > 0.001)
+    .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+
+  let remaining = amount;
+  const settled: PaymentAllocation["settled"] = [];
+  for (const inv of open) {
+    const bal = Number(inv.balance);
+    if (remaining + 0.001 < bal) break; // can't fully cover this (oldest) bill → stop
+    await completeInvoice(inv.id);
+    remaining -= bal;
+    settled.push({ id: inv.id, name: inv.name, amount: bal });
+  }
+
+  let ledger = detail.ledger;
+  const leftover = Math.max(0, Math.round(remaining * 100) / 100);
+  if (leftover > 0.001) {
+    const note = opts.note || (settled.length ? "Payment on account (surplus)" : "Payment on account");
+    ledger = await addPayment(customerId, { date, amount: leftover, method, note });
+  }
+  return { ledger, allocation: { settled, creditedToAccount: leftover } };
 }
 
 // Revoke (delete) an account payment by its index in the stored ledger.

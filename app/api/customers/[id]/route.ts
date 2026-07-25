@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCustomer, addPayment, removePayment, updatePaymentAt, setCustomerSegments, setTradeCode, updateCustomer, type Payment } from "@/lib/customers";
+import { getCustomer, addPayment, allocatePayment, removePayment, updatePaymentAt, setCustomerSegments, setTradeCode, updateCustomer, type Payment } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
@@ -74,18 +74,28 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => null)) as Payment | null;
+  const body = (await req.json().catch(() => null)) as (Payment & { allocate?: boolean }) | null;
   if (!body || typeof body.amount !== "number" || body.amount <= 0) {
     return NextResponse.json({ error: "A positive payment amount is required." }, { status: 400 });
   }
   try {
-    const ledger = await addPayment(gid(id), {
-      date: body.date || new Date().toISOString(),
-      amount: body.amount,
+    // Default: allocate the payment to the customer's oldest open invoices, auto-marking
+    // fully-covered ones as paid. Pass allocate:false for a plain account credit.
+    if (body.allocate === false) {
+      const ledger = await addPayment(gid(id), {
+        date: body.date || new Date().toISOString(),
+        amount: body.amount,
+        method: body.method || "cash",
+        note: body.note || "",
+      });
+      return NextResponse.json({ ok: true, ledger });
+    }
+    const { ledger, allocation } = await allocatePayment(gid(id), body.amount, {
       method: body.method || "cash",
+      date: body.date || new Date().toISOString(),
       note: body.note || "",
     });
-    return NextResponse.json({ ok: true, ledger });
+    return NextResponse.json({ ok: true, ledger, allocation });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to record payment.";
     return NextResponse.json({ error: msg }, { status: 502 });
