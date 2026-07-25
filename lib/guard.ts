@@ -27,6 +27,24 @@ export async function canSeeFinanceRequest(): Promise<boolean> {
   }
 }
 
+// Allow if the request has ANY of the given permissions (owner/master-password = all).
+export async function requireAnyPermission(perms: PermKey[]): Promise<NextResponse | null> {
+  const session = await auth().catch(() => null);
+  const email = session?.user?.email;
+  if (email) {
+    if (isOwner(email)) return null;
+    try {
+      const have = permsFor(await getPortalUser(email));
+      if (perms.some((p) => have.includes(p))) return null;
+    } catch { /* deny */ }
+    return NextResponse.json({ error: "You don't have access to this." }, { status: 403 });
+  }
+  const c = await cookies();
+  const s = c.get("mi_session")?.value;
+  if (s && process.env.PORTAL_SESSION_SECRET && s === process.env.PORTAL_SESSION_SECRET) return null;
+  return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+}
+
 export async function requirePermission(perm: PermKey): Promise<NextResponse | null> {
   const session = await auth().catch(() => null);
   const email = session?.user?.email;

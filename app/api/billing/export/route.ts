@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { listInvoices, getInvoiceDetail } from "@/lib/billing";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -9,6 +10,8 @@ export const maxDuration = 60;
 // GET /api/billing/export           -> all invoices summary xlsx
 // GET /api/billing/export?id=<gid>  -> single invoice with line items xlsx
 export async function GET(req: Request) {
+  const denied = await requirePermission("invoices");
+  if (denied) return denied;
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }

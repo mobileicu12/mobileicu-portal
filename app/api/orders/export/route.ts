@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { listOrders } from "@/lib/orders";
 import { SEGMENTS } from "@/lib/segments";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ const segLabel = (k: string | null) => SEGMENTS.find((s) => s.key === k)?.label 
 const pretty = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 
 export async function GET(req: Request) {
+  const denied = await requirePermission("orders");
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const idsParam = new URL(req.url).searchParams.get("ids");
   const idSet = idsParam ? new Set(idsParam.split(",").map((x) => decodeURIComponent(x))) : null;

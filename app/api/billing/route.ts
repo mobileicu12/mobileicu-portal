@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { createBill, listInvoices, summarizeInvoices, type CreateBillInput } from "@/lib/billing";
 import { auth } from "@/auth";
-import { requirePermission } from "@/lib/guard";
+import { requirePermission, requireAnyPermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  // Invoice list is consumed across billing, invoices, customers and the drawer.
+  const denied = await requireAnyPermission(["billing", "invoices", "customers"]);
+  if (denied) return denied;
   if (!shopifyConfigured()) return NextResponse.json({ invoices: [], stats: null });
   try {
     const invoices = await listInvoices();

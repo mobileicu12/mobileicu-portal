@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { getAllProductsForExport, EXPORT_COLUMNS } from "@/lib/products";
+import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET() {
+  const denied = await requirePermission("inventory");
+  if (denied) return denied;
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }
