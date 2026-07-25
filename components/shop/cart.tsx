@@ -15,6 +15,7 @@ type CartCtx = {
   add: (item: Omit<CartItem, "qty">, qty?: number) => void;
   setQty: (numericId: string, qty: number) => void;
   remove: (numericId: string) => void;
+  clear: () => void;
   checkout: () => void;
 };
 
@@ -25,7 +26,6 @@ export function CartProvider({ trade = false, children }: { domain?: string; tra
   const [items, setItems] = useState<CartItem[]>([]);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  const [checkingOut, setCheckingOut] = useState(false);
 
   useEffect(() => {
     try { const raw = localStorage.getItem(KEY); if (raw) setItems(JSON.parse(raw)); } catch {}
@@ -45,29 +45,21 @@ export function CartProvider({ trade = false, children }: { domain?: string; tra
     setItems((prev) => prev.map((i) => (i.numericId === numericId ? { ...i, qty: Math.max(1, qty) } : i)));
   }, []);
   const remove = useCallback((numericId: string) => setItems((prev) => prev.filter((i) => i.numericId !== numericId)), []);
+  const clear = useCallback(() => setItems([]), []);
 
-  const checkout = useCallback(async () => {
-    if (!items.length || checkingOut) return;
-    // Ordering is for registered/logged-in customers only.
-    if (!trade) { window.location.href = "/shop/trade-login"; return; }
-    setCheckingOut(true);
-    try {
-      const res = await fetch("/api/shop/trade-checkout", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines: items.map((i) => ({ variantId: i.variantId, quantity: i.qty, unitPrice: i.price })) }),
-      });
-      const d = await res.json();
-      if (res.ok && d.invoiceUrl) { window.location.href = d.invoiceUrl; return; }
-      alert(d.error || "Checkout failed.");
-    } finally { setCheckingOut(false); }
-  }, [items, trade, checkingOut]);
+  const checkout = useCallback(() => {
+    if (!items.length) return;
+    // Ordering is for registered/logged-in customers only — go to our own on-site
+    // checkout (never Shopify's hosted page).
+    window.location.href = trade ? "/shop/checkout" : "/shop/trade-login";
+  }, [items, trade]);
 
   const value = useMemo<CartCtx>(() => ({
     items,
     count: items.reduce((s, i) => s + i.qty, 0),
     subtotal: items.reduce((s, i) => s + i.price * i.qty, 0),
-    open, trade, setOpen, add, setQty, remove, checkout,
-  }), [items, open, trade, add, setQty, remove, checkout]);
+    open, trade, setOpen, add, setQty, remove, clear, checkout,
+  }), [items, open, trade, add, setQty, remove, clear, checkout]);
 
   return <Ctx.Provider value={value}>{children}<CartDrawer /></Ctx.Provider>;
 }

@@ -240,13 +240,21 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
   };
 }
 
-// Storefront trade checkout: create a draft order at wholesale prices for the
-// logged-in trade customer and return its invoice/checkout URL.
+// Storefront trade checkout: create an on-site order (draft invoice) at wholesale
+// prices for the logged-in trade customer. Stays entirely on our site — no Shopify
+// hosted page. The order is unpaid until settled (cash on collection / bank transfer);
+// the shop sees it in Invoices with the chosen payment method.
 export async function createTradeCheckout(
   customerId: string,
   lines: { variantId: string; quantity: number; unitPrice: number }[],
-): Promise<{ invoiceUrl: string | null }> {
+  opts: { payMethod?: string; note?: string } = {},
+): Promise<{ name: string; invoiceNo: string; total: string }> {
   if (!lines.length) throw new ShopifyError("Cart is empty.");
+  const invoiceNo = await nextInvoiceNumber();
+  const mfs: { namespace: string; key: string; type: string; value: string }[] = [
+    { namespace: "portal", key: "invoice_no", type: "single_line_text_field", value: invoiceNo },
+  ];
+  if (opts.payMethod?.trim()) mfs.push({ namespace: "portal", key: "pay_method", type: "single_line_text_field", value: opts.payMethod.trim().slice(0, 40) });
   const input = {
     purchasingEntity: { customerId },
     lineItems: lines.map((l) => ({
@@ -254,19 +262,23 @@ export async function createTradeCheckout(
       quantity: l.quantity,
       priceOverride: { amount: l.unitPrice.toFixed(2), currencyCode: CURRENCY },
     })),
+    note: opts.note || undefined,
     tags: ["portal-billing", "storefront-trade", "seg:online"],
+    metafields: mfs,
   };
   const res = await adminGraphQL<{
-    draftOrderCreate: { draftOrder: { id: string; invoiceUrl: string | null } | null; userErrors: { field: string[]; message: string }[] };
+    draftOrderCreate: { draftOrder: { id: string; name: string; totalPrice: string } | null; userErrors: { field: string[]; message: string }[] };
   }>(
     `mutation($input: DraftOrderInput!) {
-      draftOrderCreate(input: $input) { draftOrder { id invoiceUrl } userErrors { field message } }
+      draftOrderCreate(input: $input) { draftOrder { id name totalPrice } userErrors { field message } }
     }`,
     { input },
   );
   const errs = res.draftOrderCreate.userErrors;
   if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
-  return { invoiceUrl: res.draftOrderCreate.draftOrder?.invoiceUrl ?? null };
+  const d = res.draftOrderCreate.draftOrder;
+  if (!d) throw new ShopifyError("Order failed.");
+  return { name: d.name, invoiceNo, total: d.totalPrice };
 }
 
 export type InvoiceRow = {

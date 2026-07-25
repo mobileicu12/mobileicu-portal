@@ -9,11 +9,15 @@ export async function POST(req: Request) {
   if (!shopifyConfigured()) return NextResponse.json({ error: "Unavailable." }, { status: 503 });
   const customerId = await getTradeCustomerId();
   if (!customerId) return NextResponse.json({ error: "Trade session expired. Please log in again." }, { status: 401 });
-  const body = (await req.json().catch(() => null)) as { lines?: { variantId: string; quantity: number; unitPrice: number }[] } | null;
+  const body = (await req.json().catch(() => null)) as {
+    lines?: { variantId: string; quantity: number; unitPrice: number }[];
+    payMethod?: string;
+    note?: string;
+  } | null;
   if (!body?.lines?.length) return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
   try {
-    const { invoiceUrl } = await createTradeCheckout(customerId, body.lines);
-    return NextResponse.json({ ok: true, invoiceUrl });
+    const result = await createTradeCheckout(customerId, body.lines, { payMethod: body.payMethod, note: body.note });
+    return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Checkout failed.";
     return NextResponse.json({ error: msg }, { status: 502 });
