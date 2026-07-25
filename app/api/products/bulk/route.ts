@@ -7,7 +7,7 @@ import {
   bulkAddToCollection,
   bulkSetChannels,
 } from "@/lib/products";
-import { requirePermission } from "@/lib/guard";
+import { requirePermission, isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -46,6 +46,7 @@ export async function POST(req: Request) {
         result = await bulkSetStatus(body.productIds ?? [], "DRAFT");
         break;
       case "delete":
+        if (!(await isOwnerRequest())) return NextResponse.json({ error: "Only the owner can delete products." }, { status: 403 });
         result = await bulkDelete(body.productIds ?? []);
         break;
       case "price":

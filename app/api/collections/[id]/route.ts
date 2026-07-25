@@ -7,7 +7,7 @@ import {
   setCollectionParent,
 } from "@/lib/collections";
 import { bulkAddToCollection } from "@/lib/products";
-import { requirePermission } from "@/lib/guard";
+import { requirePermission, isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -63,6 +63,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const denied = await requirePermission("collections");
   if (denied) return denied;
+  if (!(await isOwnerRequest())) return NextResponse.json({ error: "Only the owner can delete collections." }, { status: 403 });
   if (!shopifyConfigured()) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const { id } = await ctx.params;
   try {

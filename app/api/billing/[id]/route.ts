@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getInvoiceDetail, updateInvoice, deleteInvoice, type UpdateInvoiceInput } from "@/lib/billing";
-import { requirePermission } from "@/lib/guard";
+import { requirePermission, isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -40,6 +40,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requirePermission("invoices");
   if (denied) return denied;
+  if (!(await isOwnerRequest())) return NextResponse.json({ error: "Only the owner can delete invoices. You can Void instead." }, { status: 403 });
   if (!shopifyConfigured()) return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   const { id } = await params;
   try {

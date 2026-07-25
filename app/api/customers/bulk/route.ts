@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { bulkCustomerSegments, bulkDeleteCustomers } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
-import { requirePermission } from "@/lib/guard";
+import { requirePermission, isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -31,6 +31,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: r.ok, failed: r.failed });
     }
     if (body.action === "delete") {
+      if (!(await isOwnerRequest())) return NextResponse.json({ error: "Only the owner can delete customers." }, { status: 403 });
       const r = await bulkDeleteCustomers(ids);
       return NextResponse.json({ ok: r.ok, failed: r.failed });
     }

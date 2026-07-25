@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
+import { useIsOwner } from "@/lib/use-me";
 
 type Order = {
   id: string;
@@ -36,6 +37,7 @@ function pretty(s: string) {
 
 export default function OrdersPage() {
   const router = useRouter();
+  const isOwner = useIsOwner();
   const [orders, setOrders] = useState<Order[]>([]);
   const [stats, setStats] = useState<Stats>(null);
   const [loading, setLoading] = useState(true);
@@ -130,9 +132,9 @@ export default function OrdersPage() {
       </div>
 
       {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className={`grid grid-cols-2 gap-3 ${isOwner ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
           <Tile label="Orders" value={String(stats.count)} />
-          <Tile label="Sales" value={`£${stats.sales.toFixed(2)}`} />
+          {isOwner && <Tile label="Sales" value={`£${stats.sales.toFixed(2)}`} />}
           <Tile label="Unfulfilled" value={String(stats.unfulfilled)} accent="rose" />
           <Tile label="Unpaid" value={String(stats.unpaid)} accent="amber" />
         </div>

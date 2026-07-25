@@ -135,16 +135,18 @@ export default function InvoiceEditPage() {
     }, 300);
   }
 
-  function updateQty(vid: string | null, qty: number) {
-    setLines((prev) => prev.map((l) => (l.variantId === vid ? { ...l, qty: Math.max(1, qty) } : l)));
+  // Edit by row index — custom items all share variantId=null, so matching by id
+  // would change every custom line at once.
+  function updateQty(idx: number, qty: number) {
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, qty: Math.max(1, qty) } : l)));
     setDirty(true);
   }
-  function updatePrice(vid: string | null, price: number) {
-    setLines((prev) => prev.map((l) => (l.variantId === vid ? { ...l, price: Math.max(0, price) } : l)));
+  function updatePrice(idx: number, price: number) {
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, price: Math.max(0, price) } : l)));
     setDirty(true);
   }
-  function removeLine(vid: string | null) {
-    setLines((prev) => prev.filter((l) => l.variantId !== vid));
+  function removeLine(idx: number) {
+    setLines((prev) => prev.filter((_, i) => i !== idx));
     setDirty(true);
   }
 
@@ -354,19 +356,19 @@ export default function InvoiceEditPage() {
                     </td>
                     <td className="px-4 py-3">
                       {readOnly ? l.qty : (
-                        <input type="number" min={1} value={l.qty} onChange={(e) => updateQty(l.variantId, Number(e.target.value))} className="w-20 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800" />
+                        <input type="number" min={1} value={l.qty} onChange={(e) => updateQty(i, Number(e.target.value))} className="w-20 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800" />
                       )}
                     </td>
                     <td className="px-4 py-3 text-right text-neutral-700 dark:text-neutral-300">
                       {readOnly ? `£${l.price.toFixed(2)}` : (
                         <div className="flex items-center justify-end gap-1">
                           <span className="text-neutral-400">£</span>
-                          <input type="number" min={0} step="0.01" value={l.price} onChange={(e) => updatePrice(l.variantId, Number(e.target.value))} className="w-24 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm dark:border-neutral-700 dark:bg-neutral-800" />
+                          <input type="number" min={0} step="0.01" value={l.price} onChange={(e) => updatePrice(i, Number(e.target.value))} className="w-24 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm dark:border-neutral-700 dark:bg-neutral-800" />
                         </div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{(l.price * l.qty).toFixed(2)}</td>
-                    {!readOnly && <td className="px-2 py-3 text-right"><button onClick={() => removeLine(l.variantId)} className="text-neutral-400 hover:text-red-600">✕</button></td>}
+                    {!readOnly && <td className="px-2 py-3 text-right"><button onClick={() => removeLine(i)} className="text-neutral-400 hover:text-red-600">✕</button></td>}
                   </tr>
                 ))}
                 {lines.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-neutral-400">No items.</td></tr>}

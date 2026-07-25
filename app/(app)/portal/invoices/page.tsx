@@ -9,6 +9,7 @@ import { buildInvoicesReportDoc, type ReportRow } from "@/lib/report-pdf";
 import type { jsPDF } from "jspdf";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
+import { useIsOwner } from "@/lib/use-me";
 
 type Invoice = {
   id: string;
@@ -33,6 +34,7 @@ type Stats = {
 
 export default function InvoicesPage() {
   const router = useRouter();
+  const isOwner = useIsOwner();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [stats, setStats] = useState<Stats>(null);
   const [loading, setLoading] = useState(true);
@@ -238,14 +240,18 @@ export default function InvoicesPage() {
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
           <span className="text-xs text-neutral-400">to</span>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
-          <span className="ml-auto rounded-lg bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-            {dateFrom || dateTo ? "Range" : "All time"}: <strong>{rangeStats.count}</strong> bills · <strong>£{rangeStats.total.toFixed(2)}</strong> · paid £{rangeStats.paid.toFixed(2)} · due £{rangeStats.outstanding.toFixed(2)}
-          </span>
+          {isOwner ? (
+            <span className="ml-auto rounded-lg bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+              {dateFrom || dateTo ? "Range" : "All time"}: <strong>{rangeStats.count}</strong> bills · <strong>£{rangeStats.total.toFixed(2)}</strong> · paid £{rangeStats.paid.toFixed(2)} · due £{rangeStats.outstanding.toFixed(2)}
+            </span>
+          ) : (
+            <span className="ml-auto text-xs text-neutral-400">{rangeStats.count} bills shown</span>
+          )}
         </div>
       </div>
 
-      {/* stat tiles */}
-      {stats && (
+      {/* stat tiles — money totals are owner-only */}
+      {stats && isOwner && (
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Tile label="Invoices" value={String(stats.count)} />
           <Tile label="Outstanding" value={`£${stats.outstanding.toFixed(2)}`} sub={`${stats.openCount} open`} accent="amber" />

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { closeOrders, reopenOrders, deleteOrders } from "@/lib/orders";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
-import { requirePermission } from "@/lib/guard";
+import { requirePermission, isOwnerRequest } from "@/lib/guard";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,7 +17,10 @@ export async function POST(req: Request) {
     let r: { ok: number; failed: number };
     if (body.action === "archive") r = await closeOrders(body.ids);
     else if (body.action === "unarchive") r = await reopenOrders(body.ids);
-    else if (body.action === "delete") r = await deleteOrders(body.ids);
+    else if (body.action === "delete") {
+      if (!(await isOwnerRequest())) return NextResponse.json({ error: "Only the owner can delete orders." }, { status: 403 });
+      r = await deleteOrders(body.ids);
+    }
     else return NextResponse.json({ error: "Unknown action." }, { status: 400 });
     return NextResponse.json({ ok: r.ok, failed: r.failed });
   } catch (e) {
