@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { COUNTRIES, DEFAULT_COUNTRY } from "@/lib/countries";
+import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
+
+const CUST_COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Name", locked: true },
+  { key: "segment", label: "Segment" },
+  { key: "company", label: "Company" },
+  { key: "contact", label: "Contact" },
+  { key: "orders", label: "Orders" },
+  { key: "totalSpent", label: "Total spent" },
+];
 
 type Customer = {
   id: string;
@@ -39,6 +49,9 @@ function SegBadges({ segments }: { segments: SegmentKey[] }) {
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const cols = useColumns("cols:customers", CUST_COLUMNS);
+  // Default: "" = keep the server's recent-first order (latest customers on top).
+  const sort = useSort<"" | "name" | "company" | "orders" | "totalSpent">("", "asc");
   const [q, setQ] = useState("");
   const [segFilter, setSegFilter] = useState<SegmentKey | "all">("all");
   const [loading, setLoading] = useState(true);
@@ -106,6 +119,25 @@ export default function CustomersPage() {
     load(q, seg);
   }
 
+  const shown = useMemo(() => {
+    if (!sort.key) return customers; // server order (recent first)
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const val = (c: Customer): string | number => {
+      switch (sort.key) {
+        case "name": return c.name.toLowerCase();
+        case "company": return c.company.toLowerCase();
+        case "orders": return c.orders;
+        case "totalSpent": return Number(c.totalSpent) || 0;
+        default: return 0;
+      }
+    };
+    return [...customers].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [customers, sort.key, sort.dir]);
+
   return (
     <div className="px-8 py-7 pb-28">
       <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
@@ -134,6 +166,7 @@ export default function CustomersPage() {
             placeholder="Search name, company, email or phone…"
             className="ml-auto w-64 rounded-lg border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
           />
+          <ColumnChooser columns={CUST_COLUMNS} isVisible={cols.isVisible} toggle={cols.toggle} />
         </div>
       </div>
 
@@ -147,16 +180,16 @@ export default function CustomersPage() {
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Segment</th>
-              <th className="px-4 py-3">Company</th>
-              <th className="px-4 py-3">Contact</th>
-              <th className="px-4 py-3 text-right">Orders</th>
-              <th className="px-4 py-3 text-right">Total spent</th>
+              <th className="px-4 py-3"><button onClick={() => sort.onSort("name")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Name{sort.arrow("name")}</button></th>
+              {cols.isVisible("segment") && <th className="px-4 py-3">Segment</th>}
+              {cols.isVisible("company") && <th className="px-4 py-3"><button onClick={() => sort.onSort("company")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Company{sort.arrow("company")}</button></th>}
+              {cols.isVisible("contact") && <th className="px-4 py-3">Contact</th>}
+              {cols.isVisible("orders") && <th className="px-4 py-3 text-right"><button onClick={() => sort.onSort("orders")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Orders{sort.arrow("orders")}</button></th>}
+              {cols.isVisible("totalSpent") && <th className="px-4 py-3 text-right"><button onClick={() => sort.onSort("totalSpent")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Total spent{sort.arrow("totalSpent")}</button></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {customers.map((c) => (
+            {shown.map((c) => (
               <tr key={c.id} className={selected.has(c.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}>
                 <td className="px-4 py-3"><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleRow(c.id)} className="h-4 w-4 accent-amber-500" /></td>
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">
@@ -164,18 +197,16 @@ export default function CustomersPage() {
                     {c.name || "(no name)"}
                   </Link>
                 </td>
-                <td className="px-4 py-3"><SegBadges segments={c.segments} /></td>
-                <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{c.company || "—"}</td>
-                <td className="px-4 py-3 text-neutral-500">
-                  {c.email || "—"}{c.phone ? ` · ${c.phone}` : ""}
-                </td>
-                <td className="px-4 py-3 text-right text-neutral-700 dark:text-neutral-300">{c.orders}</td>
-                <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{c.totalSpent}</td>
+                {cols.isVisible("segment") && <td className="px-4 py-3"><SegBadges segments={c.segments} /></td>}
+                {cols.isVisible("company") && <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{c.company || "—"}</td>}
+                {cols.isVisible("contact") && <td className="px-4 py-3 text-neutral-500">{c.email || "—"}{c.phone ? ` · ${c.phone}` : ""}</td>}
+                {cols.isVisible("orders") && <td className="px-4 py-3 text-right text-neutral-700 dark:text-neutral-300">{c.orders}</td>}
+                {cols.isVisible("totalSpent") && <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{c.totalSpent}</td>}
               </tr>
             ))}
             {customers.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-neutral-400">
+                <td colSpan={2 + ["segment", "company", "contact", "orders", "totalSpent"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-neutral-400">
                   No customers in this segment yet.
                 </td>
               </tr>

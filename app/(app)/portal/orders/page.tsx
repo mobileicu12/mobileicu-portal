@@ -4,6 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useIsOwner } from "@/lib/use-me";
+import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
+
+const ORDER_COLUMNS: ColumnDef[] = [
+  { key: "order", label: "Order", locked: true },
+  { key: "customer", label: "Customer" },
+  { key: "source", label: "Source" },
+  { key: "payment", label: "Payment" },
+  { key: "fulfilment", label: "Fulfilment" },
+  { key: "date", label: "Date" },
+  { key: "total", label: "Total", locked: true },
+];
 
 type Order = {
   id: string;
@@ -38,6 +49,8 @@ function pretty(s: string) {
 export default function OrdersPage() {
   const router = useRouter();
   const isOwner = useIsOwner();
+  const cols = useColumns("cols:orders", ORDER_COLUMNS);
+  const sort = useSort<"order" | "customer" | "source" | "payment" | "fulfilment" | "date" | "total">("date", "desc");
   const [orders, setOrders] = useState<Order[]>([]);
   const [stats, setStats] = useState<Stats>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +89,27 @@ export default function OrdersPage() {
       return o.name.toLowerCase().includes(s) || o.customer.toLowerCase().includes(s);
     });
   }, [orders, search, segFilter, fulFilter, payFilter]);
+
+  const sorted = useMemo(() => {
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const val = (o: Order): string | number => {
+      switch (sort.key) {
+        case "order": return o.name;
+        case "customer": return o.customer.toLowerCase();
+        case "source": return o.segment || "";
+        case "payment": return o.financialStatus;
+        case "fulfilment": return o.fulfillmentStatus;
+        case "date": return +new Date(o.createdAt);
+        case "total": return Number(o.total) || 0;
+        default: return 0;
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [filtered, sort.key, sort.dir]);
 
   const allSelected = filtered.length > 0 && filtered.every((o) => selected.has(o.id));
   function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
@@ -128,6 +162,7 @@ export default function OrdersPage() {
             ))}
           </div>
           <span className="text-sm text-neutral-400">{filtered.length} shown</span>
+          <div className="ml-auto"><ColumnChooser columns={ORDER_COLUMNS} isVisible={cols.isVisible} toggle={cols.toggle} /></div>
         </div>
       </div>
 
@@ -148,33 +183,33 @@ export default function OrdersPage() {
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
-              <th className="px-4 py-3">Order</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Payment</th>
-              <th className="px-4 py-3">Fulfilment</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3 text-right">Total</th>
+              <th className="px-4 py-3"><button onClick={() => sort.onSort("order")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Order{sort.arrow("order")}</button></th>
+              {cols.isVisible("customer") && <th className="px-4 py-3"><button onClick={() => sort.onSort("customer")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Customer{sort.arrow("customer")}</button></th>}
+              {cols.isVisible("source") && <th className="px-4 py-3"><button onClick={() => sort.onSort("source")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Source{sort.arrow("source")}</button></th>}
+              {cols.isVisible("payment") && <th className="px-4 py-3"><button onClick={() => sort.onSort("payment")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Payment{sort.arrow("payment")}</button></th>}
+              {cols.isVisible("fulfilment") && <th className="px-4 py-3"><button onClick={() => sort.onSort("fulfilment")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Fulfilment{sort.arrow("fulfilment")}</button></th>}
+              {cols.isVisible("date") && <th className="px-4 py-3"><button onClick={() => sort.onSort("date")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Date{sort.arrow("date")}</button></th>}
+              <th className="px-4 py-3 text-right"><button onClick={() => sort.onSort("total")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Total{sort.arrow("total")}</button></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {filtered.map((o) => {
+            {sorted.map((o) => {
               const seg = SEGMENTS.find((x) => x.key === o.segment);
               return (
                 <tr key={o.id} onClick={() => router.push(`/portal/orders/${encodeURIComponent(o.id)}`)} className={`cursor-pointer ${selected.has(o.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleRow(o.id)} className="h-4 w-4 accent-amber-500" /></td>
                   <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{o.name}<span className="ml-1 text-xs font-normal text-neutral-400">· {o.itemCount} item{o.itemCount === 1 ? "" : "s"}</span></td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{o.customer}</td>
-                  <td className="px-4 py-3">{seg ? <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${seg.badge}`}>{seg.short}</span> : <span className="text-neutral-300">—</span>}</td>
-                  <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${finBadge(o.financialStatus)}`}>{pretty(o.financialStatus)}</span></td>
-                  <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${fulBadge(o.fulfillmentStatus)}`}>{pretty(o.fulfillmentStatus)}</span></td>
-                  <td className="px-4 py-3 text-neutral-500">{new Date(o.createdAt).toLocaleDateString("en-GB")}</td>
+                  {cols.isVisible("customer") && <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{o.customer}</td>}
+                  {cols.isVisible("source") && <td className="px-4 py-3">{seg ? <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${seg.badge}`}>{seg.short}</span> : <span className="text-neutral-300">—</span>}</td>}
+                  {cols.isVisible("payment") && <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${finBadge(o.financialStatus)}`}>{pretty(o.financialStatus)}</span></td>}
+                  {cols.isVisible("fulfilment") && <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${fulBadge(o.fulfillmentStatus)}`}>{pretty(o.fulfillmentStatus)}</span></td>}
+                  {cols.isVisible("date") && <td className="px-4 py-3 text-neutral-500">{new Date(o.createdAt).toLocaleDateString("en-GB")}</td>}
                   <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{o.total}</td>
                 </tr>
               );
             })}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-neutral-400">{orders.length === 0 ? "No orders yet." : "No orders match."}</td></tr>
+              <tr><td colSpan={3 + ["customer", "source", "payment", "fulfilment", "date"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-neutral-400">{orders.length === 0 ? "No orders yet." : "No orders match."}</td></tr>
             )}
           </tbody>
         </table>
