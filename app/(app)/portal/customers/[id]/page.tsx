@@ -486,9 +486,9 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
   const input = "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200";
 
   return (
-    <div className="mt-3 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/50">
+    <div className="mt-3 rounded-xl bg-neutral-50 p-3">
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
-      {okMsg && <p className="mb-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10">{okMsg}</p>}
+      {okMsg && <p className="mb-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700">{okMsg}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <input
           className={`${input} w-28`}
