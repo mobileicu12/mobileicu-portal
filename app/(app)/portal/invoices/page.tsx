@@ -33,6 +33,7 @@ type Invoice = {
   invoiceUrl: string | null;
   segment: SegmentKey | null;
   staff: string | null;
+  payMethod: string | null;
 };
 
 type Stats = {
@@ -157,7 +158,7 @@ export default function InvoicesPage() {
   async function openPdfReport(rows: Invoice[], label: string) {
     if (!rows.length) { setError("No invoices to include in the report."); return; }
     const biz = await loadBusiness();
-    const reportRows: ReportRow[] = rows.map((r) => ({ invoiceNo: r.invoiceNo, name: r.name, customer: r.customer, staff: r.staff, segment: r.segment, status: r.status, total: r.total, createdAt: r.createdAt }));
+    const reportRows: ReportRow[] = rows.map((r) => ({ invoiceNo: r.invoiceNo, name: r.name, customer: r.customer, staff: r.staff, segment: r.segment, status: r.status, total: r.total, createdAt: r.createdAt, payMethod: r.payMethod }));
     const doc = buildInvoicesReportDoc(reportRows, { rangeLabel: label, business: biz });
     const stamp = (dateFrom || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
     setReport({ doc, filename: `mobileicu-report-${stamp}.pdf`, subtitle: `${rows.length} invoice(s) · ${label}` });
@@ -300,9 +301,9 @@ export default function InvoicesPage() {
       {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
 
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="mt-4 max-h-[70vh] overflow-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <table className="w-full min-w-[820px] text-left text-sm">
-          <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
+          <thead className="sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
               <th className="px-4 py-3"><button onClick={() => sort.onSort("invoice")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Invoice{sort.arrow("invoice")}</button></th>

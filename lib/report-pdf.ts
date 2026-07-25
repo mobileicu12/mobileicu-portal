@@ -22,6 +22,7 @@ export type ReportRow = {
   status: string; // COMPLETED = paid
   total: string;
   createdAt: string;
+  payMethod?: string | null; // cash / card / bank transfer / …
 };
 
 function money(n: number) {
@@ -67,10 +68,13 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
 
   const num = (s: string) => parseFloat(s) || 0;
   let total = 0, paid = 0, outstanding = 0;
+  const byMethod: Record<string, number> = { cash: 0, card: 0, "bank transfer": 0, other: 0 };
   for (const r of rows) {
     const t = num(r.total);
     total += t;
     if (r.status === "COMPLETED") paid += t; else outstanding += t;
+    const m = (r.payMethod || "other").toLowerCase();
+    byMethod[m in byMethod ? m : "other"] += t;
   }
 
   // Summary tiles
@@ -99,7 +103,21 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
     doc.setFontSize(13);
     doc.text(val, x + 10, y + 35);
   });
-  y += 66;
+  y += 60;
+
+  // Payment-method split (cash vs card etc.)
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(GOLD);
+  doc.text("COLLECTED BY", M, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(INK);
+  doc.text(
+    `Cash ${money(byMethod.cash)}    ·    Card ${money(byMethod.card)}    ·    Bank ${money(byMethod["bank transfer"])}    ·    Other ${money(byMethod.other)}`,
+    M + 74, y,
+  );
+  y += 18;
 
   // Per-teammate + per-source breakdowns (side by side)
   const byStaff = new Map<string, { count: number; total: number }>();

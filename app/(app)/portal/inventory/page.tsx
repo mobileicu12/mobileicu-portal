@@ -325,9 +325,9 @@ export default function InventoryPage() {
       {error && <p className="mb-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-500">{error}</p>}
       {flash && <p className="mb-4 rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600">{flash}</p>}
 
-      <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+      <div className="max-h-[70vh] overflow-auto rounded-2xl border border-line bg-surface">
         <table className="w-full min-w-[820px] text-left text-sm">
-          <thead className="border-b border-line bg-subtle text-xs uppercase tracking-wide text-muted">
+          <thead className="sticky top-0 z-10 border-b border-line bg-subtle text-xs uppercase tracking-wide text-muted shadow-sm">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
               <th className="px-4 py-3 font-medium">Product</th>
