@@ -11,6 +11,7 @@ const CUST_COLUMNS: ColumnDef[] = [
   { key: "segment", label: "Segment" },
   { key: "company", label: "Company" },
   { key: "contact", label: "Contact" },
+  { key: "invoices", label: "Invoices (paid)" },
   { key: "orders", label: "Orders" },
   { key: "totalSpent", label: "Total spent" },
 ];
@@ -65,6 +66,8 @@ export default function CustomersPage() {
   const [segDraft, setSegDraft] = useState<SegmentKey[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Paid / total invoice counts per customer (id → {paid,total}), from the invoices list.
+  const [invCounts, setInvCounts] = useState<Map<string, { paid: number; total: number }>>(new Map());
 
   const load = (query: string, seg: SegmentKey | "all") => {
     setLoading(true);
@@ -110,6 +113,22 @@ export default function CustomersPage() {
   }
 
   useEffect(() => load("", "all"), []);
+
+  // Tally each customer's invoices (paid vs total) once, for the "Invoices (paid)" column.
+  useEffect(() => {
+    fetch("/api/billing").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d?.invoices) return;
+      const m = new Map<string, { paid: number; total: number }>();
+      for (const inv of d.invoices as { customerId: string | null; status: string }[]) {
+        if (!inv.customerId) continue;
+        const c = m.get(inv.customerId) ?? { paid: 0, total: 0 };
+        c.total++;
+        if (inv.status === "COMPLETED") c.paid++;
+        m.set(inv.customerId, c);
+      }
+      setInvCounts(m);
+    }).catch(() => {});
+  }, []);
 
   function onSearch(v: string) {
     setQ(v);
@@ -200,6 +219,7 @@ export default function CustomersPage() {
               {cols.isVisible("segment") && <th className="px-4 py-3">Segment</th>}
               {cols.isVisible("company") && <th className="px-4 py-3"><button onClick={() => sort.onSort("company")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Company{sort.arrow("company")}</button></th>}
               {cols.isVisible("contact") && <th className="px-4 py-3">Contact</th>}
+              {cols.isVisible("invoices") && <th className="px-4 py-3 text-center">Invoices</th>}
               {cols.isVisible("orders") && <th className="px-4 py-3 text-right"><button onClick={() => sort.onSort("orders")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Orders{sort.arrow("orders")}</button></th>}
               {cols.isVisible("totalSpent") && <th className="px-4 py-3 text-right"><button onClick={() => sort.onSort("totalSpent")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Total spent{sort.arrow("totalSpent")}</button></th>}
             </tr>
@@ -216,13 +236,23 @@ export default function CustomersPage() {
                 {cols.isVisible("segment") && <td className="px-4 py-3"><SegBadges segments={c.segments} /></td>}
                 {cols.isVisible("company") && <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{c.company || "—"}</td>}
                 {cols.isVisible("contact") && <td className="px-4 py-3 text-neutral-500">{[c.email, c.phone].filter(Boolean).join(" · ") || "—"}</td>}
+                {cols.isVisible("invoices") && (
+                  <td className="px-4 py-3 text-center">
+                    {(() => {
+                      const c2 = invCounts.get(c.id);
+                      if (!c2 || c2.total === 0) return <span className="text-neutral-300">—</span>;
+                      const allPaid = c2.paid === c2.total;
+                      return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${allPaid ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`} title={`${c2.paid} paid of ${c2.total} invoices`}>{c2.paid}/{c2.total} paid</span>;
+                    })()}
+                  </td>
+                )}
                 {cols.isVisible("orders") && <td className="px-4 py-3 text-right text-neutral-700 dark:text-neutral-300">{c.orders}</td>}
                 {cols.isVisible("totalSpent") && <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{c.totalSpent}</td>}
               </tr>
             ))}
             {customers.length === 0 && !loading && (
               <tr>
-                <td colSpan={2 + ["segment", "company", "contact", "orders", "totalSpent"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-neutral-400">
+                <td colSpan={2 + ["segment", "company", "contact", "invoices", "orders", "totalSpent"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-neutral-400">
                   No customers in this segment yet.
                 </td>
               </tr>
