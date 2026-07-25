@@ -31,6 +31,10 @@ export async function GET() {
       byMethod[m in byMethod ? m : "other"] += t;
     }
 
+    // Total outstanding across ALL invoices (unpaid/draft totals) — visible to staff.
+    let outstanding = 0;
+    for (const r of all) if (r.status !== "COMPLETED") outstanding += num(r.total);
+
     const latest = rows[0]
       ? { invoiceNo: rows[0].invoiceNo, customer: rows[0].customer, total: num(rows[0].total), paid: rows[0].status === "COMPLETED", createdAt: rows[0].createdAt }
       : null;
@@ -38,7 +42,7 @@ export async function GET() {
     return NextResponse.json({
       date: start.toISOString().slice(0, 10),
       count: rows.length,
-      total, paid, retail, wholesale, marketplace,
+      total, paid, retail, wholesale, marketplace, outstanding,
       byMethod,
       latest,
     });

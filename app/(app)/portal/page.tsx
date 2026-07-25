@@ -75,7 +75,7 @@ export default function Dashboard() {
 }
 
 type Takings = {
-  count: number; total: number; paid: number; retail: number; wholesale: number; marketplace: number;
+  count: number; total: number; paid: number; retail: number; wholesale: number; marketplace: number; outstanding: number;
   byMethod: Record<string, number>;
   latest: { invoiceNo: string; customer: string; total: number; paid: boolean; createdAt: string } | null;
 };
@@ -114,6 +114,11 @@ function TodayTakings() {
         <MiniTile label="Card" value={gbp(t.byMethod.card || 0)} />
       </div>
 
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <MiniTile label="Paid today" value={gbp(t.paid)} />
+        <MiniTile label="Total outstanding" value={gbp(t.outstanding)} accent="amber" />
+      </div>
+
       {t.latest && (
         <Link href="/portal/invoices" className="mt-4 flex items-center justify-between rounded-xl bg-white/10 px-4 py-2.5 text-sm transition hover:bg-white/15">
           <span className="text-neutral-300">Latest sale · <strong className="text-white">{t.latest.invoiceNo}</strong> · {t.latest.customer}</span>
@@ -124,11 +129,11 @@ function TodayTakings() {
   );
 }
 
-function MiniTile({ label, value }: { label: string; value: string }) {
+function MiniTile({ label, value, accent }: { label: string; value: string; accent?: "amber" }) {
   return (
     <div className="rounded-xl bg-white/10 px-3 py-2">
       <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{label}</p>
-      <p className="mt-0.5 text-lg font-bold">{value}</p>
+      <p className={`mt-0.5 text-lg font-bold ${accent === "amber" ? "text-amber-400" : ""}`}>{value}</p>
     </div>
   );
 }
