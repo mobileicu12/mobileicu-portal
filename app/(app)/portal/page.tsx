@@ -75,7 +75,8 @@ export default function Dashboard() {
 }
 
 type Takings = {
-  count: number; total: number; paid: number; retail: number; wholesale: number; marketplace: number; outstanding: number;
+  count: number; total: number; paid: number; retail: number; wholesale: number; marketplace: number;
+  outstanding: number; ledgerToday: number; collectedToday: number;
   byMethod: Record<string, number>;
   latest: { invoiceNo: string; customer: string; total: number; paid: boolean; createdAt: string } | null;
 };
@@ -115,7 +116,7 @@ function TodayTakings() {
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <MiniTile label="Paid today" value={gbp(t.paid)} />
+        <MiniTile label={t.ledgerToday > 0 ? "Collected today (sales + on-account)" : "Collected today"} value={gbp(t.collectedToday)} />
         <MiniTile label="Total outstanding" value={gbp(t.outstanding)} accent="amber" />
       </div>
 

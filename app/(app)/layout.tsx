@@ -1,5 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav";
 import AppHeader from "@/components/AppHeader";
@@ -8,21 +9,23 @@ import TodaySendDrawer from "@/components/TodaySendDrawer";
 import { getSettings } from "@/lib/settings";
 import { shopifyConfigured } from "@/lib/shopify";
 
+// Cache the tap-in flag so the gate doesn't hit Shopify on every page load.
+const cachedRequireTapIn = unstable_cache(
+  async () => { try { return (await getSettings()).requireTapIn; } catch { return false; } },
+  ["require-tap-in-flag"],
+  { revalidate: 60 },
+);
+
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Owner-toggleable staff tap-in gate: signed-in users must tap in before the
-  // portal opens. The cookie carries today's date and expires at auto tap-out.
+  // Owner-toggleable staff tap-in gate. Fast path: already tapped in today → no work.
   const path = (await headers()).get("x-pathname") || "";
   let needTapIn = false;
   if (shopifyConfigured() && path.startsWith("/portal") && path !== "/portal/tap-in") {
-    try {
-      const settings = await getSettings();
-      if (settings.requireTapIn) {
-        const today = new Date().toISOString().slice(0, 10);
-        if ((await cookies()).get("mi_tapin")?.value !== today) needTapIn = true;
-      }
-    } catch { /* never let the gate hard-fail the whole portal */ }
+    const today = new Date().toISOString().slice(0, 10);
+    const tappedIn = (await cookies()).get("mi_tapin")?.value === today;
+    if (!tappedIn && (await cachedRequireTapIn())) needTapIn = true;
   }
   if (needTapIn) redirect(`/portal/tap-in?from=${encodeURIComponent(path)}`); // redirect() must run outside try/catch
 
