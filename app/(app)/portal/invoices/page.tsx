@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { loadBusiness, type Business } from "@/lib/business";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import PdfPreviewModal from "@/components/PdfPreviewModal";
-import { buildInvoicesReportDoc, type ReportRow } from "@/lib/report-pdf";
+import { buildInvoicesReportDoc, buildCustomerDayDoc, type ReportRow } from "@/lib/report-pdf";
 import type { jsPDF } from "jspdf";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
@@ -182,8 +182,11 @@ export default function InvoicesPage() {
       const stamp = (dateFrom || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
       const used = new Set<string>();
       for (const [customer, list] of groups) {
-        const reportRows: ReportRow[] = list.map((r) => ({ invoiceNo: r.invoiceNo, name: r.name, customer: r.customer, staff: r.staff, segment: r.segment, status: r.status, total: r.total, createdAt: r.createdAt, payMethod: r.payMethod }));
-        const doc = buildInvoicesReportDoc(reportRows, { rangeLabel: `${customer} · ${label}`, business: biz });
+        const doc = buildCustomerDayDoc(
+          customer,
+          list.map((r) => ({ invoiceNo: r.invoiceNo, createdAt: r.createdAt, status: r.status, total: r.total })),
+          { dateLabel: label, business: biz },
+        );
         let safe = (customer || "customer").replace(/[^\w\- ]/g, "").trim().replace(/\s+/g, "_").slice(0, 60) || "customer";
         while (used.has(safe)) safe += "_";
         used.add(safe);

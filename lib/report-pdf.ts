@@ -200,3 +200,124 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
 
   return doc;
 }
+
+// ---- Single-customer day statement (used for the end-of-day per-customer ZIP) ----
+export type CustomerDayRow = { invoiceNo: string; createdAt: string; status: string; total: string };
+
+export function buildCustomerDayDoc(
+  customer: string,
+  rows: CustomerDayRow[],
+  opts: { dateLabel: string; business?: Business; outstanding?: number },
+): jsPDF {
+  const B = opts.business || BUSINESS;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 42;
+  const money2 = (n: number) => `£${(isNaN(n) ? 0 : n).toFixed(2)}`;
+  const num = (s: string) => parseFloat(s) || 0;
+
+  let total = 0, paid = 0, dueToday = 0;
+  for (const r of rows) {
+    const t = num(r.total);
+    total += t;
+    if (r.status === "COMPLETED") paid += t; else dueToday += t;
+  }
+  // Overall account outstanding if provided, else today's unpaid.
+  const outstanding = opts.outstanding ?? dueToday;
+
+  // Header (light)
+  doc.setFillColor(GOLD);
+  doc.circle(M + 14, 44, 14, "F");
+  doc.setTextColor("#ffffff");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("MI", M + 14, 48.5, { align: "center" });
+  doc.setTextColor(INK);
+  doc.setFontSize(18);
+  doc.text(B.name, M + 38, 42);
+  doc.setTextColor(GOLD);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.text("Daily statement", M + 38, 56);
+  doc.setTextColor(INK);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text("STATEMENT", W - M, 42, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  doc.text(opts.dateLabel, W - M, 58, { align: "right" });
+
+  doc.setDrawColor(GOLD);
+  doc.setLineWidth(1.4);
+  doc.line(M, 78, W - M, 78);
+  doc.setDrawColor(LINE);
+  doc.setLineWidth(0.6);
+  doc.line(M, 81, W - M, 81);
+
+  // Customer
+  doc.setTextColor(GOLD);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("CUSTOMER", M, 104);
+  doc.setTextColor(INK);
+  doc.setFontSize(13);
+  doc.text(customer || "Customer", M, 120);
+
+  // Summary tiles: today's bills, paid, outstanding
+  const tiles: [string, string][] = [
+    ["Today's bills", money2(total)],
+    ["Paid today", money2(paid)],
+    ["Outstanding", money2(outstanding)],
+  ];
+  let ty = 138;
+  const tileW = (W - M * 2 - 20) / 3;
+  tiles.forEach(([label, val], i) => {
+    const x = M + i * (tileW + 10);
+    doc.setFillColor(CREAM);
+    doc.setDrawColor(LINE);
+    doc.roundedRect(x, ty, tileW, 46, 6, 6, "FD");
+    doc.setTextColor(MUTED);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(label.toUpperCase(), x + 10, ty + 16);
+    doc.setTextColor(i === 2 && outstanding > 0 ? "#b3261e" : INK);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(val, x + 10, ty + 35);
+  });
+  ty += 66;
+
+  // Bills table
+  const sorted = [...rows].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+  autoTable(doc, {
+    startY: ty,
+    head: [["Invoice", "Time", "Status", "Amount"]],
+    body: sorted.map((r) => [
+      r.invoiceNo,
+      new Date(r.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+      r.status === "COMPLETED" ? "Paid" : "Unpaid",
+      money2(num(r.total)),
+    ]),
+    theme: "grid",
+    headStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 9, lineColor: LINE, lineWidth: 0.6 },
+    bodyStyles: { fontSize: 9, textColor: INK, lineColor: LINE, lineWidth: 0.5 },
+    columnStyles: { 3: { halign: "right", fontStyle: "bold" } },
+    margin: { left: M, right: M },
+    foot: [["", "", "Today total", money2(total)]],
+    footStyles: { fillColor: LIGHT, textColor: INK, fontStyle: "bold", fontSize: 9, halign: "right", lineColor: LINE, lineWidth: 0.6 },
+  });
+
+  const fy = H - 28;
+  doc.setDrawColor(LINE);
+  doc.setLineWidth(0.6);
+  doc.line(M, fy - 12, W - M, fy - 12);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text(`${B.name}${B.website ? `  ·  ${B.website}` : ""}`, M, fy);
+  doc.text(`Statement · ${opts.dateLabel}`, W - M, fy, { align: "right" });
+
+  return doc;
+}
