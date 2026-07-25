@@ -118,8 +118,9 @@ export default function CustomersPage() {
   const [segDraft, setSegDraft] = useState<SegmentKey[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Paid / total invoice counts per customer (id → {paid,total}), from the invoices list.
-  const [invCounts, setInvCounts] = useState<Map<string, { paid: number; total: number }>>(new Map());
+  // Per-customer invoice tallies from the portal's own invoices (id → counts + £ billed).
+  // Shopify's amountSpent only counts completed orders, so unpaid drafts would show £0.
+  const [invCounts, setInvCounts] = useState<Map<string, { paid: number; total: number; spent: number }>>(new Map());
 
   const load = (query: string, seg: SegmentKey | "all") => {
     setLoading(true);
@@ -166,21 +167,28 @@ export default function CustomersPage() {
 
   useEffect(() => load("", "all"), []);
 
-  // Tally each customer's invoices (paid vs total) once, for the "Invoices (paid)" column.
+  // Tally each customer's invoices (paid/total counts + total £ billed) from the portal.
   useEffect(() => {
     fetch("/api/billing").then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d?.invoices) return;
-      const m = new Map<string, { paid: number; total: number }>();
-      for (const inv of d.invoices as { customerId: string | null; status: string }[]) {
+      const m = new Map<string, { paid: number; total: number; spent: number }>();
+      for (const inv of d.invoices as { customerId: string | null; status: string; total: string }[]) {
         if (!inv.customerId) continue;
-        const c = m.get(inv.customerId) ?? { paid: 0, total: 0 };
+        const c = m.get(inv.customerId) ?? { paid: 0, total: 0, spent: 0 };
         c.total++;
+        c.spent += Number(inv.total) || 0;
         if (inv.status === "COMPLETED") c.paid++;
         m.set(inv.customerId, c);
       }
       setInvCounts(m);
     }).catch(() => {});
   }, []);
+
+  // Effective "total spent" = portal invoices billed (falls back to Shopify amountSpent).
+  const spentFor = (c: Customer) => {
+    const v = invCounts.get(c.id)?.spent;
+    return v != null && v > 0 ? v : Number(c.totalSpent) || 0;
+  };
 
   function onSearch(v: string) {
     setQ(v);
@@ -201,7 +209,7 @@ export default function CustomersPage() {
         case "name": return c.name.toLowerCase();
         case "company": return c.company.toLowerCase();
         case "orders": return c.orders;
-        case "totalSpent": return Number(c.totalSpent) || 0;
+        case "totalSpent": return spentFor(c);
         default: return 0;
       }
     };
@@ -210,7 +218,8 @@ export default function CustomersPage() {
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av).localeCompare(String(bv)) * dir;
     });
-  }, [customers, sort.key, sort.dir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers, sort.key, sort.dir, invCounts]);
 
   return (
     <div className="px-8 py-7 pb-28">
@@ -310,7 +319,7 @@ export default function CustomersPage() {
                   </td>
                 )}
                 {cols.isVisible("orders") && <td className="px-4 py-3 text-right text-neutral-700 dark:text-neutral-300">{c.orders}</td>}
-                {cols.isVisible("totalSpent") && <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{c.totalSpent}</td>}
+                {cols.isVisible("totalSpent") && <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{spentFor(c).toFixed(2)}</td>}
               </tr>
             ))}
             {customers.length === 0 && !loading && (
