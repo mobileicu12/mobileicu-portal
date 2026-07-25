@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ProductRow, Location } from "@/lib/shopify";
 import { CHANNELS, channelKeysFromTags } from "@/lib/channels";
 import type { TierPrices } from "@/lib/pricing";
+import { printBarcodeLabels, LABEL_PRESETS, type LabelPresetKey } from "@/lib/barcode-labels";
 import ColumnChooser, { useColumns, type ColumnDef } from "@/components/ColumnChooser";
 
 const LOW_STOCK_DEFAULT = 5;
@@ -33,6 +34,7 @@ type FlatRow = {
   image: string | null;
   variantTitle: string;
   sku: string;
+  barcode: string;
   price: string;
   tiers: TierPrices;
   inventoryItemId: string | null;
@@ -55,6 +57,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
         image: p.image,
         variantTitle: v.variantTitle === "Default Title" ? "" : v.variantTitle,
         sku: v.sku,
+        barcode: v.barcode,
         price: v.price,
         tiers: p.tiers,
         inventoryItemId: v.inventoryItemId,
@@ -88,6 +91,12 @@ export default function InventoryPage() {
   const [flash, setFlash] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [channelDraft, setChannelDraft] = useState<string[]>([]);
+  // Barcode label printing
+  const [labelOpen, setLabelOpen] = useState(false);
+  const [labelPreset, setLabelPreset] = useState<LabelPresetKey>("sheet-65");
+  const [labelCopies, setLabelCopies] = useState(1);
+  const [labelShowSku, setLabelShowSku] = useState(true);
+  const [labelShowPrice, setLabelShowPrice] = useState(true);
   const [manualCols, setManualCols] = useState<ManualCollection[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [stockFilter, setStockFilter] = useState("");
@@ -240,6 +249,15 @@ export default function InventoryPage() {
     }
   }
 
+  function printLabels() {
+    const items = selectedRows
+      .map((r) => ({ code: (r.barcode || r.sku || "").trim(), title: `${r.productTitle}${r.variantTitle ? ` ${r.variantTitle}` : ""}`, price: r.price, sku: r.sku }))
+      .filter((i) => i.code);
+    if (!items.length) { setError("Selected products have no barcode or SKU. Use ‘Assign barcodes’ first."); return; }
+    printBarcodeLabels(items, { preset: labelPreset, copies: labelCopies, showSku: labelShowSku, showPrice: labelShowPrice, currency: "GBP" });
+    setLabelOpen(false);
+  }
+
   if (notConfigured) {
     return (
       <div className="px-8 py-7">
@@ -373,6 +391,34 @@ export default function InventoryPage() {
         ) : (loading && <p className="text-sm text-muted">Loading…</p>)}
       </div>
 
+      {/* Barcode label print dialog */}
+      {labelOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setLabelOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-ink">Print barcode labels</h3>
+            <p className="mt-1 text-xs text-muted">{selected.size} product(s) selected. Uses each product&apos;s barcode (or SKU).</p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-muted">Label size</span>
+              <select value={labelPreset} onChange={(e) => setLabelPreset(e.target.value as LabelPresetKey)} className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink">
+                {LABEL_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+            </label>
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-muted">Copies per product</span>
+              <input type="number" min={1} value={labelCopies} onChange={(e) => setLabelCopies(Math.max(1, Number(e.target.value)))} className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink" />
+            </label>
+            <div className="mt-3 flex gap-4 text-sm text-ink">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={labelShowPrice} onChange={(e) => setLabelShowPrice(e.target.checked)} className="h-4 w-4 accent-amber-500" /> Show price</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={labelShowSku} onChange={(e) => setLabelShowSku(e.target.checked)} className="h-4 w-4 accent-amber-500" /> Show SKU</label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setLabelOpen(false)} className="rounded-lg border border-line px-4 py-2 text-sm text-muted hover:text-ink">Cancel</button>
+              <button onClick={printLabels} className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent hover:text-accentfg">Print</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bulk action bar */}
       {selected.size > 0 && (
         <div className="sticky bottom-4 z-40 mx-auto mt-4 w-fit max-w-full">
@@ -410,6 +456,8 @@ export default function InventoryPage() {
             <button disabled={bulkBusy} onClick={() => runBulk("activate")} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50">Activate</button>
             <button disabled={bulkBusy} onClick={() => runBulk("draft")} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50">Draft</button>
             <button disabled={bulkBusy} onClick={() => setEditMode((v) => !v)} className={`rounded-full px-3 py-1 hover:bg-bg/10 ${editMode ? "text-accent" : ""}`}>Edit values</button>
+            <button disabled={bulkBusy} onClick={() => setLabelOpen(true)} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50">🏷 Labels</button>
+            <button disabled={bulkBusy} onClick={() => runBulk("assignBarcodes")} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50" title="Fill the barcode field from SKU (or generate) for products missing one">Barcodes</button>
             <button disabled={bulkBusy} onClick={() => runBulk("delete")} className="rounded-full px-3 py-1 text-red-400 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
             <span className="h-4 w-px bg-bg/20" />
             <button onClick={clearSelection} className="rounded-full px-2 py-1 text-bg/50 hover:text-bg">✕</button>

@@ -7,6 +7,7 @@ import {
   bulkAddToCollection,
   bulkSetChannels,
 } from "@/lib/products";
+import { assignBarcodes } from "@/lib/barcodes";
 import { requirePermission, isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -14,7 +15,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 type Body = {
-  action: "activate" | "draft" | "delete" | "price" | "stock" | "collection" | "channels";
+  action: "activate" | "draft" | "delete" | "price" | "stock" | "collection" | "channels" | "assignBarcodes";
   productIds?: string[];
   variants?: { id: string; productId: string }[];
   inventoryItemIds?: string[];
@@ -23,6 +24,7 @@ type Body = {
   locationId?: string;
   addChannels?: string[];
   removeChannels?: string[];
+  overwrite?: boolean;
 };
 
 export async function POST(req: Request) {
@@ -71,6 +73,10 @@ export async function POST(req: Request) {
           body.removeChannels ?? [],
         );
         break;
+      case "assignBarcodes": {
+        const r = await assignBarcodes(body.productIds ?? [], { overwrite: body.overwrite });
+        return NextResponse.json({ ok: r.ok, failed: r.failed, skipped: r.skipped });
+      }
       default:
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });
     }

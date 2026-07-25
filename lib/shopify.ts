@@ -104,6 +104,7 @@ export type VariantRow = {
   tracked: boolean;
   variantTitle: string;
   sku: string;
+  barcode: string;
   price: string;
   available: number; // total across locations
   levels: InventoryLevel[];
@@ -157,6 +158,7 @@ const INVENTORY_QUERY = `
                 id
                 title
                 sku
+                barcode
                 price
                 inventoryItem {
                   id
@@ -199,6 +201,7 @@ type RawProductsResponse = {
               id: string;
               title: string;
               sku: string | null;
+              barcode: string | null;
               price: string;
               inventoryItem: {
                 id: string;
@@ -264,6 +267,7 @@ export async function getInventory(opts: {
         tracked: v.inventoryItem?.tracked ?? false,
         variantTitle: v.title,
         sku: v.sku ?? "",
+        barcode: v.barcode ?? "",
         price: v.price,
         available,
         levels,

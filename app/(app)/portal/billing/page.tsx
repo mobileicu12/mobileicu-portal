@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { priceForContext, type TierPrices } from "@/lib/pricing";
+import BarcodeScanner from "@/components/BarcodeScanner";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import { loadBusiness, type Business } from "@/lib/business";
 import type { InvoiceDetail } from "@/lib/billing";
@@ -124,6 +125,10 @@ export default function BillingPage() {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [searching, setSearching] = useState(false);
+  // Barcode scanning (USB/Bluetooth keyboard-wedge input + camera).
+  const [scanCode, setScanCode] = useState("");
+  const [scanMsg, setScanMsg] = useState("");
+  const [cameraOpen, setCameraOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
@@ -228,6 +233,20 @@ export default function BillingPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, segment]);
+
+  // Scan → look a product up by barcode/SKU and add it to the bill.
+  async function lookupAndAdd(code: string) {
+    const c = code.trim();
+    if (!c) return;
+    setScanMsg("");
+    try {
+      const res = await fetch(`/api/barcodes/lookup?code=${encodeURIComponent(c)}`);
+      const d = await res.json();
+      if (d.hit) { addLine(d.hit as Hit); setScanMsg(`✓ Added ${d.hit.productTitle}`); }
+      else setScanMsg(`No product for "${c}"`);
+    } catch { setScanMsg("Lookup failed."); }
+    setTimeout(() => setScanMsg(""), 2500);
+  }
 
   function updateQty(id: string, qty: number) {
     setLines((prev) => prev.map((l) => (l.variantId === id ? { ...l, qty: Math.max(1, qty) } : l)));
@@ -412,6 +431,22 @@ export default function BillingPage() {
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         {/* Left: search + lines */}
         <div className="lg:col-span-2">
+          {/* Barcode scan bar (USB/Bluetooth scanner types here + Enter; or use camera) */}
+          <div className="mb-2 flex items-center gap-2">
+            <div className="relative flex-1">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">▮▏▮</span>
+              <input
+                value={scanCode}
+                onChange={(e) => setScanCode(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); lookupAndAdd(scanCode); setScanCode(""); } }}
+                placeholder="Scan barcode (or type a code + Enter)…"
+                className="w-full rounded-lg border border-neutral-300 py-2.5 pl-12 pr-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+              />
+            </div>
+            <button type="button" onClick={() => setCameraOpen(true)} title="Scan with camera" className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2.5 text-sm hover:border-neutral-900">📷</button>
+          </div>
+          {scanMsg && <p className={`mb-2 text-xs font-medium ${scanMsg.startsWith("✓") ? "text-emerald-600" : "text-amber-600"}`}>{scanMsg}</p>}
+
           <div className="relative">
             <input
               value={q}
@@ -704,6 +739,7 @@ export default function BillingPage() {
       </div>
 
       {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}
+      {cameraOpen && <BarcodeScanner onDetected={(code) => lookupAndAdd(code)} onClose={() => setCameraOpen(false)} />}
     </div>
   );
 }
