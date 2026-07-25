@@ -251,6 +251,24 @@ export default function BillingPage() {
   const vatAmt = vat ? net * VAT_RATE : 0;
   const total = net + vatAmt;
 
+  // Clear the whole bill back to a fresh slate after a sale is created.
+  function resetForm() {
+    setLines([]);
+    setDiscount(0);
+    setEmail("");
+    setNote("");
+    setReceived("");
+    setWalkName("");
+    setWalkPhone("");
+    setQ("");
+    setHits([]);
+    setCustQ("");
+    setCustHits([]);
+    setCustomerId("");
+    setCustomerName("");
+    setAddToInvoiceId("");
+  }
+
   async function submit() {
     if (lines.length === 0) {
       setError("Add at least one product.");
@@ -292,10 +310,13 @@ export default function BillingPage() {
         const upd = await upRes.json();
         if (!upRes.ok) throw new Error(upd.error || "Failed to add to the open invoice.");
         setResult({ ...upd, completed: false });
-        setLines([]); setDiscount(0); setNote(""); setReceived(""); setWalkName(""); setWalkPhone("");
+        resetForm();
         setSubmitting(false);
         return;
       }
+
+      // Full payment for THIS bill collected now → complete it (marks paid, shows PAID on print).
+      const payThisBillInFull = (Number(received) || 0) >= total && total > 0;
 
       const res = await fetch("/api/billing", {
         method: "POST",
@@ -312,7 +333,8 @@ export default function BillingPage() {
           customerPhone: !customerId ? walkPhone : undefined,
           note,
           discountPercent: discount,
-          complete: mode === "pos",
+          // Auto-mark PAID when the full amount for this bill is collected now.
+          complete: mode === "pos" || payThisBillInFull,
           segment,
           payMethod,
         }),
@@ -320,25 +342,24 @@ export default function BillingPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
 
-      // Record the amount received now against the customer's account.
-      const recv = Number(received);
+      // Record the amount received against the customer's account.
+      // When the bill itself is settled (completed), the invoice already counts as
+      // paid — so only ledger any surplus that clears OLDER dues (avoids double-count).
+      const recv = Number(received) || 0;
       if (customerId && recv > 0) {
-        const numId = customerId.split("/").pop();
-        await fetch(`/api/customers/${numId}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: recv, method: payMethod, note: `Payment with ${d.invoiceNo || d.name || "sale"}`, date: new Date().toISOString() }),
-        }).catch(() => {});
+        const toLedger = (mode === "pos" || payThisBillInFull) ? Math.max(0, recv - total) : recv;
+        if (toLedger > 0) {
+          const numId = customerId.split("/").pop();
+          await fetch(`/api/customers/${numId}`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: toLedger, method: payMethod, note: `Payment with ${d.invoiceNo || d.name || "sale"}`, date: new Date().toISOString() }),
+          }).catch(() => {});
+        }
         setCustOutstanding((prev) => (prev ?? 0) + total - recv);
       }
 
       setResult(d);
-      setLines([]);
-      setDiscount(0);
-      setEmail("");
-      setNote("");
-      setReceived("");
-      setWalkName("");
-      setWalkPhone("");
+      resetForm();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -513,7 +534,10 @@ export default function BillingPage() {
           </label>
 
           <label className="mt-3 block text-sm">
-            <span className="font-medium text-neutral-700">Discount %</span>
+            <span className="flex items-center justify-between font-medium text-neutral-700">
+              <span>Discount %</span>
+              {discount > 0 && <span className="text-xs font-normal text-amber-600">= £{discountAmt.toFixed(2)} off</span>}
+            </span>
             <input
               type="number"
               min={0}

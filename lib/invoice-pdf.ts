@@ -45,23 +45,27 @@ export function buildInvoiceDoc(inv: InvoiceDetail, biz: Business = BUSINESS): j
   const isPaid = inv.status === "COMPLETED" || (inv.balance <= 0.001 && inv.amountPaid > 0);
 
   // ============ HEADER (light) ============
-  // Gold monogram badge
-  doc.setFillColor(GOLD);
-  doc.circle(M + 15, 52, 15, "F");
-  doc.setTextColor("#ffffff");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text("MI", M + 15, 57, { align: "center" });
+  // Seller identity is shown on VAT invoices only. A non-VAT invoice is issued
+  // WITHOUT our business name / address / VAT details.
+  if (isVat) {
+    // Gold monogram badge
+    doc.setFillColor(GOLD);
+    doc.circle(M + 15, 52, 15, "F");
+    doc.setTextColor("#ffffff");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text("MI", M + 15, 57, { align: "center" });
 
-  // Business name + tagline
-  doc.setTextColor(INK);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(B.name, M + 40, 50);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(GOLD);
-  doc.text(B.tagline, M + 40, 64);
+    // Business name + tagline
+    doc.setTextColor(INK);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(B.name, M + 40, 50);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(GOLD);
+    doc.text(B.tagline, M + 40, 64);
+  }
 
   // Document title + meta (right)
   doc.setTextColor(INK);
@@ -86,24 +90,27 @@ export function buildInvoiceDoc(inv: InvoiceDetail, biz: Business = BUSINESS): j
 
   // ============ FROM / BILL TO ============
   const y = 132;
-  // FROM (left)
-  doc.setTextColor(GOLD);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("FROM", M, y);
-  doc.setTextColor(INK);
-  doc.setFontSize(10.5);
-  doc.text(B.name, M, y + 15);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(SOFT);
-  const from = [...B.addressLines];
-  if (B.email) from.push(B.email);
-  if (B.phone) from.push(B.phone);
-  if (B.website) from.push(B.website);
-  if (isVat && B.vatNumber) from.push(`VAT No: ${B.vatNumber}`);
-  from.forEach((l, i) => doc.text(l, M, y + 29 + i * 12));
-  const fromEnd = y + 29 + from.length * 12;
+  // FROM (left) — VAT invoices only.
+  let fromEnd = y;
+  if (isVat) {
+    doc.setTextColor(GOLD);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("FROM", M, y);
+    doc.setTextColor(INK);
+    doc.setFontSize(10.5);
+    doc.text(B.name, M, y + 15);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(SOFT);
+    const from = [...B.addressLines];
+    if (B.email) from.push(B.email);
+    if (B.phone) from.push(B.phone);
+    if (B.website) from.push(B.website);
+    if (B.vatNumber) from.push(`VAT No: ${B.vatNumber}`);
+    from.forEach((l, i) => doc.text(l, M, y + 29 + i * 12));
+    fromEnd = y + 29 + from.length * 12;
+  }
 
   // BILL TO (right card)
   const cardX = W / 2 + 12;
@@ -190,7 +197,12 @@ export function buildInvoiceDoc(inv: InvoiceDetail, biz: Business = BUSINESS): j
   };
 
   line("Subtotal", money(inv.subtotal, cur));
-  if (parseFloat(inv.discount) > 0) line("Discount", `- ${money(inv.discount, cur)}`);
+  const disc = parseFloat(inv.discount) || 0;
+  if (disc > 0) {
+    const sub = parseFloat(inv.subtotal) || 0;
+    const pct = sub > 0 ? Math.round((disc / sub) * 1000) / 10 : 0;
+    line(pct > 0 ? `Discount (${pct}%)` : "Discount", `- ${money(disc, cur)}`);
+  }
   line(isVat ? "VAT (20%)" : "VAT", isVat ? money(inv.tax, cur) : "No VAT");
 
   // Total — bold row framed by gold rules (no dark box)
@@ -264,8 +276,9 @@ export function buildInvoiceDoc(inv: InvoiceDetail, biz: Business = BUSINESS): j
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(SOFT);
-  const footLeft = [B.name, B.website, isVat && B.vatNumber ? `VAT ${B.vatNumber}` : ""].filter(Boolean).join("  ·  ");
-  doc.text(footLeft, M, fy);
+  // Non-VAT invoices carry no seller identity, so leave the footer-left blank.
+  const footLeft = isVat ? [B.name, B.website, B.vatNumber ? `VAT ${B.vatNumber}` : ""].filter(Boolean).join("  ·  ") : "";
+  if (footLeft) doc.text(footLeft, M, fy);
   doc.text("Thank you for your business.", W - M, fy, { align: "right" });
 
   return doc;
