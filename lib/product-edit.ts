@@ -25,6 +25,9 @@ export type EditProduct = {
   price: string;
   compareAt: string;
   wholesalePrice: string;
+  shopPrice: string;
+  ebayPrice: string;
+  amazonPrice: string;
   inventoryItemId: string | null;
   available: number;
   collections: { id: string; title: string }[];
@@ -35,7 +38,8 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
     product: {
       id: string; title: string; handle: string; descriptionHtml: string; status: string;
       vendor: string; productType: string; tags: string[];
-      brand: { value: string } | null; ptype: { value: string } | null; model: { value: string } | null; wholesale: { value: string } | null;
+      brand: { value: string } | null; ptype: { value: string } | null; model: { value: string } | null;
+      wholesale: { value: string } | null; priceShop: { value: string } | null; priceEbay: { value: string } | null; priceAmazon: { value: string } | null;
       media: { edges: { node: { id: string; image: { url: string } | null } }[] };
       variants: { edges: { node: { id: string; sku: string | null; barcode: string | null; price: string; compareAtPrice: string | null; inventoryQuantity: number | null; inventoryItem: { id: string } | null } }[] };
       collections: { edges: { node: { id: string; title: string } }[] };
@@ -48,6 +52,9 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
         ptype: metafield(namespace: "custom", key: "product_type") { value }
         model: metafield(namespace: "custom", key: "product_model") { value }
         wholesale: metafield(namespace: "custom", key: "wholesale_price") { value }
+        priceShop: metafield(namespace: "custom", key: "price_shop") { value }
+        priceEbay: metafield(namespace: "custom", key: "price_ebay") { value }
+        priceAmazon: metafield(namespace: "custom", key: "price_amazon") { value }
         media(first: 20) { edges { node { ... on MediaImage { id image { url } } } } }
         variants(first: 1) { edges { node { id sku barcode price compareAtPrice inventoryQuantity inventoryItem { id } } } }
         collections(first: 25) { edges { node { id title } } }
@@ -69,7 +76,9 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
     brand: p.brand?.value ?? "", type: p.ptype?.value ?? "", model,
     images: p.media.edges.filter((e) => e.node.image).map((e) => ({ id: e.node.id, url: e.node.image!.url })),
     variantId: v?.id ?? "", sku: v?.sku ?? "", barcode: v?.barcode ?? "", price: v?.price ?? "",
-    compareAt: v?.compareAtPrice ?? "", wholesalePrice: p.wholesale?.value ?? "", inventoryItemId: v?.inventoryItem?.id ?? null,
+    compareAt: v?.compareAtPrice ?? "", wholesalePrice: p.wholesale?.value ?? "",
+    shopPrice: p.priceShop?.value ?? "", ebayPrice: p.priceEbay?.value ?? "", amazonPrice: p.priceAmazon?.value ?? "",
+    inventoryItemId: v?.inventoryItem?.id ?? null,
     available: v?.inventoryQuantity ?? 0,
     collections: p.collections.edges.map((e) => e.node),
   };
@@ -77,7 +86,8 @@ export async function getProductForEdit(id: string): Promise<EditProduct> {
 
 export type ProductEditInput = {
   title?: string; descriptionHtml?: string; status?: string; vendor?: string; productType?: string;
-  tags?: string; brand?: string; type?: string; model?: string; wholesalePrice?: string;
+  tags?: string; brand?: string; type?: string; model?: string;
+  wholesalePrice?: string; shopPrice?: string; ebayPrice?: string; amazonPrice?: string;
   variantId?: string; price?: string; compareAt?: string; sku?: string; barcode?: string; stock?: string;
 };
 
@@ -108,14 +118,36 @@ export async function updateFullProduct(id: string, f: ProductEditInput): Promis
     if (models.length)
       mfs.push({ ownerId: id, namespace: "custom", key: "product_model", type: "list.single_line_text_field", value: JSON.stringify(models) });
   }
-  if (f.wholesalePrice !== undefined && f.wholesalePrice.trim() && Number(f.wholesalePrice) > 0)
-    mfs.push({ ownerId: id, namespace: "custom", key: "wholesale_price", type: "number_decimal", value: String(Number(f.wholesalePrice)) });
+  // Multi-tier prices. A provided-but-empty (or 0) value clears that tier back to
+  // the base price; a positive value sets it. `undefined` = field not touched.
+  const tierDeletes: { ownerId: string; namespace: string; key: string }[] = [];
+  const tierFields: { value: string | undefined; key: string }[] = [
+    { value: f.wholesalePrice, key: "wholesale_price" },
+    { value: f.shopPrice, key: "price_shop" },
+    { value: f.ebayPrice, key: "price_ebay" },
+    { value: f.amazonPrice, key: "price_amazon" },
+  ];
+  for (const t of tierFields) {
+    if (t.value === undefined) continue;
+    const n = Number(t.value);
+    if (t.value.trim() && Number.isFinite(n) && n > 0)
+      mfs.push({ ownerId: id, namespace: "custom", key: t.key, type: "number_decimal", value: String(n) });
+    else
+      tierDeletes.push({ ownerId: id, namespace: "custom", key: t.key });
+  }
   if (mfs.length) {
     const mr = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
       `mutation($m: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $m) { userErrors { field message } } }`,
       { m: mfs },
     );
     if (mr.metafieldsSet.userErrors.length) throw new ShopifyError(mr.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+  }
+  if (tierDeletes.length) {
+    // Best-effort: deleting a tier that was never set is a harmless no-op.
+    await adminGraphQL(
+      `mutation($m: [MetafieldIdentifierInput!]!) { metafieldsDelete(metafields: $m) { deletedMetafields { key } userErrors { field message } } }`,
+      { m: tierDeletes },
+    ).catch(() => { /* ignore */ });
   }
 
   // 3) variant price / compareAt / sku / barcode

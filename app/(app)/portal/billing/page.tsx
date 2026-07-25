@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
+import { priceForContext, type TierPrices } from "@/lib/pricing";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import { loadBusiness, type Business } from "@/lib/business";
 import type { InvoiceDetail } from "@/lib/billing";
@@ -16,6 +17,7 @@ type Hit = {
   price: string;
   image: string | null;
   available: number;
+  tiers?: TierPrices;
 };
 
 type Line = {
@@ -25,6 +27,8 @@ type Line = {
   price: number;
   qty: number;
   image: string | null;
+  base: number; // catalog online/retail price (0 for custom items)
+  tiers?: TierPrices; // channel prices, for auto-repricing when Source changes
 };
 
 type BillResult = {
@@ -173,6 +177,16 @@ export default function BillingPage() {
     }, 300);
   }
 
+  // Which price tier is active for the current mode/source, and its label.
+  const wholesale = mode === "invoice";
+  const priceCtx = { wholesale, segment };
+  const activeTierLabel = wholesale
+    ? "Wholesale"
+    : segment === "shop" ? "In-shop / offline"
+    : segment === "ebay" ? "eBay"
+    : segment === "amazon" ? "Amazon"
+    : "Online / retail (base)";
+
   function addLine(h: Hit) {
     setLines((prev) => {
       const existing = prev.find((l) => l.variantId === h.variantId);
@@ -185,15 +199,34 @@ export default function BillingPage() {
           variantId: h.variantId,
           title: h.variantTitle ? `${h.productTitle} — ${h.variantTitle}` : h.productTitle,
           sku: h.sku,
-          price: Number(h.price),
+          price: priceForContext(h.price, h.tiers, priceCtx),
           qty: 1,
           image: h.image,
+          base: Number(h.price) || 0,
+          tiers: h.tiers,
         },
       ];
     });
     setQ("");
     setHits([]);
   }
+
+  // When the sales Source (or wholesale/POS mode) changes, re-price catalog lines
+  // to the matching tier. Custom items (no tiers) are left untouched.
+  useEffect(() => {
+    setLines((prev) => {
+      let changed = false;
+      const next = prev.map((l) => {
+        if (l.variantId.startsWith("custom:") || !l.tiers) return l;
+        const p = priceForContext(l.base, l.tiers, { wholesale, segment });
+        if (p === l.price) return l;
+        changed = true;
+        return { ...l, price: p };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, segment]);
 
   function updateQty(id: string, qty: number) {
     setLines((prev) => prev.map((l) => (l.variantId === id ? { ...l, qty: Math.max(1, qty) } : l)));
@@ -209,7 +242,7 @@ export default function BillingPage() {
   }
   function addCustomLine() {
     const tempId = `custom:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-    setLines((prev) => [...prev, { variantId: tempId, title: "", sku: "", price: 0, qty: 1, image: null }]);
+    setLines((prev) => [...prev, { variantId: tempId, title: "", sku: "", price: 0, qty: 1, image: null, base: 0 }]);
   }
 
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
@@ -469,6 +502,9 @@ export default function BillingPage() {
                 <option key={s.key} value={s.key}>{s.label}</option>
               ))}
             </select>
+            <span className="mt-1 block text-xs text-neutral-500">
+              Prices auto-fill from the <strong className="text-amber-600">{activeTierLabel}</strong> tier{wholesale ? " (wholesale invoice)" : ""}. Blank tiers use the online price; you can still edit any line.
+            </span>
           </label>
 
           <label className="mt-3 flex items-center justify-between text-sm">

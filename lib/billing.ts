@@ -1,6 +1,7 @@
 // Billing: product search, draft orders (invoices), POS completion.
 import { adminGraphQL, ShopifyError } from "./shopify";
 import { segmentsFromTags, type SegmentKey } from "./segments";
+import type { TierPrices } from "./pricing";
 import { nextInvoiceNumber } from "./settings";
 
 export type VariantHit = {
@@ -11,6 +12,7 @@ export type VariantHit = {
   price: string;
   image: string | null;
   available: number;
+  tiers: TierPrices; // channel prices (wholesale/shop/ebay/amazon) — blank = use base price
 };
 
 export async function searchVariants(q: string): Promise<VariantHit[]> {
@@ -21,6 +23,10 @@ export async function searchVariants(q: string): Promise<VariantHit[]> {
         node: {
           title: string;
           featuredImage: { url: string } | null;
+          wholesale: { value: string } | null;
+          priceShop: { value: string } | null;
+          priceEbay: { value: string } | null;
+          priceAmazon: { value: string } | null;
           variants: {
             edges: {
               node: {
@@ -41,6 +47,10 @@ export async function searchVariants(q: string): Promise<VariantHit[]> {
         edges { node {
           title
           featuredImage { url }
+          wholesale: metafield(namespace: "custom", key: "wholesale_price") { value }
+          priceShop: metafield(namespace: "custom", key: "price_shop") { value }
+          priceEbay: metafield(namespace: "custom", key: "price_ebay") { value }
+          priceAmazon: metafield(namespace: "custom", key: "price_amazon") { value }
           variants(first: 10) { edges { node { id title sku price inventoryQuantity } } }
         } }
       }
@@ -50,6 +60,12 @@ export async function searchVariants(q: string): Promise<VariantHit[]> {
 
   const hits: VariantHit[] = [];
   for (const p of data.products.edges) {
+    const tiers: TierPrices = {
+      wholesale: p.node.wholesale?.value ?? null,
+      shop: p.node.priceShop?.value ?? null,
+      ebay: p.node.priceEbay?.value ?? null,
+      amazon: p.node.priceAmazon?.value ?? null,
+    };
     for (const v of p.node.variants.edges) {
       hits.push({
         variantId: v.node.id,
@@ -59,6 +75,7 @@ export async function searchVariants(q: string): Promise<VariantHit[]> {
         price: v.node.price,
         image: p.node.featuredImage?.url ?? null,
         available: v.node.inventoryQuantity ?? 0,
+        tiers,
       });
     }
   }

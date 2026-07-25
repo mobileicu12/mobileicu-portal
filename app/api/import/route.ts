@@ -19,6 +19,10 @@ function headerToKey(headerRaw: string): keyof ImportRow | "stock" | null {
   if (h.includes("sku")) return "sku";
   if (h.includes("barcode")) return "barcode";
   if (h.includes("compare")) return "compareAt";
+  if (h.includes("wholesale")) return "wholesale";
+  if (h.includes("shop") && h.includes("price")) return "shopPrice";
+  if (h.includes("ebay")) return "ebayPrice";
+  if (h.includes("amazon")) return "amazonPrice";
   if (h.includes("price")) return "price";
   if (h.includes("stock") || h.includes("quantity") || h.includes("available")) return "stock";
   if (h.includes("status")) return "status";

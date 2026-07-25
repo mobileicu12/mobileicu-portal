@@ -15,6 +15,10 @@ export type ProductRecord = {
   barcode: string;
   price: string;
   compareAt: string;
+  wholesale: string; // custom.wholesale_price
+  shopPrice: string; // custom.price_shop
+  ebayPrice: string; // custom.price_ebay
+  amazonPrice: string; // custom.price_amazon
   available: number;
   status: string;
   image: string;
@@ -33,6 +37,10 @@ export const EXPORT_COLUMNS: { key: keyof ProductRecord; header: string; width: 
   { key: "barcode", header: "Barcode", width: 16 },
   { key: "price", header: "Price", width: 10 },
   { key: "compareAt", header: "Compare At Price", width: 14 },
+  { key: "wholesale", header: "Wholesale Price", width: 14 },
+  { key: "shopPrice", header: "Shop Price", width: 12 },
+  { key: "ebayPrice", header: "eBay Price", width: 12 },
+  { key: "amazonPrice", header: "Amazon Price", width: 12 },
   { key: "available", header: "Stock", width: 8 },
   { key: "status", header: "Status (ACTIVE/DRAFT)", width: 18 },
   { key: "image", header: "Image URL", width: 36 },
@@ -63,6 +71,10 @@ const EXPORT_QUERY = `
           brand: metafield(namespace: "custom", key: "brand") { value }
           ptype: metafield(namespace: "custom", key: "product_type") { value }
           model: metafield(namespace: "custom", key: "product_model") { value }
+          wholesale: metafield(namespace: "custom", key: "wholesale_price") { value }
+          priceShop: metafield(namespace: "custom", key: "price_shop") { value }
+          priceEbay: metafield(namespace: "custom", key: "price_ebay") { value }
+          priceAmazon: metafield(namespace: "custom", key: "price_amazon") { value }
           collections(first: 10) { edges { node { title } } }
           variants(first: 1) { edges { node { sku barcode price compareAtPrice } } }
         }
@@ -83,6 +95,10 @@ type ExportNode = {
   brand: { value: string } | null;
   ptype: { value: string } | null;
   model: { value: string } | null;
+  wholesale: { value: string } | null;
+  priceShop: { value: string } | null;
+  priceEbay: { value: string } | null;
+  priceAmazon: { value: string } | null;
   collections: { edges: { node: { title: string } }[] };
   variants: { edges: { node: { sku: string | null; barcode: string | null; price: string; compareAtPrice: string | null } }[] };
 };
@@ -113,6 +129,10 @@ export async function getAllProductsForExport(): Promise<ProductRecord[]> {
         barcode: v?.barcode ?? "",
         price: v?.price ?? "",
         compareAt: v?.compareAtPrice ?? "",
+        wholesale: node.wholesale?.value ?? "",
+        shopPrice: node.priceShop?.value ?? "",
+        ebayPrice: node.priceEbay?.value ?? "",
+        amazonPrice: node.priceAmazon?.value ?? "",
         available: node.totalInventory ?? 0,
         status: node.status,
         image: node.featuredImage?.url ?? "",
@@ -141,6 +161,10 @@ export type ImportRow = {
   barcode?: string;
   price?: string;
   compareAt?: string;
+  wholesale?: string;
+  shopPrice?: string;
+  ebayPrice?: string;
+  amazonPrice?: string;
   stock?: string | number;
   status?: string;
   image?: string;
@@ -184,6 +208,18 @@ export async function upsertProduct(
   if (row.model?.trim()) {
     const models = row.model.split(",").map((m) => m.trim()).filter(Boolean);
     metafields.push(metafield("custom", "product_model", "list.single_line_text_field", JSON.stringify(models)));
+  }
+  // Channel prices (blank / non-positive = leave to base price).
+  const tierCols: { value: string | undefined; key: string }[] = [
+    { value: row.wholesale, key: "wholesale_price" },
+    { value: row.shopPrice, key: "price_shop" },
+    { value: row.ebayPrice, key: "price_ebay" },
+    { value: row.amazonPrice, key: "price_amazon" },
+  ];
+  for (const t of tierCols) {
+    const n = Number(t.value);
+    if (t.value && String(t.value).trim() && Number.isFinite(n) && n > 0)
+      metafields.push(metafield("custom", t.key, "number_decimal", String(n)));
   }
 
   const status = (row.status ?? "ACTIVE").toUpperCase() === "DRAFT" ? "DRAFT" : "ACTIVE";

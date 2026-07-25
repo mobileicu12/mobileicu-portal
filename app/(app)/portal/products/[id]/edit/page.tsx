@@ -10,7 +10,8 @@ type Img = { id: string; url: string };
 type Product = {
   id: string; title: string; handle: string; descriptionHtml: string; status: string;
   vendor: string; productType: string; tags: string[]; brand: string; type: string; model: string;
-  images: Img[]; variantId: string; sku: string; barcode: string; price: string; compareAt: string; wholesalePrice: string;
+  images: Img[]; variantId: string; sku: string; barcode: string; price: string; compareAt: string;
+  wholesalePrice: string; shopPrice: string; ebayPrice: string; amazonPrice: string;
   available: number; collections: { id: string; title: string }[];
 };
 
@@ -35,7 +36,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
       setF({
         title: pr.title, status: pr.status, descriptionHtml: pr.descriptionHtml,
         brand: pr.brand, type: pr.type, model: pr.model, productType: pr.productType, vendor: pr.vendor,
-        tags: pr.tags.join(", "), price: pr.price, compareAt: pr.compareAt, wholesalePrice: pr.wholesalePrice, sku: pr.sku, barcode: pr.barcode,
+        tags: pr.tags.join(", "), price: pr.price, compareAt: pr.compareAt,
+        wholesalePrice: pr.wholesalePrice, shopPrice: pr.shopPrice, ebayPrice: pr.ebayPrice, amazonPrice: pr.amazonPrice,
+        sku: pr.sku, barcode: pr.barcode,
         stock: String(pr.available),
       });
     }).catch((e) => setError(e.message));
@@ -55,7 +58,9 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           title: f.title, status: f.status,
           descriptionHtml: f.descriptionHtml ?? "",
           brand: f.brand, type: f.type, model: f.model, productType: f.productType, vendor: f.vendor, tags: f.tags,
-          price: f.price, compareAt: f.compareAt, wholesalePrice: f.wholesalePrice, sku: f.sku, barcode: f.barcode, stock: f.stock,
+          price: f.price, compareAt: f.compareAt,
+          wholesalePrice: f.wholesalePrice, shopPrice: f.shopPrice, ebayPrice: f.ebayPrice, amazonPrice: f.amazonPrice,
+          sku: f.sku, barcode: f.barcode, stock: f.stock,
         }),
       });
       const d = await res.json();
@@ -161,9 +166,20 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
             </select>
           </Card>
           <Card title="Pricing & stock">
-            <Field label="Price (£)"><input type="number" step="0.01" className={input} value={f.price} onChange={(e) => set("price", e.target.value)} /></Field>
+            <Field label="Online / retail price (£)"><input type="number" step="0.01" className={input} value={f.price} onChange={(e) => set("price", e.target.value)} placeholder="standard base price" /></Field>
             <Field label="Compare-at (£)"><input type="number" step="0.01" className={input} value={f.compareAt} onChange={(e) => set("compareAt", e.target.value)} /></Field>
-            <Field label="Wholesale / trade price (£)"><input type="number" step="0.01" className={input} value={f.wholesalePrice ?? ""} onChange={(e) => set("wholesalePrice", e.target.value)} placeholder="shown to trade-logged-in customers" /></Field>
+
+            <div className="rounded-xl border border-line bg-bg/40 p-3">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Channel prices</p>
+              <p className="mb-3 text-xs text-muted">Leave blank to use the online / retail price. These auto-fill in Billing when you pick the matching Source.</p>
+              <div className="space-y-3">
+                <Field label="Wholesale / trade (£)"><input type="number" step="0.01" className={input} value={f.wholesalePrice ?? ""} onChange={(e) => set("wholesalePrice", e.target.value)} placeholder="trade logins + wholesale invoices" /></Field>
+                <Field label="In-shop / offline (£)"><input type="number" step="0.01" className={input} value={f.shopPrice ?? ""} onChange={(e) => set("shopPrice", e.target.value)} placeholder="walk-in POS" /></Field>
+                <Field label="eBay (£)"><input type="number" step="0.01" className={input} value={f.ebayPrice ?? ""} onChange={(e) => set("ebayPrice", e.target.value)} placeholder="eBay listings" /></Field>
+                <Field label="Amazon (£)"><input type="number" step="0.01" className={input} value={f.amazonPrice ?? ""} onChange={(e) => set("amazonPrice", e.target.value)} placeholder="Amazon listings" /></Field>
+              </div>
+            </div>
+
             <Field label="SKU"><input className={input} value={f.sku} onChange={(e) => set("sku", e.target.value)} /></Field>
             <Field label="Barcode"><input className={input} value={f.barcode} onChange={(e) => set("barcode", e.target.value)} /></Field>
             <Field label="Stock"><input type="number" className={input} value={f.stock} onChange={(e) => set("stock", e.target.value)} /></Field>
