@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/guard";
 import { getCustomer } from "@/lib/customers";
 import { getInvoiceDetail } from "@/lib/billing";
+import { waConfigured } from "@/lib/whatsapp";
+import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -43,11 +45,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       });
     }
 
+    const numId = c.id.split("/").pop() || c.id;
+    const dateStr = start.toISOString().slice(0, 10);
     return NextResponse.json({
       today: {
         id: c.id, name: c.name || c.company || "Customer", email: c.email || "", phone: c.phone || "",
         todayTotal, todayPaid, todayOutstanding, accountOutstanding, bills,
       },
+      shareUrl: statementSharePath(numId, dateStr),
+      waConfigured: await waConfigured(),
     });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to load today's statement.";

@@ -22,3 +22,19 @@ export function verifyInvoiceToken(id: string, token: string | undefined | null)
 export function invoiceSharePath(numericId: string): string {
   return `/i/${numericId}?t=${signInvoiceToken(numericId)}`;
 }
+
+// ---- Day-statement links (customer's itemised bills for a given date) ----
+export function signStatementToken(id: string, date: string): string {
+  return crypto.createHmac("sha256", SECRET).update(`stmt:${id}:${date}`).digest("base64url");
+}
+export function verifyStatementToken(id: string, date: string, token: string | undefined | null): boolean {
+  if (!token) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(signStatementToken(id, date)));
+  } catch {
+    return false;
+  }
+}
+export function statementSharePath(numericId: string, date: string): string {
+  return `/s/${numericId}?d=${date}&t=${signStatementToken(numericId, date)}`;
+}

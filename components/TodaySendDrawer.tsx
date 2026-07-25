@@ -6,12 +6,12 @@ import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf
 import { loadBusiness } from "@/lib/business";
 import { useMe } from "@/lib/use-me";
 
-type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[] };
+type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[]; shareUrl: string };
 
 const dateKey = () => new Date().toISOString().slice(0, 10);
-const sentKey = (cid: string) => `micu:sent:${dateKey()}:${cid.split("/").pop()}`;
-function isSent(cid: string) { try { return localStorage.getItem(sentKey(cid)) === "1"; } catch { return false; } }
-function markSent(cid: string) { try { localStorage.setItem(sentKey(cid), "1"); } catch { /* ignore */ } }
+const doneKey = (cid: string) => `micu:done:${dateKey()}:${cid.split("/").pop()}`;
+function isDone(cid: string) { try { return localStorage.getItem(doneKey(cid)) === "1"; } catch { return false; } }
+function markDone(cid: string) { try { localStorage.setItem(doneKey(cid), "1"); } catch { /* ignore */ } }
 
 export default function TodaySendDrawer() {
   const me = useMe();
@@ -19,8 +19,9 @@ export default function TodaySendDrawer() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [custs, setCusts] = useState<TodayCustomer[] | null>(null);
-  const [busyId, setBusyId] = useState<string>("");
-  const [sentTick, setSentTick] = useState(0); // re-render trigger after marking sent
+  const [waOn, setWaOn] = useState(false);
+  const [busyId, setBusyId] = useState("");
+  const [, setTick] = useState(0);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -30,6 +31,7 @@ export default function TodaySendDrawer() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed to load.");
       setCusts(d.customers ?? []);
+      setWaOn(!!d.waConfigured);
     } catch (e) { setError(e instanceof Error ? e.message : "Failed."); } finally { setLoading(false); }
   }, []);
 
@@ -39,63 +41,111 @@ export default function TodaySendDrawer() {
     if (n && custs === null) refresh();
   }
 
-  async function sendOne(c: TodayCustomer): Promise<boolean> {
-    const biz = await loadBusiness();
-    const dateLabel = new Date().toLocaleDateString("en-GB");
-    const doc = buildCustomerDayItemisedDoc(c.name, c.bills,
+  const dateLabel = () => new Date().toLocaleDateString("en-GB");
+  const safeName = (n: string) => (n || "customer").replace(/[^\w-]/g, "_").slice(0, 60) || "customer";
+  function docFor(c: TodayCustomer) {
+    return loadBusiness().then((biz) => buildCustomerDayItemisedDoc(c.name, c.bills,
       { todayTotal: c.todayTotal, todayPaid: c.todayPaid, todayOutstanding: c.todayOutstanding, accountOutstanding: c.accountOutstanding },
-      { dateLabel, business: biz });
+      { dateLabel: dateLabel(), business: biz }));
+  }
+
+  async function generateOne(c: TodayCustomer) {
+    setBusyId(c.id);
+    try {
+      const doc = await docFor(c);
+      const url = URL.createObjectURL(doc.output("blob"));
+      const a = document.createElement("a");
+      a.href = url; a.download = `${safeName(c.name)}_${dateLabel().replace(/\//g, "-")}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      markDone(c.id); setTick((t) => t + 1);
+    } finally { setBusyId(""); }
+  }
+
+  async function generateAll() {
+    const list = pending.length ? pending : (custs ?? []);
+    if (!list.length) return;
+    setBusyId("gen-all");
+    try {
+      const biz = await loadBusiness();
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const stamp = dateLabel().replace(/\//g, "-");
+      const used = new Set<string>();
+      for (const c of list) {
+        const doc = buildCustomerDayItemisedDoc(c.name, c.bills,
+          { todayTotal: c.todayTotal, todayPaid: c.todayPaid, todayOutstanding: c.todayOutstanding, accountOutstanding: c.accountOutstanding },
+          { dateLabel: dateLabel(), business: biz });
+        let n = safeName(c.name); while (used.has(n)) n += "_"; used.add(n);
+        zip.file(`${n}_${stamp}.pdf`, doc.output("arraybuffer"));
+        markDone(c.id);
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `todays-statements-${stamp}.zip`; a.click(); URL.revokeObjectURL(url);
+      setTick((t) => t + 1);
+    } finally { setBusyId(""); }
+  }
+
+  async function sendOne(c: TodayCustomer): Promise<void> {
+    const doc = await docFor(c);
     const pdfBase64 = doc.output("datauristring").split("base64,").pop();
-    const filename = `${c.name.replace(/[^\w-]/g, "_")}_${dateLabel.replace(/\//g, "-")}.pdf`;
-    let ok = false;
+    const filename = `${safeName(c.name)}_${dateLabel().replace(/\//g, "-")}.pdf`;
     if (c.email) {
       try {
-        const er = await fetch("/api/email/invoice", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to: c.email, subject: `Your account summary — ${dateLabel}`, message: `Hi ${c.name}, your itemised summary for ${dateLabel} is attached.\nToday's total: £${c.todayTotal.toFixed(2)} · Total outstanding: £${c.accountOutstanding.toFixed(2)}`, pdfBase64, filename }) });
-        if (er.ok) ok = true;
+        await fetch("/api/email/invoice", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: c.email, subject: `Your account summary — ${dateLabel()}`, message: `Hi ${c.name}, your itemised summary for ${dateLabel()} is attached.\nToday's total: £${c.todayTotal.toFixed(2)} · Total outstanding: £${c.accountOutstanding.toFixed(2)}`, pdfBase64, filename }) });
       } catch { /* ignore */ }
     }
     if (c.phone) {
-      try {
-        const list = c.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
-        const msg = `Hi ${c.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nThank you.`;
-        const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: msg }) });
-        if (wr.ok) ok = true;
-      } catch { /* whatsapp optional */ }
+      const list = c.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
+      const link = `${window.location.origin}${c.shareUrl}`;
+      const text = `Hi ${c.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nView / download: ${link}`;
+      if (waOn) {
+        try { await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: text }) }); } catch { /* ignore */ }
+      } else {
+        // No WhatsApp API yet → open click-to-send with text + PDF link.
+        window.open(`https://wa.me/${c.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
+      }
     }
-    if (ok || (!c.email && !c.phone)) { markSent(c.id); setSentTick((t) => t + 1); }
-    return ok;
+    markDone(c.id); setTick((t) => t + 1);
   }
 
-  async function handleSend(c: TodayCustomer) {
-    setBusyId(c.id);
-    await sendOne(c);
-    setBusyId("");
-  }
-
-  async function sendAllPending() {
+  async function handleSend(c: TodayCustomer) { setBusyId(c.id + ":send"); await sendOne(c); setBusyId(""); }
+  async function sendAll() {
     if (!pending.length) return;
-    setBusyId("all");
-    for (const c of pending) { await sendOne(c); }
+    // With no WhatsApp API, we can't pop a tab per customer — email everyone, and note it.
+    setBusyId("send-all");
+    for (const c of pending) {
+      if (!waOn && c.phone && !c.email) { markDone(c.id); continue; } // nothing to auto-send; skip
+      await sendOne(c);
+    }
     setBusyId("");
   }
 
   if (!canUse) return null;
 
-  const pending = (custs ?? []).filter((c) => !isSent(c.id));
-  const sent = (custs ?? []).filter((c) => isSent(c.id));
-  void sentTick; // dependency for re-render
+  const all = custs ?? [];
+  const pending = all.filter((c) => !isDone(c.id));
+  const done = all.filter((c) => isDone(c.id));
+
+  const Row = ({ c, faded }: { c: TodayCustomer; faded?: boolean }) => (
+    <div className={`rounded-xl border border-neutral-200 p-3 dark:border-neutral-800 ${faded ? "opacity-50" : ""}`}>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{c.name}</p>
+        <p className="text-xs text-neutral-500">{c.bills.length} bill(s) · £{c.todayTotal.toFixed(2)} today{c.accountOutstanding > 0 ? ` · £${c.accountOutstanding.toFixed(2)} due` : ""}</p>
+        <p className="text-[11px] text-neutral-400">{[c.email, c.phone].filter(Boolean).join(" · ") || "no contact on file"}</p>
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button onClick={() => generateOne(c)} disabled={!!busyId} className="flex-1 rounded-lg border border-neutral-300 px-2 py-1.5 text-xs font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200">{busyId === c.id ? "…" : "📄 Generate"}</button>
+        <button onClick={() => handleSend(c)} disabled={!!busyId} className="flex-1 rounded-lg bg-neutral-900 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">{busyId === c.id + ":send" ? "…" : "📤 Send"}</button>
+      </div>
+    </div>
+  );
 
   return (
     <>
-      {/* Right-edge toggle tab (closed by default) */}
       {!open && (
-        <button
-          onClick={toggle}
-          title="Today's sending"
-          className="fixed right-0 top-1/3 z-40 flex items-center gap-1.5 rounded-l-xl border border-r-0 border-neutral-200 bg-white py-3 pl-3 pr-2 text-xs font-semibold text-neutral-700 shadow-lg transition hover:bg-amber-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
-          style={{ writingMode: "vertical-rl" }}
-        >
+        <button onClick={toggle} title="Today's sending" className="fixed right-0 top-1/3 z-40 flex items-center gap-1.5 rounded-l-xl border border-r-0 border-neutral-200 bg-white py-3 pl-3 pr-2 text-xs font-semibold text-neutral-700 shadow-lg transition hover:bg-amber-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200" style={{ writingMode: "vertical-rl" }}>
           <span className="rotate-180">📤 Today&apos;s sending</span>
           {pending.length > 0 && <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] text-neutral-900">{pending.length}</span>}
         </button>
@@ -105,14 +155,11 @@ export default function TodaySendDrawer() {
         {open && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/30" onClick={() => setOpen(false)} />
-            <motion.aside
-              initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "tween", duration: 0.28, ease: "easeInOut" }}
-              className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-sm flex-col border-l border-neutral-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950"
-            >
+            <motion.aside initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "tween", duration: 0.28, ease: "easeInOut" }} className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-sm flex-col border-l border-neutral-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950">
               <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
                 <div>
                   <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Today&apos;s sending</h2>
-                  <p className="text-xs text-neutral-500">{pending.length} to send · {sent.length} sent</p>
+                  <p className="text-xs text-neutral-500">{pending.length} to do · {done.length} done{!waOn ? " · WhatsApp: click-to-send" : ""}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={refresh} disabled={loading} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-600 hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300">↻</button>
@@ -120,45 +167,28 @@ export default function TodaySendDrawer() {
                 </div>
               </div>
 
+              {all.length > 0 && (
+                <div className="flex gap-2 border-b border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
+                  <button onClick={generateAll} disabled={!!busyId} className="flex-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200">{busyId === "gen-all" ? "Zipping…" : "📦 Generate all (ZIP)"}</button>
+                  <button onClick={sendAll} disabled={!!busyId || !pending.length} className="flex-1 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-neutral-900 transition hover:bg-amber-400 disabled:opacity-50">{busyId === "send-all" ? "Sending…" : "📤 Send all"}</button>
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto px-4 py-3">
                 {loading && <p className="py-10 text-center text-sm text-neutral-400">Loading today&apos;s customers…</p>}
                 {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-                {!loading && !error && custs !== null && custs.length === 0 && <p className="py-10 text-center text-sm text-neutral-400">No customer sales today.</p>}
+                {!loading && !error && all.length === 0 && <p className="py-10 text-center text-sm text-neutral-400">No customer sales today.</p>}
 
                 {pending.length > 0 && (
                   <>
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To send ({pending.length})</p>
-                      <button onClick={sendAllPending} disabled={!!busyId} className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-neutral-900 transition hover:bg-amber-400 disabled:opacity-50">{busyId === "all" ? "Sending…" : "Send all"}</button>
-                    </div>
-                    <div className="space-y-2">
-                      {pending.map((c) => (
-                        <div key={c.id} className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{c.name}</p>
-                              <p className="text-xs text-neutral-500">{c.bills.length} bill(s) · £{c.todayTotal.toFixed(2)} today{c.accountOutstanding > 0 ? ` · £${c.accountOutstanding.toFixed(2)} due` : ""}</p>
-                              <p className="text-[11px] text-neutral-400">{[c.email, c.phone].filter(Boolean).join(" · ") || "no contact on file"}</p>
-                            </div>
-                            <button onClick={() => handleSend(c)} disabled={!!busyId} className="shrink-0 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">{busyId === c.id ? "…" : "Send"}</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">To do ({pending.length})</p>
+                    <div className="space-y-2">{pending.map((c) => <Row key={c.id} c={c} />)}</div>
                   </>
                 )}
-
-                {sent.length > 0 && (
+                {done.length > 0 && (
                   <div className="mt-5">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Sent ({sent.length})</p>
-                    <div className="space-y-1.5">
-                      {sent.map((c) => (
-                        <div key={c.id} className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm dark:bg-emerald-500/10">
-                          <span className="truncate text-neutral-700 dark:text-neutral-200">{c.name}</span>
-                          <span className="text-xs font-medium text-emerald-600">✓ sent</span>
-                        </div>
-                      ))}
-                    </div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Done ({done.length})</p>
+                    <div className="space-y-2">{done.map((c) => <Row key={c.id} c={c} faded />)}</div>
                   </div>
                 )}
               </div>

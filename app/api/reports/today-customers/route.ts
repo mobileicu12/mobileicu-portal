@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/guard";
 import { listInvoices, getInvoiceDetail } from "@/lib/billing";
 import { getCustomer } from "@/lib/customers";
+import { waConfigured } from "@/lib/whatsapp";
+import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -56,6 +58,7 @@ export async function GET() {
         });
       }
 
+      const numId = cid.split("/").pop() || cid;
       out.push({
         id: cid,
         name: detail.name || detail.company || "Customer",
@@ -63,10 +66,11 @@ export async function GET() {
         phone: detail.phone || "",
         todayTotal, todayPaid, todayOutstanding, accountOutstanding,
         bills,
+        shareUrl: statementSharePath(numId, start.toISOString().slice(0, 10)),
       });
     }
 
-    return NextResponse.json({ date: start.toISOString().slice(0, 10), customers: out });
+    return NextResponse.json({ date: start.toISOString().slice(0, 10), waConfigured: await waConfigured(), customers: out });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to build today's summary.";
     return NextResponse.json({ error: msg }, { status: 502 });

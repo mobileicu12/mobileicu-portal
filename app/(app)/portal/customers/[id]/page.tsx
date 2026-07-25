@@ -47,20 +47,22 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [todayMsg, setTodayMsg] = useState("");
 
   type TodayData = { name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[] };
-  async function loadToday(): Promise<TodayData | null> {
+  type TodayResp = { t: TodayData; shareUrl: string; waConfigured: boolean };
+  async function loadToday(): Promise<TodayResp | null> {
     const res = await fetch(`/api/customers/${id}/today`);
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || "Failed to load today's statement.");
     const t = d.today as TodayData | null;
     if (!t || !t.bills.length) { setTodayMsg("No bills for this customer today."); return null; }
-    return t;
+    return { t, shareUrl: `${window.location.origin}${d.shareUrl}`, waConfigured: !!d.waConfigured };
   }
 
   async function generateToday() {
     setTodayBusy("gen"); setTodayMsg("");
     try {
-      const t = await loadToday();
-      if (!t) return;
+      const r = await loadToday();
+      if (!r) return;
+      const t = r.t;
       const doc = buildCustomerDayItemisedDoc(t.name, t.bills,
         { todayTotal: t.todayTotal, todayPaid: t.todayPaid, todayOutstanding: t.todayOutstanding, accountOutstanding: t.accountOutstanding },
         { dateLabel: new Date().toLocaleDateString("en-GB"), business: await loadBusiness() });
@@ -69,11 +71,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   }
 
   async function sendToday() {
-    if (!confirm("Send this customer their today's itemised statement (email PDF + WhatsApp)?")) return;
+    if (!confirm("Send this customer their today's itemised statement?")) return;
     setTodayBusy("send"); setTodayMsg("");
     try {
-      const t = await loadToday();
-      if (!t) return;
+      const r = await loadToday();
+      if (!r) return;
+      const { t, shareUrl, waConfigured } = r;
       const dateLabel = new Date().toLocaleDateString("en-GB");
       const doc = buildCustomerDayItemisedDoc(t.name, t.bills,
         { todayTotal: t.todayTotal, todayPaid: t.todayPaid, todayOutstanding: t.todayOutstanding, accountOutstanding: t.accountOutstanding },
@@ -88,11 +91,18 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       }
       if (t.phone) {
         const list = t.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
-        const msg = `Hi ${t.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${t.todayTotal.toFixed(2)}\nPaid today: £${t.todayPaid.toFixed(2)}\nToday's outstanding: £${t.todayOutstanding.toFixed(2)}\nTotal outstanding: £${t.accountOutstanding.toFixed(2)}\n\nThank you.`;
-        const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: t.phone, message: msg }) });
-        if (wr.ok) sent += "WhatsApp";
+        const text = `Hi ${t.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${t.todayTotal.toFixed(2)}\nPaid today: £${t.todayPaid.toFixed(2)}\nToday's outstanding: £${t.todayOutstanding.toFixed(2)}\nTotal outstanding: £${t.accountOutstanding.toFixed(2)}`;
+        if (waConfigured) {
+          const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: t.phone, message: `${text}\n\nView / download: ${shareUrl}` }) });
+          if (wr.ok) sent += "WhatsApp";
+        } else {
+          // No WhatsApp API yet → open WhatsApp click-to-send with the text + PDF link.
+          const digits = t.phone.replace(/[^0-9]/g, "");
+          window.open(`https://wa.me/${digits}?text=${encodeURIComponent(`${text}\n\nView / download: ${shareUrl}`)}`, "_blank");
+          sent += "WhatsApp";
+        }
       }
-      setTodayMsg(sent.trim() ? `Sent via ${sent.trim().replace(" ", " + ")}.` : "No email or phone on file to send to.");
+      setTodayMsg(sent.trim() ? `Sent via ${sent.trim().replace(/\s+/, " + ")}.` : "No email or phone on file to send to.");
     } catch (e) { setTodayMsg(e instanceof Error ? e.message : "Failed."); } finally { setTodayBusy(""); }
   }
 
