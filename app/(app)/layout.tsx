@@ -19,15 +19,20 @@ const cachedRequireTapIn = unstable_cache(
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Owner-toggleable staff tap-in gate. Fast path: already tapped in today → no work.
-  const path = (await headers()).get("x-pathname") || "";
+  // Staff tap-in gate — DISABLED by default for performance. Set ENABLE_TAPIN=1 to
+  // switch it back on (then it also respects the owner's requireTapIn setting).
   let needTapIn = false;
-  if (shopifyConfigured() && path.startsWith("/portal") && path !== "/portal/tap-in") {
-    const today = new Date().toISOString().slice(0, 10);
-    const tappedIn = (await cookies()).get("mi_tapin")?.value === today;
-    if (!tappedIn && (await cachedRequireTapIn())) needTapIn = true;
+  let fromPath = "";
+  if (process.env.ENABLE_TAPIN === "1") {
+    const path = (await headers()).get("x-pathname") || "";
+    fromPath = path;
+    if (shopifyConfigured() && path.startsWith("/portal") && path !== "/portal/tap-in") {
+      const today = new Date().toISOString().slice(0, 10);
+      const tappedIn = (await cookies()).get("mi_tapin")?.value === today;
+      if (!tappedIn && (await cachedRequireTapIn())) needTapIn = true;
+    }
   }
-  if (needTapIn) redirect(`/portal/tap-in?from=${encodeURIComponent(path)}`); // redirect() must run outside try/catch
+  if (needTapIn) redirect(`/portal/tap-in?from=${encodeURIComponent(fromPath)}`); // redirect() must run outside try/catch
 
   return (
     <div className="flex h-dvh overflow-hidden">

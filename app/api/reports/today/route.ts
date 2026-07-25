@@ -64,7 +64,9 @@ const computeToday = unstable_cache(async () => {
     for (const r of all) if (r.status !== "COMPLETED") outstanding += num(r.total);
 
     // Full collection today = today's paid sales + on-account (ledger) payments today.
-    const ledgerToday = await ledgerCollectedToday(+start).catch(() => 0);
+    // The all-customer ledger scan is DISABLED by default for performance; set
+    // ENABLE_LEDGER_TODAY=1 to include on-account payments in "Collected today".
+    const ledgerToday = process.env.ENABLE_LEDGER_TODAY === "1" ? await ledgerCollectedToday(+start).catch(() => 0) : 0;
     const collectedToday = paid + ledgerToday;
 
     const latest = rows[0]
