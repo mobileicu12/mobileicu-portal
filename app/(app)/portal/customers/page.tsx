@@ -293,6 +293,10 @@ export default function CustomersPage() {
   );
 }
 
+function FErr({ msg }: { msg: string }) {
+  return <p className="mt-1 text-xs font-medium text-red-600">{msg}</p>;
+}
+
 function L({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <label className={`block ${className}`}>
@@ -323,14 +327,34 @@ function RegisterForm({ onCreated }: { onCreated: () => void }) {
   const [segments, setSegments] = useState<SegmentKey[]>(["online"]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErr, setFieldErr] = useState<Record<string, string>>({});
 
   const dial = COUNTRIES.find((c) => c.iso === countryIso)?.dial ?? "";
   function toggleSeg(k: SegmentKey) {
     setSegments((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
   }
 
+  // Validate before submit — surface exactly what's missing / wrong / mis-formatted.
+  function validate(): Record<string, string> {
+    const e: Record<string, string> = {};
+    if (!f.firstName.trim()) e.firstName = "First name is required.";
+    if (!f.lastName.trim()) e.lastName = "Last name is required.";
+    if (f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) e.email = "Enter a valid email address.";
+    if (f.phoneNumber.trim()) {
+      const digits = f.phoneNumber.replace(/[^\d]/g, "");
+      if (/[a-zA-Z]/.test(f.phoneNumber)) e.phoneNumber = "Phone should be digits only.";
+      else if (digits.length < 6 || digits.length > 15) e.phoneNumber = "Phone number looks too short or too long.";
+    }
+    if (f.openingBalance.trim() && (isNaN(Number(f.openingBalance)) || Number(f.openingBalance) < 0)) e.openingBalance = "Opening balance must be a positive number.";
+    if (!f.email.trim() && !f.phoneNumber.trim()) e.email = "Add at least an email or a phone number.";
+    if (segments.length === 0) e.segments = "Pick at least one segment.";
+    return e;
+  }
+
   async function save() {
-    if (!f.firstName.trim() || !f.lastName.trim()) { setError("First and last name are required."); return; }
+    const errs = validate();
+    setFieldErr(errs);
+    if (Object.keys(errs).length) { setError("Please fix the highlighted fields."); return; }
     setSaving(true);
     setError("");
     try {
@@ -362,20 +386,22 @@ function RegisterForm({ onCreated }: { onCreated: () => void }) {
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Register customer</h2>
       {error && <p className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
       <div className="mt-4 grid max-w-3xl gap-4 sm:grid-cols-2">
-        <L label="First name *"><input className={input} value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} /></L>
-        <L label="Last name *"><input className={input} value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} /></L>
+        <L label="First name *"><input className={`${input} ${fieldErr.firstName ? "border-red-400" : ""}`} value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} />{fieldErr.firstName && <FErr msg={fieldErr.firstName} />}</L>
+        <L label="Last name *"><input className={`${input} ${fieldErr.lastName ? "border-red-400" : ""}`} value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} />{fieldErr.lastName && <FErr msg={fieldErr.lastName} />}</L>
         <L label="Company (for wholesale)"><input className={input} value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} /></L>
-        <L label="Email"><input type="email" className={input} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></L>
+        <L label="Email"><input type="email" className={`${input} ${fieldErr.email ? "border-red-400" : ""}`} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />{fieldErr.email && <FErr msg={fieldErr.email} />}</L>
         <L label="Phone">
           <div className="flex gap-2">
             <select value={countryIso} onChange={(e) => setCountryIso(e.target.value)} className={`${input.replace("w-full", "")} w-28 shrink-0`}>
               {COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>{c.flag} {c.dial}</option>)}
             </select>
-            <input className={`${input} min-w-0 flex-1`} placeholder="7911 123456" value={f.phoneNumber} onChange={(e) => setF({ ...f, phoneNumber: e.target.value })} />
+            <input className={`${input} min-w-0 flex-1 ${fieldErr.phoneNumber ? "border-red-400" : ""}`} placeholder="7911 123456" value={f.phoneNumber} onChange={(e) => setF({ ...f, phoneNumber: e.target.value })} />
           </div>
+          {fieldErr.phoneNumber && <FErr msg={fieldErr.phoneNumber} />}
         </L>
         <L label="Opening balance (£) — old outstanding brought forward">
-          <input type="number" step="0.01" className={input} value={f.openingBalance} onChange={(e) => setF({ ...f, openingBalance: e.target.value })} placeholder="0.00" />
+          <input type="number" step="0.01" className={`${input} ${fieldErr.openingBalance ? "border-red-400" : ""}`} value={f.openingBalance} onChange={(e) => setF({ ...f, openingBalance: e.target.value })} placeholder="0.00" />
+          {fieldErr.openingBalance && <FErr msg={fieldErr.openingBalance} />}
         </L>
         <L label="Address" className="sm:col-span-2"><input className={input} value={f.address1} onChange={(e) => setF({ ...f, address1: e.target.value })} placeholder="Street address" /></L>
         <L label="City / Town"><input className={input} value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></L>
@@ -385,6 +411,7 @@ function RegisterForm({ onCreated }: { onCreated: () => void }) {
 
       <div className="mt-4">
         <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Segment(s)</p>
+        {fieldErr.segments && <FErr msg={fieldErr.segments} />}
         <p className="text-xs text-neutral-400">A customer can belong to more than one (e.g. a registered online customer who also visits the shop).</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {SEGMENTS.map((s) => (
