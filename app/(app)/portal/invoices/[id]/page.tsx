@@ -34,6 +34,7 @@ export default function InvoiceEditPage() {
   const encId = encodeURIComponent(id);
 
   const [meta, setMeta] = useState<InvoiceDetail | null>(null);
+  const [shareUrl, setShareUrl] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [vat, setVat] = useState(true);
   const [discount, setDiscount] = useState(0);
@@ -66,6 +67,7 @@ export default function InvoiceEditPage() {
       if (!res.ok) throw new Error(d.error || "Failed to load");
       const inv = d.invoice as InvoiceDetail;
       setMeta(inv);
+      if (d.shareUrl) setShareUrl(`${window.location.origin}${d.shareUrl}`);
       setLines(
         inv.lines.map((l) => ({
           variantId: l.variantId,
@@ -280,7 +282,7 @@ export default function InvoiceEditPage() {
 
   // WhatsApp click-to-send (opens WhatsApp with a prefilled message + invoice link).
   const waPhone = (meta.customerPhone || "").replace(/[^0-9]/g, "");
-  const waText = `Hi ${meta.customerName !== "—" ? meta.customerName : "there"}, here is your invoice ${meta.invoiceNo} from MOBILE ICU — total £${Number(meta.total).toFixed(2)}${Number(meta.balance) > 0.001 ? ` (£${Number(meta.balance).toFixed(2)} due)` : " (paid)"}.${meta.invoiceUrl ? ` View it here: ${meta.invoiceUrl}` : ""}`;
+  const waText = `Hi ${meta.customerName !== "—" ? meta.customerName : "there"}, here is your invoice ${meta.invoiceNo} from MOBILE ICU — total £${Number(meta.total).toFixed(2)}${Number(meta.balance) > 0.001 ? ` (£${Number(meta.balance).toFixed(2)} due)` : " (paid)"}.${shareUrl ? ` View / download it here: ${shareUrl}` : ""}`;
   const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : null;
 
   return (

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getInvoiceDetail, updateInvoice, deleteInvoice, type UpdateInvoiceInput } from "@/lib/billing";
 import { requirePermission, isOwnerRequest } from "@/lib/guard";
+import { invoiceSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -12,7 +13,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   try {
     const invoice = await getInvoiceDetail(decodeURIComponent(id));
-    return NextResponse.json({ invoice });
+    // Public, token-protected PDF link (for WhatsApp) — never Shopify's hosted page.
+    const numId = invoice.id.split("/").pop() || invoice.id;
+    return NextResponse.json({ invoice, shareUrl: invoiceSharePath(numId) });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to load invoice.";
     return NextResponse.json({ error: msg }, { status: 502 });
