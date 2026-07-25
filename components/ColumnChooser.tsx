@@ -5,13 +5,15 @@ import { useEffect, useRef, useState } from "react";
 export type ColumnDef = { key: string; label: string; locked?: boolean };
 
 // Small dropdown to toggle which optional columns show; remembers choice in localStorage.
-export function useColumns(storageKey: string, columns: ColumnDef[]) {
+export function useColumns(storageKey: string, columns: ColumnDef[], defaultHidden: string[] = []) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
-      if (raw) setHidden(new Set(JSON.parse(raw)));
-    } catch { /* ignore */ }
+      // First visit (nothing stored) → apply the caller's default-hidden set.
+      setHidden(new Set(raw ? JSON.parse(raw) : defaultHidden));
+    } catch { setHidden(new Set(defaultHidden)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
   function toggle(key: string) {
     setHidden((prev) => {

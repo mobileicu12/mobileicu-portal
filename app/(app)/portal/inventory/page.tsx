@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProductRow, Location } from "@/lib/shopify";
 import { CHANNELS, channelKeysFromTags } from "@/lib/channels";
+import type { TierPrices } from "@/lib/pricing";
 import ColumnChooser, { useColumns, type ColumnDef } from "@/components/ColumnChooser";
 
 const LOW_STOCK_DEFAULT = 5;
@@ -11,11 +12,19 @@ const LOW_STOCK_DEFAULT = 5;
 const STOCK_COLUMNS: ColumnDef[] = [
   { key: "product", label: "Product", locked: true },
   { key: "sku", label: "SKU" },
-  { key: "price", label: "Price" },
+  { key: "price", label: "Price (online)" },
+  { key: "wholesale", label: "Wholesale £" },
+  { key: "shop", label: "Shop £" },
+  { key: "ebay", label: "eBay £" },
+  { key: "amazon", label: "Amazon £" },
   { key: "status", label: "Stock status" },
   { key: "channels", label: "Channels" },
   { key: "available", label: "Available", locked: true },
 ];
+
+// Keep the table readable by default — the channel-price columns start hidden
+// and can be switched on from the ⋯ Columns menu.
+const STOCK_DEFAULT_HIDDEN = ["wholesale", "shop", "ebay", "amazon"];
 
 type FlatRow = {
   key: string;
@@ -25,6 +34,7 @@ type FlatRow = {
   variantTitle: string;
   sku: string;
   price: string;
+  tiers: TierPrices;
   inventoryItemId: string | null;
   tracked: boolean;
   status: string;
@@ -46,6 +56,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
         variantTitle: v.variantTitle === "Default Title" ? "" : v.variantTitle,
         sku: v.sku,
         price: v.price,
+        tiers: p.tiers,
         inventoryItemId: v.inventoryItemId,
         tracked: v.tracked,
         status: p.status,
@@ -61,7 +72,7 @@ function flatten(rows: ProductRow[]): FlatRow[] {
 type ManualCollection = { id: string; title: string };
 
 export default function InventoryPage() {
-  const cols = useColumns("cols:inventory", STOCK_COLUMNS);
+  const cols = useColumns("cols:inventory", STOCK_COLUMNS, STOCK_DEFAULT_HIDDEN);
   const [rows, setRows] = useState<FlatRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<string>("");
@@ -322,6 +333,10 @@ export default function InventoryPage() {
               <th className="px-4 py-3 font-medium">Product</th>
               {cols.isVisible("sku") && <th className="px-4 py-3 font-medium">SKU</th>}
               {cols.isVisible("price") && <th className="px-4 py-3 font-medium">Price (£)</th>}
+              {cols.isVisible("wholesale") && <th className="px-4 py-3 text-right font-medium">Wholesale £</th>}
+              {cols.isVisible("shop") && <th className="px-4 py-3 text-right font-medium">Shop £</th>}
+              {cols.isVisible("ebay") && <th className="px-4 py-3 text-right font-medium">eBay £</th>}
+              {cols.isVisible("amazon") && <th className="px-4 py-3 text-right font-medium">Amazon £</th>}
               {cols.isVisible("status") && <th className="px-4 py-3 font-medium">Status</th>}
               {cols.isVisible("channels") && <th className="px-4 py-3 font-medium">Channels</th>}
               <th className="px-4 py-3 text-right font-medium">Available</th>
@@ -343,7 +358,7 @@ export default function InventoryPage() {
               />
             ))}
             {rows.length === 0 && !loading && (
-              <tr><td colSpan={2 + ["sku", "price", "status", "channels"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-muted">No products found.</td></tr>
+              <tr><td colSpan={2 + ["sku", "price", "wholesale", "shop", "ebay", "amazon", "status", "channels"].filter((k) => cols.isVisible(k)).length} className="px-4 py-10 text-center text-muted">No products found.</td></tr>
             )}
           </tbody>
         </table>
@@ -415,6 +430,21 @@ function BulkValue({ label, placeholder, onApply, disabled }: { label: string; p
   );
 }
 
+// Read-only channel-price cell. Blank tier → dim dash (falls back to the online price).
+function TierCell({ base, value }: { base: string; value: string | null | undefined }) {
+  const n = value != null && String(value).trim() ? Number(value) : null;
+  const set = n != null && Number.isFinite(n) && n > 0;
+  return (
+    <td className="px-4 py-3 text-right tabular-nums">
+      {set ? (
+        <span className="font-medium text-ink">£{n!.toFixed(2)}</span>
+      ) : (
+        <span className="text-muted/50" title={`Uses online price (£${Number(base || 0).toFixed(2)})`}>—</span>
+      )}
+    </td>
+  );
+}
+
 function StockRow({
   row, show, available, locationId, lowStock, checked, onToggle, onStockSaved, onPriceSaved,
 }: {
@@ -477,6 +507,10 @@ function StockRow({
           </div>
         </td>
       )}
+      {show("wholesale") && <TierCell base={row.price} value={row.tiers?.wholesale} />}
+      {show("shop") && <TierCell base={row.price} value={row.tiers?.shop} />}
+      {show("ebay") && <TierCell base={row.price} value={row.tiers?.ebay} />}
+      {show("amazon") && <TierCell base={row.price} value={row.tiers?.amazon} />}
       {show("status") && (
         <td className="px-4 py-3">
           {!row.tracked ? <span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-muted">Not tracked</span>

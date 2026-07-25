@@ -1,5 +1,6 @@
 // Minimal Shopify Admin API (GraphQL) client for the portal.
 // Reads credentials from environment variables (see .env.example).
+import type { TierPrices } from "./pricing";
 
 const DOMAIN = process.env.SHOPIFY_STORE_DOMAIN ?? "";
 const STATIC_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN ?? "";
@@ -114,6 +115,7 @@ export type ProductRow = {
   image: string | null;
   status: string;
   tags: string[];
+  tiers: TierPrices; // channel prices (wholesale/shop/ebay/amazon) — blank = base price
   variants: VariantRow[];
 };
 
@@ -145,6 +147,10 @@ const INVENTORY_QUERY = `
           status
           tags
           featuredImage { url }
+          wholesale: metafield(namespace: "custom", key: "wholesale_price") { value }
+          priceShop: metafield(namespace: "custom", key: "price_shop") { value }
+          priceEbay: metafield(namespace: "custom", key: "price_ebay") { value }
+          priceAmazon: metafield(namespace: "custom", key: "price_amazon") { value }
           variants(first: 25) {
             edges {
               node {
@@ -183,6 +189,10 @@ type RawProductsResponse = {
         status: string;
         tags: string[];
         featuredImage: { url: string } | null;
+        wholesale: { value: string } | null;
+        priceShop: { value: string } | null;
+        priceEbay: { value: string } | null;
+        priceAmazon: { value: string } | null;
         variants: {
           edges: {
             node: {
@@ -234,6 +244,12 @@ export async function getInventory(opts: {
     image: node.featuredImage?.url ?? null,
     status: node.status,
     tags: node.tags ?? [],
+    tiers: {
+      wholesale: node.wholesale?.value ?? null,
+      shop: node.priceShop?.value ?? null,
+      ebay: node.priceEbay?.value ?? null,
+      amazon: node.priceAmazon?.value ?? null,
+    },
     variants: node.variants.edges.map(({ node: v }) => {
       const levels: InventoryLevel[] =
         v.inventoryItem?.inventoryLevels.edges.map((l) => ({
