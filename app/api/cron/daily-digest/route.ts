@@ -6,11 +6,17 @@ import { shopifyConfigured } from "@/lib/shopify";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// Authorised if it's Vercel Cron (Bearer CRON_SECRET) or the owner clicking "send now".
+// Authorised if it's Vercel Cron or the owner clicking "send now".
 async function authorized(req: Request): Promise<boolean> {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization") || "";
-  if (secret && auth === `Bearer ${secret}`) return true;
+  if (secret) {
+    // When a secret is configured, Vercel Cron sends it as a Bearer token.
+    if (auth === `Bearer ${secret}`) return true;
+  } else {
+    // No secret set → accept Vercel's cron runner by its user-agent so it works out of the box.
+    if ((req.headers.get("user-agent") || "").toLowerCase().includes("vercel-cron")) return true;
+  }
   return isOwnerRequest();
 }
 
