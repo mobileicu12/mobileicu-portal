@@ -106,6 +106,7 @@ export type CreateBillInput = {
   complete?: boolean; // POS: complete immediately (creates order, deducts stock)
   segment?: SegmentKey; // where this sale comes from (online/shop/ebay/amazon)
   staff?: string; // portal user (email) who created the sale
+  payMethod?: string; // how it was paid (cash/card/bank transfer/…)
 };
 
 // Safe tag value from an email/name.
@@ -151,6 +152,7 @@ export async function createBill(input: CreateBillInput): Promise<BillResult> {
     if (input.customerName?.trim()) mfs.push({ namespace: "portal", key: "cust_name", type: "single_line_text_field", value: input.customerName.trim().slice(0, 200) });
     if (input.customerPhone?.trim()) mfs.push({ namespace: "portal", key: "cust_phone", type: "single_line_text_field", value: input.customerPhone.trim().slice(0, 60) });
   }
+  if (input.payMethod?.trim()) mfs.push({ namespace: "portal", key: "pay_method", type: "single_line_text_field", value: input.payMethod.trim().slice(0, 40) });
   draftInput.metafields = mfs;
   if (input.discountPercent && input.discountPercent > 0) {
     draftInput.appliedDiscount = {
@@ -261,6 +263,7 @@ export type InvoiceRow = {
   invoiceUrl: string | null;
   segment: SegmentKey | null;
   staff: string | null;
+  payMethod: string | null;
 };
 
 export async function listInvoices(): Promise<InvoiceRow[]> {
@@ -277,6 +280,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
           tags: string[];
           invoiceNo: { value: string } | null;
           custName: { value: string } | null;
+          payMethod: { value: string } | null;
           customer: { displayName: string | null } | null;
           email: string | null;
         };
@@ -289,6 +293,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
           id name status totalPrice createdAt invoiceUrl tags
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
           custName: metafield(namespace: "portal", key: "cust_name") { value }
+          payMethod: metafield(namespace: "portal", key: "pay_method") { value }
           customer { displayName }
           email
         } }
@@ -306,6 +311,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     invoiceUrl: e.node.invoiceUrl,
     segment: segmentsFromTags(e.node.tags ?? [])[0] ?? null,
     staff: staffFromTags(e.node.tags ?? []),
+    payMethod: e.node.payMethod?.value ?? null,
   }));
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useIsOwner } from "@/lib/use-me";
 
 type Stats = {
   products: number;
@@ -14,6 +15,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [error, setError] = useState("");
+  const isOwner = useIsOwner();
 
   useEffect(() => {
     fetch("/api/stats")
@@ -50,6 +52,9 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Today's takings — owner only */}
+      {isOwner && <TodayTakings />}
+
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total products" value={stats?.products} tone="ink" />
         <Stat label="Low stock (≤5)" value={stats?.lowStock} tone="amber" />
@@ -67,6 +72,65 @@ export default function Dashboard() {
         <ActionCard href="/portal/billing" title="New bill / invoice" desc="Wholesale invoice or POS sale." />
         <ActionCard href="/portal/invoices" title="View invoices" desc="Past bills and orders." />
       </div>
+    </div>
+  );
+}
+
+type Takings = {
+  count: number; total: number; paid: number; retail: number; wholesale: number; marketplace: number;
+  byMethod: Record<string, number>;
+  latest: { invoiceNo: string; customer: string; total: number; paid: boolean; createdAt: string } | null;
+};
+
+function TodayTakings() {
+  const [t, setT] = useState<Takings | null>(null);
+  const [view, setView] = useState<"all" | "cash" | "card">("all");
+  useEffect(() => {
+    fetch("/api/reports/today").then((r) => (r.ok ? r.json() : null)).then(setT).catch(() => {});
+  }, []);
+  if (!t) return null;
+  const gbp = (n: number) => `£${(n || 0).toFixed(2)}`;
+  const headline = view === "cash" ? (t.byMethod.cash || 0) : view === "card" ? (t.byMethod.card || 0) : t.total;
+
+  return (
+    <div className="mt-6 overflow-hidden rounded-2xl border border-neutral-200 bg-gradient-to-br from-neutral-900 to-neutral-800 p-5 text-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">Today&apos;s takings · {t.count} sale{t.count === 1 ? "" : "s"}</p>
+          <p className="mt-1 text-4xl font-extrabold tracking-tight">{gbp(headline)}</p>
+          <p className="mt-1 text-sm text-neutral-300">
+            {view === "all" ? "Retail + wholesale combined" : view === "cash" ? "Cash taken today" : "Card taken today"}
+          </p>
+        </div>
+        <div className="flex rounded-full border border-white/20 p-1 text-xs">
+          {(["all", "cash", "card"] as const).map((v) => (
+            <button key={v} onClick={() => setView(v)} className={`rounded-full px-3 py-1 font-semibold capitalize transition ${view === v ? "bg-amber-500 text-neutral-900" : "text-neutral-300 hover:text-white"}`}>{v}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <MiniTile label="Retail" value={gbp(t.retail)} />
+        <MiniTile label="Wholesale" value={gbp(t.wholesale)} />
+        <MiniTile label="Cash" value={gbp(t.byMethod.cash || 0)} />
+        <MiniTile label="Card" value={gbp(t.byMethod.card || 0)} />
+      </div>
+
+      {t.latest && (
+        <Link href="/portal/invoices" className="mt-4 flex items-center justify-between rounded-xl bg-white/10 px-4 py-2.5 text-sm transition hover:bg-white/15">
+          <span className="text-neutral-300">Latest sale · <strong className="text-white">{t.latest.invoiceNo}</strong> · {t.latest.customer}</span>
+          <span className="font-semibold text-amber-400">{gbp(t.latest.total)} {t.latest.paid ? "· paid" : ""}</span>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function MiniTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-white/10 px-3 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{label}</p>
+      <p className="mt-0.5 text-lg font-bold">{value}</p>
     </div>
   );
 }

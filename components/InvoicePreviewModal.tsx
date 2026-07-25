@@ -22,8 +22,13 @@ export default function InvoicePreviewModal({ invoice, business, onClose }: { in
   }
 
   async function email() {
-    const to = window.prompt("Email this invoice (with PDF attached) to:", invoice.customerEmail || "");
-    if (to === null || !to.trim()) return;
+    // Auto-send to the customer's email if we have one; only prompt when it's missing.
+    let to = (invoice.customerEmail || "").trim();
+    if (!to) {
+      const entered = window.prompt("This customer has no email on file — send the invoice (with PDF) to:", "");
+      if (entered === null || !entered.trim()) return;
+      to = entered.trim();
+    }
     setEmailing(true); setMsg("");
     try {
       const dataUri = buildInvoiceDoc(invoice, business).output("datauristring");

@@ -241,6 +241,7 @@ export default function BillingPage() {
           discountPercent: discount,
           complete: mode === "pos",
           segment,
+          payMethod,
         }),
       });
       const d = await res.json();
@@ -519,6 +520,18 @@ export default function BillingPage() {
               <span>£{total.toFixed(2)}</span>
             </div>
           </div>
+
+          {/* How the sale was paid (POS) */}
+          {mode === "pos" && (
+            <div className="mt-3">
+              <span className="text-sm font-medium text-neutral-700">Paid by</span>
+              <div className="mt-1 flex rounded-lg border border-neutral-300 p-1">
+                {(["cash", "card", "bank transfer", "other"] as const).map((m) => (
+                  <button key={m} type="button" onClick={() => setPayMethod(m)} className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium capitalize ${payMethod === m ? "bg-neutral-900 text-white" : "text-neutral-600"}`}>{m === "bank transfer" ? "Bank" : m}</button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Account payment (registered customer) */}
           {customerId && (
