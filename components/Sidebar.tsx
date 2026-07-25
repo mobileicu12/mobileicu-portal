@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { NAV, visibleNav, type Me } from "@/lib/nav";
+import { NAV, visibleNav, groupedNav, type Me } from "@/lib/nav";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -16,7 +16,7 @@ export default function Sidebar() {
   }, []);
 
   // Owner / master-password → everything. Members → only granted features.
-  const items = visibleNav(NAV, me);
+  const groups = groupedNav(visibleNav(NAV, me));
 
   async function logout() {
     await fetch("/api/login", { method: "DELETE" }).catch(() => {});
@@ -37,26 +37,33 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {items.map((item) => {
-          const active = item.href === "/portal" ? pathname === "/portal" : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                active
-                  ? "bg-ink text-bg shadow-sm"
-                  : "text-muted hover:bg-subtle hover:text-ink"
-              }`}
-            >
-              <svg className={`h-5 w-5 ${active ? "text-accent" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
-                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-              </svg>
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto p-3">
+        {groups.map((g) => (
+          <div key={g.key} className="mb-3 last:mb-0">
+            <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted/60">{g.label}</p>
+            <div className="space-y-1">
+              {g.items.map((item) => {
+                const active = item.href === "/portal" ? pathname === "/portal" : pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                      active
+                        ? "bg-ink text-bg shadow-sm"
+                        : "text-muted hover:bg-subtle hover:text-ink"
+                    }`}
+                  >
+                    <svg className={`h-5 w-5 ${active ? "text-accent" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                    </svg>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="shrink-0 border-t border-line p-3">
