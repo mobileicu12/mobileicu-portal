@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 export default function BarcodeScanner({ onDetected, onClose }: { onDetected: (code: string) => void; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const detectedRef = useRef(onDetected);
-  detectedRef.current = onDetected;
+  useEffect(() => { detectedRef.current = onDetected; }, [onDetected]);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
@@ -44,7 +44,6 @@ export default function BarcodeScanner({ onDetected, onClose }: { onDetected: (c
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-800">✕</button>
         </div>
         <div className="relative aspect-[4/3] bg-black">
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
           <div className="pointer-events-none absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 bg-amber-400/80 shadow-[0_0_12px] shadow-amber-400" />
           {!ready && !error && <p className="absolute inset-0 flex items-center justify-center text-sm text-white/80">Starting camera…</p>}
