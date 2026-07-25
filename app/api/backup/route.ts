@@ -31,8 +31,7 @@ export async function GET() {
     const CAP = 500;
     const detailed: unknown[] = [];
     for (const c of customerList.slice(0, CAP)) {
-      const numId = c.id.split("/").pop()!;
-      try { detailed.push(await getCustomer(numId)); } catch { detailed.push({ ...c, _detailError: true }); }
+      try { detailed.push(await getCustomer(c.id)); } catch { detailed.push({ ...c, _detailError: true }); }
     }
 
     const backup = {

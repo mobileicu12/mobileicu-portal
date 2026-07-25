@@ -53,9 +53,9 @@ export async function runDailyDigest(opts: { force?: boolean } = {}): Promise<Di
   const ownerRows: { name: string; bills: number; today: number; outstanding: number }[] = [];
 
   for (const [cid, rows] of byCustomer) {
-    const numId = cid.split("/").pop()!;
+    // cid is the full gid://shopify/Customer/... which getCustomer expects.
     let detail;
-    try { detail = await getCustomer(numId); } catch (e) { errors.push(`load ${numId}: ${errMsg(e)}`); continue; }
+    try { detail = await getCustomer(cid); } catch (e) { errors.push(`load ${cid}: ${errMsg(e)}`); continue; }
 
     const todayTotal = rows.reduce((s, r) => s + num(r.total), 0);
     const invoiceDue = detail.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
