@@ -6,7 +6,9 @@ const { auth } = NextAuth(authConfig);
 
 // Public paths (no admin login needed): the storefront, auth endpoints, and login.
 // "/" is the store homepage (redirects to /shop) and must stay public.
-const PUBLIC_PREFIXES = ["/login", "/api/login", "/api/auth", "/api/me", "/shop", "/api/shop", "/no-access"];
+// "/api/cron" is public at the middleware layer (Vercel Cron sends no login cookie);
+// the cron route enforces its own auth (CRON_SECRET / Vercel cron UA / owner).
+const PUBLIC_PREFIXES = ["/login", "/api/login", "/api/auth", "/api/me", "/shop", "/api/shop", "/api/cron", "/no-access"];
 
 // Feature gate per portal page prefix. Anything else under /portal is open to any
 // signed-in teammate (Dashboard, Add product, Import/Export, Channels).

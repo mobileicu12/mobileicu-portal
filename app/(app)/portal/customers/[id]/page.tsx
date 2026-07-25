@@ -446,6 +446,7 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [okMsg, setOkMsg] = useState("");
 
   async function save() {
     const amt = Number(amount);
@@ -455,6 +456,7 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
     }
     setSaving(true);
     setError("");
+    setOkMsg("");
     try {
       const res = await fetch(`/api/customers/${customerId}`, {
         method: "POST",
@@ -463,9 +465,17 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
+      const settled = (d.allocation?.settled ?? []) as { name: string }[];
+      const credit = Number(d.allocation?.creditedToAccount ?? 0);
+      setOkMsg(
+        settled.length
+          ? `Auto-paid ${settled.length} invoice(s): ${settled.map((s) => s.name).join(", ")}${credit > 0.001 ? ` · £${credit.toFixed(2)} on account` : ""}`
+          : "Payment recorded on account.",
+      );
       setAmount("");
       setNote("");
       onAdded();
+      setTimeout(() => setOkMsg(""), 6000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -476,8 +486,9 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
   const input = "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200";
 
   return (
-    <div className="mt-3 rounded-xl bg-neutral-50 p-3">
+    <div className="mt-3 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/50">
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+      {okMsg && <p className="mb-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10">{okMsg}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <input
           className={`${input} w-28`}
