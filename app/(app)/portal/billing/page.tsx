@@ -56,24 +56,30 @@ export default function BillingPage() {
   const [custIsOnline, setCustIsOnline] = useState(false);
   const [received, setReceived] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
+  // Open (unpaid) invoices for the selected customer — lets you add to a running tab.
+  const [openInvoices, setOpenInvoices] = useState<{ id: string; name: string; total: string; balance: number }[]>([]);
+  const [addToInvoiceId, setAddToInvoiceId] = useState("");
 
   // Load the selected customer's account outstanding + whether they're Online/Registered.
   useEffect(() => {
-    if (!customerId) { setCustOutstanding(null); setCustIsOnline(false); return; }
+    if (!customerId) { setCustOutstanding(null); setCustIsOnline(false); setOpenInvoices([]); setAddToInvoiceId(""); return; }
     const numId = customerId.split("/").pop();
     fetch(`/api/customers/${numId}`)
       .then((r) => r.json())
       .then((d) => {
         const c = d.customer;
-        if (!c) { setCustOutstanding(null); setCustIsOnline(false); return; }
+        if (!c) { setCustOutstanding(null); setCustIsOnline(false); setOpenInvoices([]); return; }
         // Owed = opening balance + still-unpaid invoice balances − on-account payments.
         // (A completed invoice already counts as paid, so use its balance, not total.)
         const invoiceDue = (c.invoices ?? []).reduce((s: number, i: { balance?: number }) => s + Number(i.balance || 0), 0);
         const ledgerPaid = (c.ledger?.payments ?? []).reduce((s: number, p: { amount: number }) => s + Number(p.amount || 0), 0);
         setCustOutstanding((c.openingBalance || 0) + invoiceDue - ledgerPaid);
         setCustIsOnline((c.segments ?? []).includes("online"));
+        // Draft (unpaid) invoices this customer can add more items to.
+        setOpenInvoices((c.invoices ?? []).filter((i: { status: string }) => i.status !== "COMPLETED").map((i: { id: string; name: string; total: string; balance: number }) => ({ id: i.id, name: i.name, total: i.total, balance: i.balance })));
+        setAddToInvoiceId("");
       })
-      .catch(() => { setCustOutstanding(null); setCustIsOnline(false); });
+      .catch(() => { setCustOutstanding(null); setCustIsOnline(false); setOpenInvoices([]); });
   }, [customerId]);
 
   // Pre-fill customer from ?customer=<id> (e.g. coming from a customer page).
@@ -224,6 +230,35 @@ export default function BillingPage() {
     setError("");
     setResult(null);
     try {
+      // "Open tab": append these items to the customer's existing draft invoice.
+      if (mode === "invoice" && addToInvoiceId) {
+        const newLines = lines.map((l) => {
+          const custom = l.variantId.startsWith("custom:");
+          return { variantId: custom ? null : l.variantId, quantity: l.qty, unitPrice: l.price, title: l.title, custom };
+        });
+        const detRes = await fetch(`/api/billing/${encodeURIComponent(addToInvoiceId)}`);
+        const det = await detRes.json();
+        if (!detRes.ok) throw new Error(det.error || "Couldn't load the open invoice.");
+        const inv = det.invoice as InvoiceDetail;
+        // Merge: same catalog variant → add quantity; custom items always appended.
+        const merged = inv.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, unitPrice: Number(l.unitPrice), title: l.title, custom: !l.variantId }));
+        for (const nl of newLines) {
+          const hit = nl.variantId ? merged.find((m) => m.variantId === nl.variantId) : null;
+          if (hit) hit.quantity += nl.quantity;
+          else merged.push(nl);
+        }
+        const upRes = await fetch(`/api/billing/${encodeURIComponent(addToInvoiceId)}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lines: merged, vat, customerId, email, note, discountPercent: discount }),
+        });
+        const upd = await upRes.json();
+        if (!upRes.ok) throw new Error(upd.error || "Failed to add to the open invoice.");
+        setResult({ ...upd, completed: false });
+        setLines([]); setDiscount(0); setNote(""); setReceived(""); setWalkName(""); setWalkPhone("");
+        setSubmitting(false);
+        return;
+      }
+
       const res = await fetch("/api/billing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -489,6 +524,17 @@ export default function BillingPage() {
                 )}
               </div>
             )}
+            {mode === "invoice" && customerId && openInvoices.length > 0 && (
+              <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
+                <p className="text-xs font-medium text-sky-700">This customer has {openInvoices.length} open invoice{openInvoices.length === 1 ? "" : "s"} — add these items to a running tab, or start a new one:</p>
+                <select value={addToInvoiceId} onChange={(e) => setAddToInvoiceId(e.target.value)} className="mt-1 w-full rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm">
+                  <option value="">➕ Create a new invoice</option>
+                  {openInvoices.map((i) => (
+                    <option key={i.id} value={i.id}>Add to {i.name} — £{i.total}{i.balance > 0.001 ? ` (£${i.balance.toFixed(2)} due)` : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {mode === "pos" && !customerId && (
               <div className="mt-2 space-y-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-3">
                 <p className="text-xs font-medium text-neutral-500">Walk-in / one-off customer <span className="font-normal">(optional — no account needed)</span></p>
@@ -568,7 +614,9 @@ export default function BillingPage() {
               ? "Processing…"
               : mode === "pos"
                 ? `Charge £${total.toFixed(2)} & complete`
-                : "Create invoice"}
+                : addToInvoiceId
+                  ? `Add £${total.toFixed(2)} to open invoice`
+                  : "Create invoice"}
           </button>
           <p className="mt-2 text-xs text-neutral-400">
             {mode === "pos"
