@@ -14,6 +14,7 @@ export type PortalSettings = {
   invoicePrefix: string; // e.g. "MICU" -> MICU-2026-0001
   vatRate: number; // percent, e.g. 20
   lowStock: number;
+  faviconUrl: string; // custom favicon (browser tab icon) — overrides the default when set
   // ---- Daily digest (end-of-day summaries) ----
   dailyDigest: boolean; // master on/off for the scheduled 9:30pm send
   digestCustomers: boolean; // send each wholesale customer their own day summary
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: PortalSettings = {
   invoicePrefix: "MICU",
   vatRate: 20,
   lowStock: 5,
+  faviconUrl: "",
   dailyDigest: false,
   digestCustomers: true,
   digestOwner: true,

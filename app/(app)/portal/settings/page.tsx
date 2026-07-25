@@ -15,6 +15,7 @@ type Settings = {
   invoicePrefix: string;
   vatRate: number;
   lowStock: number;
+  faviconUrl: string;
   dailyDigest: boolean;
   digestCustomers: boolean;
   digestOwner: boolean;
@@ -119,6 +120,18 @@ export default function SettingsPage() {
           <Field label="Tagline"><input className={inp} value={s.tagline} onChange={(e) => set("tagline", e.target.value)} /></Field>
           <Field label="Address (one line per row)">
             <textarea rows={4} className={inp} value={s.address} onChange={(e) => set("address", e.target.value)} placeholder={"Unit 1, Example Road\nLondon\nSW1A 1AA\nUnited Kingdom"} />
+          </Field>
+          <Field label="Favicon URL (browser tab icon)">
+            <div className="flex items-center gap-3">
+              <input className={inp} value={s.faviconUrl} onChange={(e) => set("faviconUrl", e.target.value)} placeholder="https://…/icon.png or .ico/.svg" />
+              {s.faviconUrl?.trim() ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={s.faviconUrl} alt="" className="h-8 w-8 shrink-0 rounded border border-neutral-200 object-contain dark:border-neutral-700" />
+              ) : (
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded border border-dashed border-neutral-300 text-[10px] text-neutral-400 dark:border-neutral-600">icon</span>
+              )}
+            </div>
+            <span className="mt-1 block text-xs text-neutral-400">Paste a public image URL (PNG/ICO/SVG, square). Applies after saving &amp; a refresh.</span>
           </Field>
         </Section>
 
