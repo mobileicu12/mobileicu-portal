@@ -79,3 +79,15 @@ body {
 /* Primary dark buttons stay visible on dark bg */
 .dark .bg-neutral-900 { background-color: #2f2f37 !important; }
 .dark .file\:bg-neutral-100::file-selector-button { background-color: var(--subtle) !important; color: var(--ink) !important; }
+
+/* ---- Smooth scrolling + refined scrollbars site-wide ---- */
+html { scroll-behavior: smooth; }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  border-radius: 999px; border: 2px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 65%, transparent); background-clip: content-box; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
