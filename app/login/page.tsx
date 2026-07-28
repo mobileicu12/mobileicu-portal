@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { BUSINESS } from "@/lib/business";
 
 export default function LoginPage() {
   return (
@@ -69,7 +70,7 @@ function LoginForm() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-900 text-lg font-bold text-amber-400">
             MI
           </div>
-          <h1 className="text-xl font-semibold text-neutral-900">MOBILE ICU Portal</h1>
+          <h1 className="text-xl font-semibold text-neutral-900">{BUSINESS.name} Portal</h1>
           <p className="mt-1 text-sm text-neutral-500">Inventory &amp; sales control</p>
         </div>
 
@@ -93,7 +94,7 @@ function LoginForm() {
             <form onSubmit={submitId} className="space-y-3">
               <label className="block text-sm font-medium text-neutral-700">
                 Email
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={`mt-1 ${input}`} placeholder="you@mobileicu.co.uk" autoComplete="username" />
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={`mt-1 ${input}`} placeholder="you@yourbusiness.com" autoComplete="username" />
               </label>
               <label className="block text-sm font-medium text-neutral-700">
                 Password

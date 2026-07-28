@@ -4,6 +4,7 @@ import { listOrders } from "@/lib/orders";
 import { SEGMENTS } from "@/lib/segments";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { BRAND_SLUG } from "@/lib/brand";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="mobileicu-orders${idSet ? "-selected" : ""}-${stamp}.xlsx"`,
+        "Content-Disposition": `attachment; filename="${BRAND_SLUG}-orders${idSet ? "-selected" : ""}-${stamp}.xlsx"`,
       },
     });
   } catch (e) {

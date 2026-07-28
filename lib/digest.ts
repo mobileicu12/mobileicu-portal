@@ -7,6 +7,7 @@ import { getCustomer } from "./customers";
 import { getSettings, saveSettings } from "./settings";
 import { sendEmail, emailConfigured } from "./email";
 import { waConfigured, sendWhatsApp } from "./whatsapp";
+import { BUSINESS } from "./business";
 
 const gbp = (n: number) => `£${(isNaN(n) ? 0 : n).toFixed(2)}`;
 const num = (s: string) => parseFloat(s) || 0;
@@ -46,7 +47,7 @@ export async function runDailyDigest(opts: { force?: boolean } = {}): Promise<Di
     } else walkins.push(r);
   }
 
-  const bizName = settings.bizName || "MOBILE ICU";
+  const bizName = settings.bizName || BUSINESS.name;
   const canWa = await waConfigured();
   const canEmail = emailConfigured();
   let emailsSent = 0, whatsappsSent = 0;

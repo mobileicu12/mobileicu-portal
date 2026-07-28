@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { BUSINESS } from "@/lib/business";
 
 type Stats = {
   products: number;
@@ -34,7 +35,7 @@ export default function Dashboard() {
     <div className="px-8 py-7 pb-16">
       <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Dashboard</h1>
-        <p className="text-sm text-neutral-500">MOBILE ICU — control portal</p>
+        <p className="text-sm text-neutral-500">{BUSINESS.name} — control portal</p>
       </div>
 
       {notConfigured && (

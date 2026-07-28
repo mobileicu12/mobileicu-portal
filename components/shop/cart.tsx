@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { storageKey } from "@/lib/brand";
 
 export type CartItem = { variantId: string; numericId: string; title: string; price: number; image: string | null; qty: number };
 
@@ -20,7 +21,7 @@ type CartCtx = {
 };
 
 const Ctx = createContext<CartCtx | null>(null);
-const KEY = "micu_cart_v1";
+const KEY = storageKey("cart_v1");
 
 export function CartProvider({ trade = false, children }: { domain?: string; trade?: boolean; children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);

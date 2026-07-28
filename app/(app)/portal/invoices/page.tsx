@@ -12,6 +12,7 @@ import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useCanSeeFinance } from "@/lib/use-me";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
+import { BRAND_SLUG } from "@/lib/brand";
 
 const INV_COLUMNS: ColumnDef[] = [
   { key: "invoice", label: "Invoice", locked: true },
@@ -162,7 +163,7 @@ export default function InvoicesPage() {
     const reportRows: ReportRow[] = rows.map((r) => ({ invoiceNo: r.invoiceNo, name: r.name, customer: r.customer, staff: r.staff, segment: r.segment, status: r.status, total: r.total, createdAt: r.createdAt, payMethod: r.payMethod }));
     const doc = buildInvoicesReportDoc(reportRows, { rangeLabel: label, business: biz });
     const stamp = (dateFrom || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
-    setReport({ doc, filename: `mobileicu-report-${stamp}.pdf`, subtitle: `${rows.length} invoice(s) · ${label}` });
+    setReport({ doc, filename: `${BRAND_SLUG}-report-${stamp}.pdf`, subtitle: `${rows.length} invoice(s) · ${label}` });
   }
 
   // Download one PDF report PER CUSTOMER for the current filtered set, zipped and
@@ -196,7 +197,7 @@ export default function InvoicesPage() {
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `mobileicu-customer-reports-${stamp}.zip`; a.click();
+      a.href = url; a.download = `${BRAND_SLUG}-customer-reports-${stamp}.zip`; a.click();
       URL.revokeObjectURL(url);
       setFlash(`Bundled ${groups.size} customer report(s).`);
     } catch (e) { setError(e instanceof Error ? e.message : "ZIP failed"); } finally { setBusy(""); }

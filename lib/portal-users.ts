@@ -5,6 +5,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { adminGraphQL, ShopifyError } from "./shopify";
 import { ALL_PERMS, DEFAULT_MEMBER_PERMS, type PermKey } from "./permissions";
+import { OWNER_EMAILS_RAW } from "./brand";
 
 // Cache tag for the portal user list — busted on every write.
 const USERS_TAG = "portal-users";
@@ -41,8 +42,7 @@ export type PublicUser = {
 // Owner accounts (full access, can't be edited/removed as members). Supports a
 // comma-separated PORTAL_OWNER_EMAIL env; defaults include the two business owners.
 export const OWNER_EMAILS: Set<string> = new Set(
-  (process.env.PORTAL_OWNER_EMAIL || "mobileicu12@gmail.com,rudraxdevelopment98@gmail.com")
-    .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+  OWNER_EMAILS_RAW.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
 );
 // Primary owner (first) — used where a single canonical value is needed.
 export const OWNER_EMAIL = [...OWNER_EMAILS][0] || "mobileicu12@gmail.com";

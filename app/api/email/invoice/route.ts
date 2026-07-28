@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sendEmail, emailConfigured } from "@/lib/email";
 import { requirePermission } from "@/lib/guard";
+import { BUSINESS } from "@/lib/business";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -17,11 +18,11 @@ export async function POST(req: Request) {
   } | null;
   if (!body?.to || !body.to.includes("@")) return NextResponse.json({ error: "A valid recipient email is required." }, { status: 400 });
 
-  const subject = body.subject?.trim() || "Your invoice from MOBILE ICU";
+  const subject = body.subject?.trim() || `Your invoice from ${BUSINESS.name}`;
   const text = (body.message?.trim() || "Please find your invoice attached.").replace(/\n/g, "<br>");
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#14110e;font-size:14px;line-height:1.6">
     <p>${text}</p>
-    <p style="color:#6b655c;font-size:12px;margin-top:24px">MOBILE ICU · Wholesale phone &amp; laptop parts</p>
+    <p style="color:#6b655c;font-size:12px;margin-top:24px">${BUSINESS.name} · ${BUSINESS.tagline}</p>
   </div>`;
 
   try {

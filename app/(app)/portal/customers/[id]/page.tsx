@@ -11,6 +11,8 @@ import { loadBusiness } from "@/lib/business";
 import { SITE_URL } from "@/lib/site";
 import type { InvoiceDetail } from "@/lib/billing";
 import type { jsPDF } from "jspdf";
+import { BRAND_SLUG } from "@/lib/brand";
+import { BUSINESS } from "@/lib/business";
 
 type Payment = { date: string; amount: number; method: string; note: string };
 type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null; amountPaid: number; balance: number };
@@ -92,7 +94,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       }
       if (t.phone) {
         const list = t.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
-        const text = `Hi ${t.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${t.todayTotal.toFixed(2)}\nPaid today: £${t.todayPaid.toFixed(2)}\nToday's outstanding: £${t.todayOutstanding.toFixed(2)}\nTotal outstanding: £${t.accountOutstanding.toFixed(2)}`;
+        const text = `Hi ${t.name}, today's summary from ${BUSINESS.name}:\n${list}\n\nToday's total: £${t.todayTotal.toFixed(2)}\nPaid today: £${t.todayPaid.toFixed(2)}\nToday's outstanding: £${t.todayOutstanding.toFixed(2)}\nTotal outstanding: £${t.accountOutstanding.toFixed(2)}`;
         if (waConfigured) {
           const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: t.phone, message: `${text}\n\nView / download: ${shareUrl}` }) });
           if (wr.ok) sent += "WhatsApp";
@@ -315,7 +317,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       {outDoc && (
         <PdfPreviewModal
           doc={outDoc}
-          filename={`mobileicu-outstanding-${(c.name || "customer").replace(/[^\w-]/g, "_")}.pdf`}
+          filename={`${BRAND_SLUG}-outstanding-${(c.name || "customer").replace(/[^\w-]/g, "_")}.pdf`}
           title="Outstanding balance invoice"
           subtitle={`£${outstanding.toFixed(2)} due · ${c.name}`}
           onClose={() => setOutDoc(null)}

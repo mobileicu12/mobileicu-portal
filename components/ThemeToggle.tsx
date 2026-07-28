@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { storageKey } from "@/lib/brand";
 
 export default function ThemeToggle() {
   const [dark, setDark] = useState(false);
@@ -14,7 +15,7 @@ export default function ThemeToggle() {
     setDark(next);
     document.documentElement.classList.toggle("dark", next);
     try {
-      localStorage.setItem("mi-theme", next ? "dark" : "light");
+      localStorage.setItem(storageKey("theme"), next ? "dark" : "light");
     } catch {}
   }
 

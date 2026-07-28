@@ -1,6 +1,8 @@
 // Portal settings (business details for invoices, etc.) stored in a shop metafield.
 import { unstable_cache, revalidateTag } from "next/cache";
 import { adminGraphQL, ShopifyError } from "./shopify";
+import { BRAND_INVOICE_PREFIX } from "./brand";
+import { BUSINESS } from "./business";
 
 // Cache tag for portal settings — busted on every save.
 const SETTINGS_TAG = "portal-settings";
@@ -31,16 +33,16 @@ export type PortalSettings = {
 };
 
 export const DEFAULT_SETTINGS: PortalSettings = {
-  bizName: "MOBILE ICU",
-  tagline: "Phone & Laptop Parts — Wholesale",
+  bizName: BUSINESS.name,
+  tagline: BUSINESS.tagline,
   address: "United Kingdom",
-  email: "mobileicu12@gmail.com",
+  email: BUSINESS.email,
   phone: "",
-  website: "mobile-icu-cws.myshopify.com",
+  website: BUSINESS.website,
   vatNumber: "",
   bank: "",
   invoiceFooter: "Thank you for your business.",
-  invoicePrefix: "MICU",
+  invoicePrefix: BRAND_INVOICE_PREFIX,
   vatRate: 20,
   lowStock: 5,
   faviconUrl: "",
@@ -125,7 +127,7 @@ export const getSettings = unstable_cache(readSettings, ["portal-settings"], {
 // Backed by an atomically-read counter in a shop metafield.
 export async function nextInvoiceNumber(): Promise<string> {
   const settings = await getSettings();
-  const prefix = (settings.invoicePrefix || "MICU").trim();
+  const prefix = (settings.invoicePrefix || BRAND_INVOICE_PREFIX).trim();
   const d = await adminGraphQL<{ shop: { id: string; metafield: { value: string } | null } }>(
     `query { shop { id metafield(namespace: "${NS}", key: "invoice_counter") { value } } }`,
   );

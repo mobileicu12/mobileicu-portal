@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { buildInvoiceDoc, invoiceFilename } from "@/lib/invoice-pdf";
 import type { InvoiceDetail } from "@/lib/billing";
 import type { Business } from "@/lib/business";
+import { BUSINESS } from "@/lib/business";
 
 export default function InvoicePreviewModal({ invoice, business, onClose }: { invoice: InvoiceDetail; business: Business; onClose: () => void }) {
   const [url, setUrl] = useState("");
@@ -38,7 +39,7 @@ export default function InvoicePreviewModal({ invoice, business, onClose }: { in
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           to: to.trim(),
-          subject: `Invoice ${invoice.invoiceNo} from MOBILE ICU`,
+          subject: `Invoice ${invoice.invoiceNo} from ${BUSINESS.name}`,
           message: `Hi ${name},\n\nPlease find invoice ${invoice.invoiceNo} attached — total £${Number(invoice.total).toFixed(2)}${Number(invoice.balance) > 0.001 ? ` (£${Number(invoice.balance).toFixed(2)} due)` : ""}.\n\nThank you for your business.`,
           pdfBase64,
           filename: invoiceFilename(invoice, business),

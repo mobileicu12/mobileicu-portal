@@ -7,6 +7,7 @@ import { loadBusiness, type Business } from "@/lib/business";
 import { SITE_URL } from "@/lib/site";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import type { InvoiceDetail } from "@/lib/billing";
+import { BUSINESS } from "@/lib/business";
 
 const VAT_RATE = 0.2;
 
@@ -283,7 +284,7 @@ export default function InvoiceEditPage() {
 
   // WhatsApp click-to-send (opens WhatsApp with a prefilled message + invoice link).
   const waPhone = (meta.customerPhone || "").replace(/[^0-9]/g, "");
-  const waText = `Hi ${meta.customerName !== "—" ? meta.customerName : "there"}, here is your invoice ${meta.invoiceNo} from MOBILE ICU — total £${Number(meta.total).toFixed(2)}${Number(meta.balance) > 0.001 ? ` (£${Number(meta.balance).toFixed(2)} due)` : " (paid)"}.${shareUrl ? ` View / download it here: ${shareUrl}` : ""}`;
+  const waText = `Hi ${meta.customerName !== "—" ? meta.customerName : "there"}, here is your invoice ${meta.invoiceNo} from ${BUSINESS.name} — total £${Number(meta.total).toFixed(2)}${Number(meta.balance) > 0.001 ? ` (£${Number(meta.balance).toFixed(2)} due)` : " (paid)"}.${shareUrl ? ` View / download it here: ${shareUrl}` : ""}`;
   const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : null;
 
   return (

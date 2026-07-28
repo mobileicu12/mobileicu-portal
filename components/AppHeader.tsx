@@ -6,6 +6,7 @@ import ThemeToggle from "./ThemeToggle";
 import { downloadCustomerReportsZip } from "@/lib/customer-zip";
 import { useMe } from "@/lib/use-me";
 import { loadPortalSettings } from "@/lib/settings-client";
+import { BUSINESS } from "@/lib/business";
 
 const LABELS: { match: (p: string) => boolean; label: string }[] = [
   { match: (p) => p === "/portal", label: "Dashboard" },
@@ -74,7 +75,7 @@ export default function AppHeader() {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-8">
       <div className="flex items-center gap-2 text-sm">
-        <span className="font-semibold text-ink">MOBILE ICU</span>
+        <span className="font-semibold text-ink">{BUSINESS.name}</span>
         <span className="text-muted/50">/</span>
         <span className="text-muted">{label}</span>
       </div>

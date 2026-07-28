@@ -233,7 +233,7 @@ function AddTeammate({ onDone, onError }: { onDone: (d: { users: User[] }, msg: 
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Add teammate</h2>
       <div className="mt-3 grid max-w-2xl gap-3 sm:grid-cols-2">
         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Name<input className={`mt-1 ${inputCls}`} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Raj" /></label>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Email (their login ID)<input type="email" className={`mt-1 ${inputCls}`} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="raj@mobileicu.co.uk" /></label>
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Email (their login ID)<input type="email" className={`mt-1 ${inputCls}`} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@yourbusiness.com" /></label>
         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Phone<input className={`mt-1 ${inputCls}`} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+44 7911 123456" /></label>
         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Password (optional — for ID login; blank = Google-only)<input type="text" className={`mt-1 ${inputCls}`} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min 6 characters" /></label>
       </div>

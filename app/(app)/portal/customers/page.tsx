@@ -7,6 +7,7 @@ import { COUNTRIES, DEFAULT_COUNTRY } from "@/lib/countries";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
 import { loadBusiness } from "@/lib/business";
+import { BUSINESS } from "@/lib/business";
 
 type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[] };
 
@@ -100,7 +101,7 @@ export default function CustomersPage() {
         if (c.phone) {
           try {
             const list = c.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
-            const msg = `Hi ${c.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nThank you.`;
+            const msg = `Hi ${c.name}, today's summary from ${BUSINESS.name}:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nThank you.`;
             const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: msg }) });
             if (wr.ok) whats++;
           } catch { /* whatsapp optional */ }

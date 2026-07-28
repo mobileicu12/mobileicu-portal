@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { BRAND_SLUG } from "@/lib/brand";
 
 type ImportResult = {
   total: number;
@@ -27,7 +28,7 @@ export default function ImportExportPage() {
         throw new Error(d.error || "Export failed");
       }
       const blob = await res.blob();
-      downloadBlob(blob, `mobileicu-catalog-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      downloadBlob(blob, `${BRAND_SLUG}-catalog-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Export failed");
     } finally {

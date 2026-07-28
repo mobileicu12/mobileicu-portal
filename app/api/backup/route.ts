@@ -5,6 +5,7 @@ import { getSettings, getIntegrations } from "@/lib/settings";
 import { getAllProductsForExport, getCollectionsDetailed } from "@/lib/products";
 import { listCustomers, getCustomer } from "@/lib/customers";
 import { listInvoices } from "@/lib/billing";
+import { BRAND_SLUG } from "@/lib/brand";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -35,7 +36,7 @@ export async function GET() {
     }
 
     const backup = {
-      app: "mobileicu-portal",
+      app: `${BRAND_SLUG}-portal`,
       version: 1,
       exportedAt: new Date().toISOString(),
       counts: { products: products.length, collections: collections.length, customers: detailed.length, invoices: invoices.length },
@@ -53,7 +54,7 @@ export async function GET() {
     return new NextResponse(JSON.stringify(backup, null, 2), {
       headers: {
         "Content-Type": "application/json",
-        "Content-Disposition": `attachment; filename="mobileicu-backup-${stamp}.json"`,
+        "Content-Disposition": `attachment; filename="${BRAND_SLUG}-backup-${stamp}.json"`,
       },
     });
   } catch (e) {

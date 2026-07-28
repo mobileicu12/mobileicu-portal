@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { EXPORT_COLUMNS } from "@/lib/products";
+import { BRAND_SLUG } from "@/lib/brand";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,7 @@ export async function GET() {
   return new NextResponse(buffer, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="mobileicu-import-template.xlsx"`,
+      "Content-Disposition": `attachment; filename="${BRAND_SLUG}-import-template.xlsx"`,
     },
   });
 }

@@ -6,11 +6,13 @@ import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf
 import { loadBusiness } from "@/lib/business";
 import { SITE_URL } from "@/lib/site";
 import { useMe } from "@/lib/use-me";
+import { storageKey } from "@/lib/brand";
+import { BUSINESS } from "@/lib/business";
 
 type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[]; shareUrl: string };
 
 const dateKey = () => new Date().toISOString().slice(0, 10);
-const doneKey = (cid: string) => `micu:done:${dateKey()}:${cid.split("/").pop()}`;
+const doneKey = (cid: string) => storageKey(`done:${dateKey()}:${cid.split("/").pop()}`);
 function isDone(cid: string) { try { return localStorage.getItem(doneKey(cid)) === "1"; } catch { return false; } }
 function markDone(cid: string) { try { localStorage.setItem(doneKey(cid), "1"); } catch { /* ignore */ } }
 
@@ -100,7 +102,7 @@ export default function TodaySendDrawer() {
     if (c.phone) {
       const list = c.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
       const link = `${SITE_URL}${c.shareUrl}`;
-      const text = `Hi ${c.name}, today's summary from MOBILE ICU:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nView / download: ${link}`;
+      const text = `Hi ${c.name}, today's summary from ${BUSINESS.name}:\n${list}\n\nToday's total: £${c.todayTotal.toFixed(2)}\nPaid today: £${c.todayPaid.toFixed(2)}\nToday's outstanding: £${c.todayOutstanding.toFixed(2)}\nTotal outstanding: £${c.accountOutstanding.toFixed(2)}\n\nView / download: ${link}`;
       if (waOn) {
         try { await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: text }) }); } catch { /* ignore */ }
       } else {

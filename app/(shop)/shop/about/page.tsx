@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BUSINESS } from "@/lib/business";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export default function AboutPage() {
       <section className="border-b border-neutral-200 bg-gradient-to-b from-neutral-50 to-white">
         <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6">
           <span className="inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">Since 2005</span>
-          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-neutral-900">About MOBILE ICU</h1>
+          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-neutral-900">About {BUSINESS.name}</h1>
           <p className="mt-4 text-lg text-neutral-600">A UK wholesaler of phone &amp; laptop accessories and repair parts — trusted by retailers, repair shops and traders for genuine wholesale pricing and fast dispatch.</p>
         </div>
       </section>

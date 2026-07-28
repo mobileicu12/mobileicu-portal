@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { CHANNELS } from "@/lib/channels";
+import { STORE_HANDLE, storageKey } from "@/lib/brand";
 
-const STORE = "mobile-icu-cws";
-const LS_KEY = "mi-channels-connected";
+const STORE = STORE_HANDLE;
+const LS_KEY = storageKey("channels-connected");
 
 export default function ChannelsPage() {
   const [connected, setConnected] = useState<string[]>([]);
