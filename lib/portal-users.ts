@@ -2,8 +2,12 @@
 // Teammates can sign in with Google OR an owner-issued ID (email) + password,
 // and the owner grants each teammate access to specific features only.
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { adminGraphQL, ShopifyError } from "./shopify";
 import { ALL_PERMS, DEFAULT_MEMBER_PERMS, type PermKey } from "./permissions";
+
+// Cache tag for the portal user list — busted on every write.
+const USERS_TAG = "portal-users";
 
 export { PERMISSIONS, ALL_PERMS, DEFAULT_MEMBER_PERMS, type PermKey } from "./permissions";
 
@@ -69,8 +73,9 @@ async function shopGid(): Promise<string> {
   return d.shop.id;
 }
 
-// Raw list including secrets — server-only.
-export async function getPortalUsers(): Promise<PortalUser[]> {
+// Raw list including secrets — server-only. Always hits Shopify: use this on any
+// path that writes, or that must not act on a stale list (password checks).
+export async function readPortalUsers(): Promise<PortalUser[]> {
   const d = await adminGraphQL<{ shop: { metafield: { value: string } | null } }>(
     `query { shop { metafield(namespace: "${NS}", key: "${KEY}") { value } } }`,
   );
@@ -100,6 +105,14 @@ export async function getPortalUsers(): Promise<PortalUser[]> {
   }
   return list.map((u) => (OWNER_EMAILS.has(u.email) ? { ...u, role: "owner", permissions: ALL_PERMS } : u));
 }
+
+// Cached read for the hot path. /api/me is hit by the nav on every page load,
+// and the team list is read on each portal request — this keeps that off Shopify.
+// Invalidated immediately whenever the user list is saved (see `save`).
+export const getPortalUsers = unstable_cache(readPortalUsers, ["portal-users"], {
+  revalidate: 300,
+  tags: [USERS_TAG],
+});
 
 export function toPublic(u: PortalUser): PublicUser {
   return {
@@ -147,7 +160,10 @@ export function permsFor(u: PortalUser | null): PermKey[] {
 
 export async function verifyPortalPassword(email: string, password: string): Promise<PortalUser | null> {
   if (!email || !password) return null;
-  const u = await getPortalUser(email);
+  // Deliberately uncached: a password the owner just set must work immediately,
+  // and one they just revoked must stop working immediately.
+  const e = email.toLowerCase();
+  const u = (await readPortalUsers()).find((x) => x.email === e) ?? null;
   if (!u || !u.passwordHash) return null;
   return verifyHash(password, u.passwordHash) ? u : null;
 }
@@ -169,6 +185,8 @@ async function save(users: PortalUser[]): Promise<void> {
     { mf: [{ ownerId, namespace: NS, key: KEY, type: "json", value: JSON.stringify(clean) }] },
   );
   if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+  // Permission changes must show up on the very next request, not in 5 minutes.
+  try { revalidateTag(USERS_TAG, { expire: 0 }); } catch { /* outside a request scope (cron) — fine */ }
 }
 
 export type AddUserInput = { email: string; name?: string; phone?: string; password?: string; permissions?: PermKey[] };
@@ -179,7 +197,7 @@ export async function addPortalUser(input: AddUserInput | string): Promise<Publi
   if (!e.includes("@") || e.length < 5) throw new ShopifyError("Enter a valid email address.");
   if (OWNER_EMAILS.has(e)) throw new ShopifyError("The owner already has full access.");
   if (data.password && data.password.length < 6) throw new ShopifyError("Password must be at least 6 characters.");
-  const users = await getPortalUsers();
+  const users = await readPortalUsers();
   const existing = users.find((u) => u.email === e);
   if (existing) {
     if (data.name !== undefined) existing.name = data.name.trim() || undefined;
@@ -206,7 +224,7 @@ export type UpdateUserInput = { email?: string; name?: string; phone?: string; p
 export async function updatePortalUser(email: string, patch: UpdateUserInput): Promise<PublicUser[]> {
   const e = email.trim().toLowerCase();
   if (OWNER_EMAILS.has(e)) throw new ShopifyError("The owner's access can't be changed here.");
-  const users = await getPortalUsers();
+  const users = await readPortalUsers();
   const u = users.find((x) => x.email === e);
   if (!u) throw new ShopifyError("Teammate not found.");
   // Change of login email (re-key). Must be a valid, unused, non-owner address.
@@ -237,7 +255,7 @@ export async function updatePortalUser(email: string, patch: UpdateUserInput): P
 export async function changeOwnPassword(email: string, oldPassword: string, newPassword: string): Promise<void> {
   const e = email.trim().toLowerCase();
   if (!newPassword || newPassword.length < 6) throw new ShopifyError("New password must be at least 6 characters.");
-  const users = await getPortalUsers();
+  const users = await readPortalUsers();
   const u = users.find((x) => x.email === e);
   if (!u) throw new ShopifyError("Account not found.");
   // If they already have a password, verify the old one first.
@@ -249,7 +267,7 @@ export async function changeOwnPassword(email: string, oldPassword: string, newP
 export async function removePortalUser(email: string): Promise<PublicUser[]> {
   const e = email.trim().toLowerCase();
   if (OWNER_EMAILS.has(e)) throw new ShopifyError("You can't remove the owner.");
-  const users = (await getPortalUsers()).filter((u) => u.email !== e);
+  const users = (await readPortalUsers()).filter((u) => u.email !== e);
   await save(users);
   return getPublicUsers();
 }

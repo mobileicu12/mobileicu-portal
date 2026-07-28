@@ -4,16 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { NAV, visibleNav, groupedNav, type Me } from "@/lib/nav";
+import { NAV, visibleNav, groupedNav } from "@/lib/nav";
+import { useMe } from "@/lib/use-me";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [me, setMe] = useState<Me>(null);
+  const me = useMe();
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    fetch("/api/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
     try { setCollapsed(localStorage.getItem("sidebar:collapsed") === "1"); } catch { /* ignore */ }
   }, []);
 

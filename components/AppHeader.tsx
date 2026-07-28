@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import { downloadCustomerReportsZip } from "@/lib/customer-zip";
 import { useMe } from "@/lib/use-me";
+import { loadPortalSettings } from "@/lib/settings-client";
 
 const LABELS: { match: (p: string) => boolean; label: string }[] = [
   { match: (p) => p === "/portal", label: "Dashboard" },
@@ -31,7 +32,12 @@ export default function AppHeader() {
   const canSeeReports = !!me && (me.role === "owner" || me.permissions.includes("invoices"));
   const [tappedIn, setTappedIn] = useState(false);
   useEffect(() => {
-    fetch("/api/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => setTappedIn(!!d?.me?.tappedIn)).catch(() => {});
+    // Only ask about shifts when the time-clock is actually switched on —
+    // otherwise this was a wasted Shopify round trip on every page load.
+    loadPortalSettings().then((s) => {
+      if (!s?.requireTapIn) return;
+      fetch("/api/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => setTappedIn(!!d?.me?.tappedIn)).catch(() => {});
+    });
   }, []);
   async function tapOut() {
     if (!confirm("Tap out / end your shift now?")) return;
@@ -43,10 +49,10 @@ export default function AppHeader() {
   const [flash, setFlash] = useState("");
   const hourRef = useRef(21);
   useEffect(() => {
-    fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      const h = Number(d?.settings?.reportButtonHour);
+    loadPortalSettings().then((s) => {
+      const h = Number(s?.reportButtonHour);
       if (Number.isFinite(h) && h >= 0 && h <= 23) hourRef.current = h;
-    }).catch(() => {});
+    });
     const check = () => setAfterNine(new Date().getHours() >= hourRef.current);
     check();
     const t = setInterval(check, 5 * 60 * 1000);

@@ -5,6 +5,7 @@ import { getInvoiceDetail } from "@/lib/billing";
 import { waConfigured } from "@/lib/whatsapp";
 import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { mapPool } from "@/lib/concurrency";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -32,9 +33,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const num = (s: string) => parseFloat(s) || 0;
     let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
     const bills = [];
-    for (const i of todaysInv) {
-      let inv;
-      try { inv = await getInvoiceDetail(i.id); } catch { continue; }
+    // Fetched a few at a time — one sequential round trip per bill made this
+    // endpoint scale badly for a customer with a busy day.
+    const details = await mapPool(todaysInv, 4, async (i) => {
+      try { return await getInvoiceDetail(i.id); } catch { return null; }
+    });
+    for (const inv of details) {
+      if (!inv) continue;
       todayTotal += num(inv.total);
       todayPaid += inv.amountPaid;
       todayOutstanding += inv.balance;

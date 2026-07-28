@@ -1,6 +1,5 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { unstable_cache } from "next/cache";
 import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav";
 import AppHeader from "@/components/AppHeader";
@@ -9,12 +8,11 @@ import TodaySendDrawer from "@/components/TodaySendDrawer";
 import { getSettings } from "@/lib/settings";
 import { shopifyConfigured } from "@/lib/shopify";
 
-// Cache the tap-in flag so the gate doesn't hit Shopify on every page load.
-const cachedRequireTapIn = unstable_cache(
-  async () => { try { return (await getSettings()).requireTapIn; } catch { return false; } },
-  ["require-tap-in-flag"],
-  { revalidate: 60 },
-);
+// getSettings is cached at source (lib/settings), so the gate doesn't hit
+// Shopify on every page load.
+async function requireTapIn(): Promise<boolean> {
+  try { return (await getSettings()).requireTapIn; } catch { return false; }
+}
 
 export default async function AppLayout({
   children,
@@ -29,7 +27,7 @@ export default async function AppLayout({
     if (shopifyConfigured() && path.startsWith("/portal") && path !== "/portal/tap-in") {
       const today = new Date().toISOString().slice(0, 10);
       const tappedIn = (await cookies()).get("mi_tapin")?.value === today;
-      if (!tappedIn && (await cachedRequireTapIn())) needTapIn = true;
+      if (!tappedIn && (await requireTapIn())) needTapIn = true;
     }
   }
   if (needTapIn) redirect(`/portal/tap-in?from=${encodeURIComponent(fromPath)}`); // redirect() must run outside try/catch

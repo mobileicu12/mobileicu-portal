@@ -5,6 +5,7 @@ import { getCustomer } from "@/lib/customers";
 import { waConfigured } from "@/lib/whatsapp";
 import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { mapPool } from "@/lib/concurrency";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -29,20 +30,27 @@ export async function GET() {
     }
 
     const num = (s: string) => parseFloat(s) || 0;
-    const out: unknown[] = [];
 
-    for (const [cid, rows] of byCustomer) {
+    // Customers, then each customer's bills, are fetched a few at a time rather
+    // than strictly one after another — this endpoint used to take one Shopify
+    // round trip per customer PLUS one per bill, all sequential, which is what
+    // made the "Today's sending" drawer sit there spinning.
+    const entries = [...byCustomer.entries()];
+    const built = await mapPool(entries, 4, async ([cid, rows]) => {
       let detail;
-      try { detail = await getCustomer(cid); } catch { continue; }
+      try { detail = await getCustomer(cid); } catch { return null; }
       const invoiceDue = detail.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
       const ledgerPaid = detail.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
       const accountOutstanding = Math.max(0, (detail.openingBalance || 0) + invoiceDue - ledgerPaid);
 
-      const bills = [];
+      const details = await mapPool(rows, 4, async (r) => {
+        try { return await getInvoiceDetail(r.id); } catch { return null; }
+      });
+
       let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
-      for (const r of rows) {
-        let inv;
-        try { inv = await getInvoiceDetail(r.id); } catch { continue; }
+      const bills = [];
+      for (const inv of details) {
+        if (!inv) continue;
         todayTotal += num(inv.total);
         todayPaid += inv.amountPaid;
         todayOutstanding += inv.balance;
@@ -59,7 +67,7 @@ export async function GET() {
       }
 
       const numId = cid.split("/").pop() || cid;
-      out.push({
+      return {
         id: cid,
         name: detail.name || detail.company || "Customer",
         email: detail.email || "",
@@ -67,8 +75,9 @@ export async function GET() {
         todayTotal, todayPaid, todayOutstanding, accountOutstanding,
         bills,
         shareUrl: statementSharePath(numId, start.toISOString().slice(0, 10)),
-      });
-    }
+      };
+    });
+    const out = built.filter(Boolean);
 
     return NextResponse.json({ date: start.toISOString().slice(0, 10), waConfigured: await waConfigured(), customers: out });
   } catch (e) {
