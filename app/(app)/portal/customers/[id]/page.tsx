@@ -538,12 +538,13 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
       const settled = (d.allocation?.settled ?? []) as { name: string }[];
+      const partial = d.allocation?.partial as { name: string; amount: number } | null | undefined;
       const credit = Number(d.allocation?.creditedToAccount ?? 0);
-      setOkMsg(
-        settled.length
-          ? `Auto-paid ${settled.length} invoice(s): ${settled.map((s) => s.name).join(", ")}${credit > 0.001 ? ` · £${credit.toFixed(2)} on account` : ""}`
-          : "Payment recorded on account.",
-      );
+      const parts: string[] = [];
+      if (settled.length) parts.push(`paid ${settled.length} bill(s): ${settled.map((s) => s.name).join(", ")}`);
+      if (partial) parts.push(`£${partial.amount.toFixed(2)} part-paid on ${partial.name}`);
+      if (credit > 0.001) parts.push(`£${credit.toFixed(2)} on account`);
+      setOkMsg(parts.length ? `Applied — ${parts.join(" · ")}.` : "Payment recorded.");
       setAmount("");
       setNote("");
       onAdded();
