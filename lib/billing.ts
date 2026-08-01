@@ -15,8 +15,10 @@ export type VariantHit = {
   tiers: TierPrices; // channel prices (wholesale/shop/ebay/amazon) — blank = use base price
 };
 
-export async function searchVariants(q: string): Promise<VariantHit[]> {
+export async function searchVariants(q: string, opts: { tag?: string } = {}): Promise<VariantHit[]> {
   if (!q.trim()) return [];
+  // Optionally scope to a tag (e.g. in-shop till items only) to cut POS clutter.
+  const query = opts.tag ? `${q.trim()} AND tag:'${opts.tag.replace(/'/g, "")}'` : q;
   const data = await adminGraphQL<{
     products: {
       edges: {
@@ -55,7 +57,7 @@ export async function searchVariants(q: string): Promise<VariantHit[]> {
         } }
       }
     }`,
-    { q },
+    { q: query },
   );
 
   const hits: VariantHit[] = [];

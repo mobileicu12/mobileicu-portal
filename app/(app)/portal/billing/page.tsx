@@ -125,6 +125,7 @@ export default function BillingPage() {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [tillOnly, setTillOnly] = useState(false); // POS: search only in-shop till items
   // Barcode scanning (USB/Bluetooth keyboard-wedge input + camera).
   const [scanCode, setScanCode] = useState("");
   const [scanMsg, setScanMsg] = useState("");
@@ -174,7 +175,7 @@ export default function BillingPage() {
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/variants?q=${encodeURIComponent(value)}`);
+        const res = await fetch(`/api/variants?q=${encodeURIComponent(value)}${tillOnly ? "&scope=till" : ""}`);
         const d = await res.json();
         setHits(d.hits ?? []);
       } finally {
@@ -447,11 +448,15 @@ export default function BillingPage() {
           </div>
           {scanMsg && <p className={`mb-2 text-xs font-medium ${scanMsg.startsWith("✓") ? "text-emerald-600" : "text-amber-600"}`}>{scanMsg}</p>}
 
+          <label className="mb-2 flex items-center gap-2 text-xs font-medium text-neutral-600">
+            <input type="checkbox" checked={tillOnly} onChange={(e) => { setTillOnly(e.target.checked); if (q.trim()) onSearch(q); }} className="h-4 w-4 accent-amber-500" />
+            🏪 In-shop till items only <span className="font-normal text-neutral-400">(hides the model-by-model online listings)</span>
+          </label>
           <div className="relative">
             <input
               value={q}
               onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search product or SKU to add…"
+              placeholder={tillOnly ? "Search in-shop till items…" : "Search product or SKU to add…"}
               className="w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
             />
             {(hits.length > 0 || searching) && (
