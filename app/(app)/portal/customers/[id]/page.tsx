@@ -168,6 +168,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     if (!confirm("Revoke (delete) this payment? The customer's outstanding will be recalculated.")) return;
     await paymentAction({ action: "removePayment", index });
   }
+  async function reapplyCredits() {
+    if (!confirm("Move all 'on account' credit onto this customer's open bills? Coverable bills get marked paid; the rest is part-paid. Outstanding total stays the same.")) return;
+    await paymentAction({ action: "reapplyCredits" });
+  }
 
   return (
     <div className="px-8 py-7">
@@ -284,6 +288,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Payment history</h2>
               <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10">Received £{shownPaymentsTotal.toFixed(2)}</span>
             </div>
+            {c.ledger.payments.length > 0 && outstanding > 0.001 && (
+              <button
+                onClick={reapplyCredits}
+                title="Move this on-account credit onto the customer's open bills (marks coverable bills paid, part-pays the rest)"
+                className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:bg-amber-500/10"
+              >
+                ↻ Re-apply account credit to bills
+              </button>
+            )}
             {methods.length > 1 && (
               <div className="mt-2 flex flex-wrap items-center gap-1">
                 <button onClick={() => setPayMethod("all")} className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${payMethod === "all" ? "bg-neutral-900 text-white" : "border border-neutral-300 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"}`}>All</button>

@@ -507,6 +507,17 @@ export async function allocatePayment(
   return { ledger, allocation: { settled, partial, creditedToAccount: leftover } };
 }
 
+// Move any "on account" credit onto the customer's open bills (fixes credits that
+// were recorded before per-bill allocation existed). Clears the ledger, then
+// re-allocates the total across bills; genuine surplus returns to the account.
+export async function reapplyAccountCredits(customerId: string): Promise<{ ledger: Ledger; allocation: PaymentAllocation }> {
+  const ledger = await readLedger(customerId);
+  const total = ledger.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  if (total <= 0.001) return { ledger, allocation: { settled: [], partial: null, creditedToAccount: 0 } };
+  await writeLedger(customerId, { ...ledger, payments: [] });
+  return allocatePayment(customerId, total, { method: ledger.payments[0]?.method || "cash", note: "Re-applied account credit" });
+}
+
 // Revoke (delete) an account payment by its index in the stored ledger.
 export async function removePayment(customerId: string, index: number): Promise<Ledger> {
   const ledger = await readLedger(customerId);
