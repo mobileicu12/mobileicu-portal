@@ -15,6 +15,8 @@ function money(n: number) {
   return `£${(isNaN(n) ? 0 : n).toFixed(2)}`;
 }
 
+export type StatementPayment = { date: string; amount: number; method: string; note?: string };
+
 export type StatementInvoice = {
   name: string;
   createdAt: string;
@@ -22,9 +24,8 @@ export type StatementInvoice = {
   total: string;
   amountPaid: number;
   balance: number;
+  paymentEntries?: StatementPayment[]; // payments recorded against this bill
 };
-
-export type StatementPayment = { date: string; amount: number; method: string; note?: string };
 
 export type StatementInput = {
   customerName: string;
@@ -73,29 +74,42 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
   const to = [s.company, s.email, s.phone].filter(Boolean) as string[];
   to.forEach((line, i) => doc.text(line, pageW - M, y + 29 + i * 12, { align: "right" }));
 
-  // Build a chronological account ledger: opening balance, invoices (net of any
-  // payment recorded on the invoice) and on-account payments — with a running balance.
+  // Build a true chronological account ledger: opening balance, each invoice as a
+  // full charge, and every payment (recorded against a bill OR on account) as its
+  // own dated credit line — with a running balance.
   const opening = s.openingBalance || 0;
-  type Entry = { date: number; row: [string, string, string, string, string]; delta: number };
+  type Entry = { date: number; seq: number; row: [string, string, string, string, string]; delta: number };
   const entries: Entry[] = [];
+  const d = (t: string) => new Date(t).toLocaleDateString("en-GB");
 
   for (const inv of s.invoices) {
     const charge = parseFloat(inv.total) || 0;
-    const delta = charge - inv.amountPaid; // completed → 0, draft → outstanding
+    // Full charge on the invoice date (payments are listed separately below).
     entries.push({
       date: +new Date(inv.createdAt),
-      row: [new Date(inv.createdAt).toLocaleDateString("en-GB"), inv.name, inv.status === "COMPLETED" ? "Paid" : "Draft", money(charge), money(inv.amountPaid)],
-      delta,
+      seq: 0,
+      row: [d(inv.createdAt), inv.name, inv.status === "COMPLETED" ? "Invoice (paid)" : "Invoice", money(charge), ""],
+      delta: charge,
     });
+    // Each payment made against this bill, itemised on its own date.
+    for (const p of inv.paymentEntries || []) {
+      entries.push({
+        date: +new Date(p.date),
+        seq: 1, // sort a same-day payment after its charge
+        row: [d(p.date), `Payment — ${inv.name}${p.method && p.method !== "paid" ? ` · ${p.method}` : ""}`, "Payment", "", money(p.amount)],
+        delta: -(Number(p.amount) || 0),
+      });
+    }
   }
   for (const p of s.payments || []) {
     entries.push({
       date: +new Date(p.date),
-      row: [new Date(p.date).toLocaleDateString("en-GB"), `Payment received — ${p.method}`, "Credit", "", money(p.amount)],
+      seq: 1,
+      row: [d(p.date), `Payment received — ${p.method}`, "On account", "", money(p.amount)],
       delta: -(Number(p.amount) || 0),
     });
   }
-  entries.sort((a, b) => a.date - b.date);
+  entries.sort((a, b) => a.date - b.date || a.seq - b.seq);
 
   let running = opening;
   const body: string[][] = [];
