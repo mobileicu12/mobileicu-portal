@@ -7,14 +7,15 @@ import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(req: Request) {
   const denied = await requirePermission("inventory");
   if (denied) return denied;
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "Shopify not configured." }, { status: 503 });
   }
   try {
-    const rows = await getAllProductsForExport();
+    const till = new URL(req.url).searchParams.get("scope") === "till";
+    const rows = await getAllProductsForExport(till ? "tag:'channel:till'" : undefined);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Products");
     ws.columns = EXPORT_COLUMNS.map((c) => ({ header: c.header, key: c.key, width: c.width }));
@@ -29,7 +30,7 @@ export async function GET() {
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="mobileicu-catalog-${stamp}.xlsx"`,
+        "Content-Disposition": `attachment; filename="mobileicu-${till ? "till" : "catalog"}-${stamp}.xlsx"`,
       },
     });
   } catch (e) {

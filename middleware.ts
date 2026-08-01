@@ -14,6 +14,7 @@ const PUBLIC_PREFIXES = ["/login", "/api/login", "/api/auth", "/api/me", "/shop"
 // signed-in teammate (Dashboard, Add product, Import/Export, Channels).
 const GATE: { prefix: string; perm: string }[] = [
   { prefix: "/portal/inventory", perm: "inventory" },
+  { prefix: "/portal/till", perm: "inventory" },
   { prefix: "/portal/collections", perm: "collections" },
   { prefix: "/portal/customers", perm: "customers" },
   { prefix: "/portal/billing", perm: "billing" },
