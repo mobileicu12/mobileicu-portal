@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/guard";
 import { getCustomer } from "@/lib/customers";
 import { getInvoiceDetail } from "@/lib/billing";
+import { mapLimit } from "@/lib/async";
 import { waConfigured } from "@/lib/whatsapp";
 import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
@@ -30,11 +31,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const todaysInv = c.invoices.filter((i) => new Date(i.createdAt) >= start);
 
     const num = (s: string) => parseFloat(s) || 0;
+    // Fetch each bill's itemised detail in parallel (bounded) instead of one-by-one.
+    const details = await mapLimit(todaysInv, 5, (i) => getInvoiceDetail(i.id).catch(() => null));
     let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
     const bills = [];
-    for (const i of todaysInv) {
-      let inv;
-      try { inv = await getInvoiceDetail(i.id); } catch { continue; }
+    for (const inv of details) {
+      if (!inv) continue;
       todayTotal += num(inv.total);
       todayPaid += inv.amountPaid;
       todayOutstanding += inv.balance;
