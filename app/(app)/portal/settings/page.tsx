@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 
 type Settings = {
   bizName: string;
@@ -39,7 +39,48 @@ export default function SettingsPage() {
   const [waToken, setWaToken] = useState("");
   const [waSaving, setWaSaving] = useState(false);
   const [digestBusy, setDigestBusy] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
+
+  async function restoreBackup(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    let snapshot: unknown;
+    try {
+      snapshot = JSON.parse(await file.text());
+    } catch {
+      setError("That file isn't valid JSON — pick a MOBILE ICU backup file.");
+      return;
+    }
+    const typed = window.prompt(
+      "Restore will overwrite settings and every customer's ledger / opening balance from this backup. Products, customers and orders in Shopify are NOT changed. The current state is copied to Drive first.\n\nType RESTORE to confirm:",
+    );
+    if (typed !== "RESTORE") {
+      if (typed !== null) setError("Restore cancelled — you didn't type RESTORE.");
+      return;
+    }
+    setRestoreBusy(true);
+    setError("");
+    setMsg("");
+    try {
+      const res = await fetch("/api/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snapshot),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Restore failed.");
+      const r = d.restored;
+      setMsg(
+        `Restored: ${r.customersRestored} customer ledger${r.customersRestored === 1 ? "" : "s"}${r.customersFailed ? `, ${r.customersFailed} skipped (no longer in Shopify)` : ""}${r.settings ? ", settings" : ""}.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Restore failed.");
+    } finally {
+      setRestoreBusy(false);
+    }
+  }
 
   const loadShifts = () => fetch("/api/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => d && setShifts(d.today ?? [])).catch(() => {});
 
@@ -196,6 +237,13 @@ export default function SettingsPage() {
           <p className="text-xs text-neutral-500">Download a full snapshot of everything — products, collections, customers (with balances &amp; ledgers), invoices and settings — as one JSON file. Keep it safe; if anything goes wrong you can restore from it.</p>
           <a href="/api/backup" className="inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">⬇ Download full backup (.json)</a>
           <p className="text-xs text-neutral-400">Products &amp; collections can be re-imported from Excel. Customer balances and invoice history are preserved in the file for assisted restore.</p>
+          <div className="mt-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+            <p className="text-xs text-neutral-500">Restore from a backup: overwrites <strong>settings and every customer&apos;s ledger / opening balance</strong> from the file. Products, customers and orders stay in Shopify and are not touched. Current state is copied to Drive first.</p>
+            <label className="mt-2 inline-block">
+              <input type="file" accept="application/json,.json" className="hidden" onChange={restoreBackup} disabled={restoreBusy} />
+              <span className="inline-block cursor-pointer rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100">{restoreBusy ? "Restoring…" : "⟲ Restore ledgers & settings…"}</span>
+            </label>
+          </div>
         </Section>
 
         <Section title="Staff time-clock (tap in / out)">
