@@ -37,6 +37,10 @@ export type CustomerDetail = CustomerSummary & {
     invoiceUrl: string | null;
     amountPaid: number;
     balance: number;
+    // Individual payments recorded against this bill (partial payments, or a
+    // synthetic "paid in full" record for completed invoices). Used to keep the
+    // customer's payment history visible after money is applied to bills.
+    paymentEntries: Payment[];
   }[];
 };
 
@@ -354,17 +358,34 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     ledger,
     invoices: dd.draftOrders.edges.map((e) => {
       const total = parseFloat(e.node.totalPrice) || 0;
+      // Any partial payments recorded against the invoice (date/amount/method).
+      let paymentEntries: Payment[] = [];
+      if (e.node.payments?.value) {
+        try {
+          const arr = JSON.parse(e.node.payments.value);
+          if (Array.isArray(arr)) {
+            paymentEntries = arr.map((p: { date?: string; amount?: number; method?: string; note?: string }) => ({
+              date: p.date || e.node.createdAt,
+              amount: Number(p.amount) || 0,
+              method: p.method || "cash",
+              note: p.note || "",
+            }));
+          }
+        } catch { /* ignore */ }
+      }
       // A COMPLETED draft order is a finished sale — paid in full (money taken at
-      // the till / via the order). Otherwise use any partial payments recorded
-      // against the invoice.
+      // the till / via the order). Otherwise use any partial payments recorded.
       let amountPaid = 0;
       if (e.node.status === "COMPLETED") {
         amountPaid = total;
-      } else if (e.node.payments?.value) {
-        try {
-          const arr = JSON.parse(e.node.payments.value);
-          if (Array.isArray(arr)) amountPaid = arr.reduce((s: number, p: { amount?: number }) => s + (Number(p.amount) || 0), 0);
-        } catch { /* ignore */ }
+        // Show the settlement in payment history: keep any recorded partials and
+        // add a synthetic record for the remainder taken at completion.
+        const recorded = paymentEntries.reduce((s, p) => s + p.amount, 0);
+        if (recorded < total - 0.001) {
+          paymentEntries = [...paymentEntries, { date: e.node.createdAt, amount: Math.round((total - recorded) * 100) / 100, method: "paid", note: "Marked paid" }];
+        }
+      } else {
+        amountPaid = paymentEntries.reduce((s, p) => s + p.amount, 0);
       }
       const balance = Math.max(0, total - amountPaid);
       return {
@@ -376,6 +397,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         invoiceUrl: e.node.invoiceUrl,
         amountPaid,
         balance,
+        paymentEntries,
       };
     }),
   };
