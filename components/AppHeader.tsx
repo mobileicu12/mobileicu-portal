@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import { downloadCustomerReportsZip } from "@/lib/customer-zip";
 import { useMe } from "@/lib/use-me";
-import { loadPortalSettings } from "@/lib/settings-client";
 import { BUSINESS } from "@/lib/business";
 
 const LABELS: { match: (p: string) => boolean; label: string }[] = [
@@ -31,15 +30,15 @@ export default function AppHeader() {
   // Only for owner / teammates with invoice access (it contains customer money data).
   const me = useMe();
   const canSeeReports = !!me && (me.role === "owner" || me.permissions.includes("invoices"));
+
+  // Tap-out button — only wired up when the tap-in system is enabled. Disabled by
+  // default so the header does NOT hit /api/attendance (Shopify) on every page.
+  const tapInOn = process.env.NEXT_PUBLIC_ENABLE_TAPIN === "1";
   const [tappedIn, setTappedIn] = useState(false);
   useEffect(() => {
-    // Only ask about shifts when the time-clock is actually switched on —
-    // otherwise this was a wasted Shopify round trip on every page load.
-    loadPortalSettings().then((s) => {
-      if (!s?.requireTapIn) return;
-      fetch("/api/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => setTappedIn(!!d?.me?.tappedIn)).catch(() => {});
-    });
-  }, []);
+    if (!tapInOn) return;
+    fetch("/api/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => setTappedIn(!!d?.me?.tappedIn)).catch(() => {});
+  }, [tapInOn]);
   async function tapOut() {
     if (!confirm("Tap out / end your shift now?")) return;
     await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "out" }) }).catch(() => {});
@@ -48,13 +47,9 @@ export default function AppHeader() {
   const [afterNine, setAfterNine] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState("");
-  const hourRef = useRef(21);
+  // "Today's reports" shows after this hour (default 21). No per-page settings fetch.
   useEffect(() => {
-    loadPortalSettings().then((s) => {
-      const h = Number(s?.reportButtonHour);
-      if (Number.isFinite(h) && h >= 0 && h <= 23) hourRef.current = h;
-    });
-    const check = () => setAfterNine(new Date().getHours() >= hourRef.current);
+    const check = () => setAfterNine(new Date().getHours() >= 21);
     check();
     const t = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(t);

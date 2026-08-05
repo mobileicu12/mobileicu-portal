@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCustomer } from "@/lib/customers";
 import { getInvoiceDetail } from "@/lib/billing";
+import { mapLimit } from "@/lib/async";
 import { getSettings } from "@/lib/settings";
 import { BUSINESS, type Business } from "@/lib/business";
 import { verifyStatementToken } from "@/lib/invoice-link";
@@ -32,11 +33,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const dayInv = c.invoices.filter((i) => { const t = new Date(i.createdAt); return t >= day && t < end; });
 
     const num = (s: string) => parseFloat(s) || 0;
+    const details = await mapLimit(dayInv, 5, (i) => getInvoiceDetail(i.id).catch(() => null));
     let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
     const bills = [];
-    for (const i of dayInv) {
-      let inv;
-      try { inv = await getInvoiceDetail(i.id); } catch { continue; }
+    for (const inv of details) {
+      if (!inv) continue;
       todayTotal += num(inv.total); todayPaid += inv.amountPaid; todayOutstanding += inv.balance;
       bills.push({ invoiceNo: inv.invoiceNo, name: inv.name, status: inv.status, createdAt: inv.createdAt, total: inv.total, amountPaid: inv.amountPaid, balance: inv.balance, lines: inv.lines.map((l) => ({ title: l.title, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })) });
     }

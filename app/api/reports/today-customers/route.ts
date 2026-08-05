@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/guard";
 import { listInvoices, getInvoiceDetail } from "@/lib/billing";
 import { getCustomer } from "@/lib/customers";
+import { mapLimit } from "@/lib/async";
 import { waConfigured } from "@/lib/whatsapp";
 import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
-import { mapPool } from "@/lib/concurrency";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -31,24 +31,19 @@ export async function GET() {
 
     const num = (s: string) => parseFloat(s) || 0;
 
-    // Customers, then each customer's bills, are fetched a few at a time rather
-    // than strictly one after another — this endpoint used to take one Shopify
-    // round trip per customer PLUS one per bill, all sequential, which is what
-    // made the "Today's sending" drawer sit there spinning.
+    // Process customers in parallel (bounded), and each customer's bills in
+    // parallel too — replaces a slow sequential nested N+1 loop.
     const entries = [...byCustomer.entries()];
-    const built = await mapPool(entries, 4, async ([cid, rows]) => {
+    const built = await mapLimit(entries, 4, async ([cid, rows]) => {
       let detail;
       try { detail = await getCustomer(cid); } catch { return null; }
       const invoiceDue = detail.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
       const ledgerPaid = detail.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
       const accountOutstanding = Math.max(0, (detail.openingBalance || 0) + invoiceDue - ledgerPaid);
 
-      const details = await mapPool(rows, 4, async (r) => {
-        try { return await getInvoiceDetail(r.id); } catch { return null; }
-      });
-
-      let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
+      const details = await mapLimit(rows, 4, (r) => getInvoiceDetail(r.id).catch(() => null));
       const bills = [];
+      let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
       for (const inv of details) {
         if (!inv) continue;
         todayTotal += num(inv.total);

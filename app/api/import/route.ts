@@ -89,7 +89,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Please import 500 rows or fewer at a time." }, { status: 400 });
     }
 
-    const results = await importRows(rows);
+    const till = new URL(req.url).searchParams.get("scope") === "till";
+    const results = await importRows(rows, till ? ["channel:till"] : []);
     const created = results.filter((r) => r.action.startsWith("created")).length;
     const updated = results.filter((r) => r.action.startsWith("updated")).length;
     const failed = results.filter((r) => !r.ok).length;

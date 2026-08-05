@@ -61,8 +61,8 @@ function parseList(value: string | null | undefined): string {
 }
 
 const EXPORT_QUERY = `
-  query Export($first: Int!, $after: String) {
-    products(first: $first, after: $after, sortKey: TITLE) {
+  query Export($first: Int!, $after: String, $query: String) {
+    products(first: $first, after: $after, query: $query, sortKey: TITLE) {
       pageInfo { hasNextPage endCursor }
       edges {
         node {
@@ -103,7 +103,7 @@ type ExportNode = {
   variants: { edges: { node: { sku: string | null; barcode: string | null; price: string; compareAtPrice: string | null } }[] };
 };
 
-export async function getAllProductsForExport(): Promise<ProductRecord[]> {
+export async function getAllProductsForExport(queryFilter?: string): Promise<ProductRecord[]> {
   const out: ProductRecord[] = [];
   let after: string | null = null;
   // Cap to keep within request limits; covers the full catalog comfortably.
@@ -113,7 +113,7 @@ export async function getAllProductsForExport(): Promise<ProductRecord[]> {
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
         edges: { node: ExportNode }[];
       };
-    } = await adminGraphQL(EXPORT_QUERY, { first: 100, after });
+    } = await adminGraphQL(EXPORT_QUERY, { first: 100, after, query: queryFilter ?? null });
     for (const { node } of data.products.edges) {
       const v = node.variants.edges[0]?.node;
       out.push({
@@ -192,15 +192,16 @@ function metafield(namespace: string, key: string, type: string, value: string) 
 export async function upsertProduct(
   row: ImportRow,
   primaryLocationId: string,
+  extraTags: string[] = [],
 ): Promise<UpsertResult> {
   if (!row.title || !row.title.trim()) {
     return { title: row.title || "(untitled)", ok: false, action: "skip", error: "Missing title" };
   }
 
-  const tags = (row.tags ?? "")
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const tags = Array.from(new Set([
+    ...(row.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean),
+    ...extraTags,
+  ]));
 
   const metafields: ReturnType<typeof metafield>[] = [];
   if (row.brand?.trim()) metafields.push(metafield("custom", "brand", "single_line_text_field", row.brand.trim()));
@@ -280,14 +281,14 @@ export async function upsertProduct(
   return { title: row.title, ok: true, action: isUpdate ? "updated" : "created" };
 }
 
-export async function importRows(rows: ImportRow[]): Promise<UpsertResult[]> {
+export async function importRows(rows: ImportRow[], extraTags: string[] = []): Promise<UpsertResult[]> {
   const locations = await getLocations();
   const primary = locations[0]?.id ?? "";
   if (!primary) throw new ShopifyError("No active location found.");
   const results: UpsertResult[] = [];
   for (const row of rows) {
     // Sequential to respect API rate limits.
-    results.push(await upsertProduct(row, primary));
+    results.push(await upsertProduct(row, primary, extraTags));
   }
   return results;
 }

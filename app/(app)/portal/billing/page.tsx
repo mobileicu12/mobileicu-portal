@@ -125,6 +125,12 @@ export default function BillingPage() {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [tillOnly, setTillOnly] = useState(false); // POS: search only in-shop till items (remembered per device)
+  // Quick "+ Till item" create form
+  const [tillFormOpen, setTillFormOpen] = useState(false);
+  const [tillTitle, setTillTitle] = useState("");
+  const [tillPrice, setTillPrice] = useState("");
+  const [tillBusy, setTillBusy] = useState(false);
   // Barcode scanning (USB/Bluetooth keyboard-wedge input + camera).
   const [scanCode, setScanCode] = useState("");
   const [scanMsg, setScanMsg] = useState("");
@@ -174,13 +180,34 @@ export default function BillingPage() {
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/variants?q=${encodeURIComponent(value)}`);
+        const res = await fetch(`/api/variants?q=${encodeURIComponent(value)}${tillOnly ? "&scope=till" : ""}`);
         const d = await res.json();
         setHits(d.hits ?? []);
       } finally {
         setSearching(false);
       }
     }, 300);
+  }
+
+  // Remember the in-shop-only toggle per device (default on for the till computer once set).
+  useEffect(() => { try { if (localStorage.getItem("mi:tillOnly") === "1") setTillOnly(true); } catch { /* ignore */ } }, []);
+  function setTill(v: boolean) {
+    setTillOnly(v);
+    try { localStorage.setItem("mi:tillOnly", v ? "1" : "0"); } catch { /* ignore */ }
+    if (q.trim()) onSearch(q);
+  }
+
+  // Quick-create an in-shop till item and drop it straight onto the bill.
+  async function createTillItem() {
+    if (!tillTitle.trim() || !(Number(tillPrice) >= 0)) { setError("Enter a name and price for the till item."); return; }
+    setTillBusy(true); setError("");
+    try {
+      const res = await fetch("/api/products/till", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: tillTitle.trim(), price: Number(tillPrice) }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed to create item.");
+      addLine(d.hit as Hit);
+      setTillTitle(""); setTillPrice(""); setTillFormOpen(false);
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed to create item."); } finally { setTillBusy(false); }
   }
 
   // Which price tier is active for the current mode/source, and its label.
@@ -447,11 +474,26 @@ export default function BillingPage() {
           </div>
           {scanMsg && <p className={`mb-2 text-xs font-medium ${scanMsg.startsWith("✓") ? "text-emerald-600" : "text-amber-600"}`}>{scanMsg}</p>}
 
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+              <input type="checkbox" checked={tillOnly} onChange={(e) => setTill(e.target.checked)} className="h-4 w-4 accent-amber-500" />
+              🏪 In-shop till items only <span className="font-normal text-neutral-400">(remembered on this device)</span>
+            </label>
+            <button type="button" onClick={() => setTillFormOpen((v) => !v)} className="rounded-lg border border-dashed border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-600 transition hover:border-amber-500 hover:text-amber-600">+ Till item</button>
+          </div>
+          {tillFormOpen && (
+            <div className="mb-2 flex flex-wrap items-end gap-2 rounded-lg border border-amber-200 bg-amber-50/50 p-2">
+              <input value={tillTitle} onChange={(e) => setTillTitle(e.target.value)} placeholder="Item name (e.g. Glue case)" className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm" />
+              <input type="number" step="0.01" min={0} value={tillPrice} onChange={(e) => setTillPrice(e.target.value)} placeholder="£ price" className="w-24 rounded-lg border border-neutral-300 px-3 py-2 text-sm" />
+              <button type="button" onClick={createTillItem} disabled={tillBusy} className="rounded-lg bg-neutral-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">{tillBusy ? "Adding…" : "Create & add"}</button>
+              <button type="button" onClick={() => setTillFormOpen(false)} className="px-2 py-2 text-xs text-neutral-400 hover:text-neutral-700">cancel</button>
+            </div>
+          )}
           <div className="relative">
             <input
               value={q}
               onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search product or SKU to add…"
+              placeholder={tillOnly ? "Search in-shop till items…" : "Search product or SKU to add…"}
               className="w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
             />
             {(hits.length > 0 || searching) && (

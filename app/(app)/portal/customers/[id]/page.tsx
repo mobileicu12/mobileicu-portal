@@ -15,7 +15,10 @@ import { BRAND_SLUG } from "@/lib/brand";
 import { BUSINESS } from "@/lib/business";
 
 type Payment = { date: string; amount: number; method: string; note: string };
-type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null; amountPaid: number; balance: number };
+type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null; amountPaid: number; balance: number; paymentEntries: Payment[] };
+// A unified payment-history row: either an on-account credit (editable/revocable
+// via its ledger index) or a payment recorded against a specific invoice.
+type CombinedPay = Payment & { source: "account" | "invoice"; invoiceName?: string; invoiceId?: string; ledgerIndex?: number };
 type Detail = {
   id: string;
   name: string;
@@ -152,12 +155,18 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           : +new Date(b.createdAt) - +new Date(a.createdAt),
     );
 
-  // --- Payments: filter by method (keep the original ledger index for edit/revoke) ---
-  const methods = Array.from(new Set(c.ledger.payments.map((p) => p.method)));
-  const shownPayments = c.ledger.payments
-    .map((p, i) => ({ ...p, _i: i }))
+  // --- Payments: combine on-account credits + per-invoice payments so received
+  // money stays visible after it's applied to bills. Account payments keep their
+  // ledger index for edit/revoke; invoice payments link back to the invoice. ---
+  const accountPays: CombinedPay[] = c.ledger.payments.map((p, i) => ({ ...p, source: "account", ledgerIndex: i }));
+  const invoicePays: CombinedPay[] = c.invoices.flatMap((inv) =>
+    inv.paymentEntries.map((p) => ({ ...p, source: "invoice", invoiceName: inv.name, invoiceId: inv.id })),
+  );
+  const allPays = [...accountPays, ...invoicePays];
+  const methods = Array.from(new Set(allPays.map((p) => p.method)));
+  const shownPayments = allPays
     .filter((p) => payMethod === "all" || p.method === payMethod)
-    .reverse();
+    .sort((a, b) => +new Date(b.date) - +new Date(a.date));
   const shownPaymentsTotal = shownPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
 
   async function paymentAction(body: Record<string, unknown>) {
@@ -169,6 +178,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   async function revokePayment(index: number) {
     if (!confirm("Revoke (delete) this payment? The customer's outstanding will be recalculated.")) return;
     await paymentAction({ action: "removePayment", index });
+  }
+  async function reapplyCredits() {
+    if (!confirm("Move all 'on account' credit onto this customer's open bills? Coverable bills get marked paid; the rest is part-paid. Outstanding total stays the same.")) return;
+    await paymentAction({ action: "reapplyCredits" });
   }
 
   return (
@@ -286,6 +299,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Payment history</h2>
               <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10">Received £{shownPaymentsTotal.toFixed(2)}</span>
             </div>
+            {c.ledger.payments.length > 0 && outstanding > 0.001 && (
+              <button
+                onClick={reapplyCredits}
+                title="Move this on-account credit onto the customer's open bills (marks coverable bills paid, part-pays the rest)"
+                className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:bg-amber-500/10"
+              >
+                ↻ Re-apply account credit to bills
+              </button>
+            )}
             {methods.length > 1 && (
               <div className="mt-2 flex flex-wrap items-center gap-1">
                 <button onClick={() => setPayMethod("all")} className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${payMethod === "all" ? "bg-neutral-900 text-white" : "border border-neutral-300 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"}`}>All</button>
@@ -297,19 +319,30 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             <RecordPayment customerId={id} outstanding={outstanding} onAdded={load} />
           </div>
           <div className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto px-4 dark:divide-neutral-800">
-            {shownPayments.map((p) => (
-              <div key={p._i} className="group relative flex items-center justify-between gap-2 py-2.5 text-sm">
+            {shownPayments.map((p, idx) => (
+              <div key={`${p.source}-${p.ledgerIndex ?? p.invoiceId ?? ""}-${idx}`} className="group relative flex items-center justify-between gap-2 py-2.5 text-sm">
                 <div className="min-w-0">
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(p.amount).toFixed(2)} <span className="font-normal text-neutral-500">· {p.method}</span></p>
-                  <p className="truncate text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
+                  <p className="truncate text-xs text-neutral-500">
+                    {new Date(p.date).toLocaleDateString("en-GB")}
+                    {" · "}
+                    {p.source === "invoice"
+                      ? <Link href={`/portal/invoices/${(p.invoiceId || "").split("/").pop()}`} className="text-amber-600 hover:underline">{p.invoiceName}</Link>
+                      : <span className="text-neutral-400">On account</span>}
+                    {p.note ? ` · ${p.note}` : ""}
+                  </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-2 text-xs">
-                  <EditPaymentButton payment={p} onSave={(patch) => paymentAction({ action: "editPayment", index: p._i, ...patch })} />
-                  <button onClick={() => revokePayment(p._i)} className="rounded-md px-2 py-1 text-red-500 hover:bg-red-50" title="Revoke / delete this payment">Revoke</button>
-                </div>
+                {p.source === "account" && p.ledgerIndex !== undefined ? (
+                  <div className="flex shrink-0 items-center gap-2 text-xs">
+                    <EditPaymentButton payment={p} onSave={(patch) => paymentAction({ action: "editPayment", index: p.ledgerIndex, ...patch })} />
+                    <button onClick={() => revokePayment(p.ledgerIndex!)} className="rounded-md px-2 py-1 text-red-500 hover:bg-red-50" title="Revoke / delete this payment">Revoke</button>
+                  </div>
+                ) : (
+                  <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10" title="Recorded against this bill — manage it on the invoice">on bill</span>
+                )}
               </div>
             ))}
-            {shownPayments.length === 0 && <p className="py-6 text-center text-sm text-neutral-400">{c.ledger.payments.length === 0 ? "No payments recorded." : "None match this filter."}</p>}
+            {shownPayments.length === 0 && <p className="py-6 text-center text-sm text-neutral-400">{allPays.length === 0 ? "No payments recorded." : "None match this filter."}</p>}
           </div>
         </section>
       </div>
@@ -540,12 +573,13 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
       const settled = (d.allocation?.settled ?? []) as { name: string }[];
+      const partial = d.allocation?.partial as { name: string; amount: number } | null | undefined;
       const credit = Number(d.allocation?.creditedToAccount ?? 0);
-      setOkMsg(
-        settled.length
-          ? `Auto-paid ${settled.length} invoice(s): ${settled.map((s) => s.name).join(", ")}${credit > 0.001 ? ` · £${credit.toFixed(2)} on account` : ""}`
-          : "Payment recorded on account.",
-      );
+      const parts: string[] = [];
+      if (settled.length) parts.push(`paid ${settled.length} bill(s): ${settled.map((s) => s.name).join(", ")}`);
+      if (partial) parts.push(`£${partial.amount.toFixed(2)} part-paid on ${partial.name}`);
+      if (credit > 0.001) parts.push(`£${credit.toFixed(2)} on account`);
+      setOkMsg(parts.length ? `Applied — ${parts.join(" · ")}.` : "Payment recorded.");
       setAmount("");
       setNote("");
       onAdded();

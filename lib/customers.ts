@@ -1,7 +1,7 @@
 // Customer management (Shopify customers) + payment ledger via metafield.
 import { adminGraphQL, ShopifyError } from "./shopify";
 import { segmentsFromTags, tagsForSegments, isSegmentTag, type SegmentKey } from "./segments";
-import { completeInvoice } from "./billing";
+import { completeInvoice, addInvoicePayment } from "./billing";
 
 export type CustomerSummary = {
   id: string;
@@ -37,6 +37,10 @@ export type CustomerDetail = CustomerSummary & {
     invoiceUrl: string | null;
     amountPaid: number;
     balance: number;
+    // Individual payments recorded against this bill (partial payments, or a
+    // synthetic "paid in full" record for completed invoices). Used to keep the
+    // customer's payment history visible after money is applied to bills.
+    paymentEntries: Payment[];
   }[];
 };
 
@@ -354,17 +358,34 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
     ledger,
     invoices: dd.draftOrders.edges.map((e) => {
       const total = parseFloat(e.node.totalPrice) || 0;
+      // Any partial payments recorded against the invoice (date/amount/method).
+      let paymentEntries: Payment[] = [];
+      if (e.node.payments?.value) {
+        try {
+          const arr = JSON.parse(e.node.payments.value);
+          if (Array.isArray(arr)) {
+            paymentEntries = arr.map((p: { date?: string; amount?: number; method?: string; note?: string }) => ({
+              date: p.date || e.node.createdAt,
+              amount: Number(p.amount) || 0,
+              method: p.method || "cash",
+              note: p.note || "",
+            }));
+          }
+        } catch { /* ignore */ }
+      }
       // A COMPLETED draft order is a finished sale — paid in full (money taken at
-      // the till / via the order). Otherwise use any partial payments recorded
-      // against the invoice.
+      // the till / via the order). Otherwise use any partial payments recorded.
       let amountPaid = 0;
       if (e.node.status === "COMPLETED") {
         amountPaid = total;
-      } else if (e.node.payments?.value) {
-        try {
-          const arr = JSON.parse(e.node.payments.value);
-          if (Array.isArray(arr)) amountPaid = arr.reduce((s: number, p: { amount?: number }) => s + (Number(p.amount) || 0), 0);
-        } catch { /* ignore */ }
+        // Show the settlement in payment history: keep any recorded partials and
+        // add a synthetic record for the remainder taken at completion.
+        const recorded = paymentEntries.reduce((s, p) => s + p.amount, 0);
+        if (recorded < total - 0.001) {
+          paymentEntries = [...paymentEntries, { date: e.node.createdAt, amount: Math.round((total - recorded) * 100) / 100, method: "paid", note: "Marked paid" }];
+        }
+      } else {
+        amountPaid = paymentEntries.reduce((s, p) => s + p.amount, 0);
       }
       const balance = Math.max(0, total - amountPaid);
       return {
@@ -376,6 +397,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         invoiceUrl: e.node.invoiceUrl,
         amountPaid,
         balance,
+        paymentEntries,
       };
     }),
   };
@@ -452,13 +474,16 @@ export async function addPayment(customerId: string, payment: Payment): Promise<
 
 export type PaymentAllocation = {
   settled: { id: string; name: string; amount: number }[]; // invoices auto-marked paid
-  creditedToAccount: number; // leftover recorded as an account credit
+  partial: { id: string; name: string; amount: number } | null; // part-payment on the oldest remaining bill
+  creditedToAccount: number; // true surplus (no open bills) recorded as an account credit
 };
 
-// Apply a payment to a customer's OPEN invoices oldest-first: every invoice the
-// payment fully covers is auto-completed (marked PAID), and any remainder is
-// recorded as an account credit. e.g. £35 against £10/£25/£15/£5/£10 bills clears
-// the £10 + £25 (oldest two) and leaves £0 over.
+// Apply a payment to a customer's OPEN invoices, oldest-first:
+//  1) every bill it can FULLY cover is auto-completed (marked PAID) — bills too big
+//     to clear are skipped, not blocking, so the payment still clears what it can;
+//  2) any remainder is applied as a PART payment to the oldest bill still open
+//     (reducing its due), so the money always lands on a bill;
+//  3) only if there are no open bills at all does the surplus become an account credit.
 export async function allocatePayment(
   customerId: string,
   amount: number,
@@ -473,21 +498,46 @@ export async function allocatePayment(
 
   let remaining = amount;
   const settled: PaymentAllocation["settled"] = [];
+  const notCleared: typeof open = [];
   for (const inv of open) {
     const bal = Number(inv.balance);
-    if (remaining + 0.001 < bal) break; // can't fully cover this (oldest) bill → stop
-    await completeInvoice(inv.id);
-    remaining -= bal;
-    settled.push({ id: inv.id, name: inv.name, amount: bal });
+    if (bal <= remaining + 0.001) {
+      await completeInvoice(inv.id); // fully covered → mark paid
+      remaining -= bal;
+      settled.push({ id: inv.id, name: inv.name, amount: bal });
+    } else {
+      notCleared.push(inv); // too big to clear in full — skip for now
+    }
   }
 
+  // Apply any remainder as a part-payment against the oldest bill still open.
+  let partial: PaymentAllocation["partial"] = null;
+  if (remaining > 0.001 && notCleared.length) {
+    const target = notCleared[0];
+    const amt = Math.round(remaining * 100) / 100;
+    await addInvoicePayment(target.id, { date, amount: amt, method, note: opts.note || "Part payment" });
+    partial = { id: target.id, name: target.name, amount: amt };
+    remaining = 0;
+  }
+
+  // True surplus (customer overpaid with no open bills) → account credit.
   let ledger = detail.ledger;
   const leftover = Math.max(0, Math.round(remaining * 100) / 100);
   if (leftover > 0.001) {
-    const note = opts.note || (settled.length ? "Payment on account (surplus)" : "Payment on account");
-    ledger = await addPayment(customerId, { date, amount: leftover, method, note });
+    ledger = await addPayment(customerId, { date, amount: leftover, method, note: opts.note || "Payment on account (credit)" });
   }
-  return { ledger, allocation: { settled, creditedToAccount: leftover } };
+  return { ledger, allocation: { settled, partial, creditedToAccount: leftover } };
+}
+
+// Move any "on account" credit onto the customer's open bills (fixes credits that
+// were recorded before per-bill allocation existed). Clears the ledger, then
+// re-allocates the total across bills; genuine surplus returns to the account.
+export async function reapplyAccountCredits(customerId: string): Promise<{ ledger: Ledger; allocation: PaymentAllocation }> {
+  const ledger = await readLedger(customerId);
+  const total = ledger.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  if (total <= 0.001) return { ledger, allocation: { settled: [], partial: null, creditedToAccount: 0 } };
+  await writeLedger(customerId, { ...ledger, payments: [] });
+  return allocatePayment(customerId, total, { method: ledger.payments[0]?.method || "cash", note: "Re-applied account credit" });
 }
 
 // Revoke (delete) an account payment by its index in the stored ledger.

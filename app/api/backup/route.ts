@@ -5,6 +5,7 @@ import { getSettings, getIntegrations } from "@/lib/settings";
 import { getAllProductsForExport, getCollectionsDetailed } from "@/lib/products";
 import { listCustomers, getCustomer } from "@/lib/customers";
 import { listInvoices } from "@/lib/billing";
+import { mapLimit } from "@/lib/async";
 import { BRAND_SLUG } from "@/lib/brand";
 
 export const runtime = "nodejs";
@@ -30,10 +31,9 @@ export async function GET() {
     // Pull each customer's full detail (ledger, opening balance, invoices) — capped
     // to stay within the request budget on very large customer bases.
     const CAP = 500;
-    const detailed: unknown[] = [];
-    for (const c of customerList.slice(0, CAP)) {
-      try { detailed.push(await getCustomer(c.id)); } catch { detailed.push({ ...c, _detailError: true }); }
-    }
+    const detailed = await mapLimit(customerList.slice(0, CAP), 4, (c) =>
+      getCustomer(c.id).catch(() => ({ ...c, _detailError: true })),
+    );
 
     const backup = {
       app: `${BRAND_SLUG}-portal`,
