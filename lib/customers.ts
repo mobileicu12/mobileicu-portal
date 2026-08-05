@@ -314,13 +314,13 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   const dd = await adminGraphQL<{
     draftOrders: {
       edges: {
-        node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; invoiceUrl: string | null; payments: { value: string } | null };
+        node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; completedAt: string | null; invoiceUrl: string | null; payments: { value: string } | null };
       }[];
     };
   }>(
     `query($q: String!) {
       draftOrders(first: 100, reverse: true, query: $q) {
-        edges { node { id name status totalPrice createdAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
+        edges { node { id name status totalPrice createdAt completedAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
       }
     }`,
     { q: `customer_id:${numericId} AND -tag:voided` },
@@ -382,7 +382,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         // add a synthetic record for the remainder taken at completion.
         const recorded = paymentEntries.reduce((s, p) => s + p.amount, 0);
         if (recorded < total - 0.001) {
-          paymentEntries = [...paymentEntries, { date: e.node.createdAt, amount: Math.round((total - recorded) * 100) / 100, method: "paid", note: "Marked paid" }];
+          paymentEntries = [...paymentEntries, { date: e.node.completedAt || e.node.createdAt, amount: Math.round((total - recorded) * 100) / 100, method: "paid", note: "Marked paid" }];
         }
       } else {
         amountPaid = paymentEntries.reduce((s, p) => s + p.amount, 0);
@@ -532,12 +532,74 @@ export async function allocatePayment(
 // Move any "on account" credit onto the customer's open bills (fixes credits that
 // were recorded before per-bill allocation existed). Clears the ledger, then
 // re-allocates the total across bills; genuine surplus returns to the account.
+// Consume `amount` from the front of a payment list (oldest credits first),
+// returning what's left. A partly-used entry keeps its original date/method so
+// the remaining credit still shows where it came from.
+function consumeCredits(payments: Payment[], amount: number): Payment[] {
+  let left = amount;
+  const out: Payment[] = [];
+  for (const p of payments) {
+    const amt = Number(p.amount) || 0;
+    if (left <= 0.001) { out.push(p); continue; }
+    if (amt <= left + 0.001) { left -= amt; continue; }   // fully consumed → drop
+    out.push({ ...p, amount: Math.round((amt - left) * 100) / 100 });
+    left = 0;
+  }
+  return out;
+}
+
+// Push a customer's account credit onto their open bills.
+//
+// The ledger is written down step by step, immediately after each bill is
+// actually settled. That ordering is deliberate: this makes several Shopify
+// calls, and any of them can fail (a throttle is enough). Clearing the ledger
+// up-front — as this used to — meant a failure part-way through destroyed the
+// customer's credit with no record of it anywhere. Now a failure just stops,
+// leaving the ledger holding exactly the credit that hasn't been applied yet.
 export async function reapplyAccountCredits(customerId: string): Promise<{ ledger: Ledger; allocation: PaymentAllocation }> {
-  const ledger = await readLedger(customerId);
-  const total = ledger.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-  if (total <= 0.001) return { ledger, allocation: { settled: [], partial: null, creditedToAccount: 0 } };
-  await writeLedger(customerId, { ...ledger, payments: [] });
-  return allocatePayment(customerId, total, { method: ledger.payments[0]?.method || "cash", note: "Re-applied account credit" });
+  const ledger0 = await readLedger(customerId);
+  const total = ledger0.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  if (total <= 0.001) return { ledger: ledger0, allocation: { settled: [], partial: null, creditedToAccount: 0 } };
+
+  const method = ledger0.payments[0]?.method || "cash";
+  const date = new Date().toISOString();
+  const detail = await getCustomer(customerId);
+  const open = detail.invoices
+    .filter((i) => i.status !== "COMPLETED" && Number(i.balance) > 0.001)
+    .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+
+  let remaining = total;
+  let ledger = ledger0;
+  const settled: PaymentAllocation["settled"] = [];
+  const notCleared: typeof open = [];
+
+  // Bills we can clear outright.
+  for (const inv of open) {
+    const bal = Number(inv.balance);
+    if (bal > remaining + 0.001) { notCleared.push(inv); continue; }
+    await completeInvoice(inv.id);
+    remaining -= bal;
+    settled.push({ id: inv.id, name: inv.name, amount: bal });
+    // Persist straight away: the money is now on the bill, so it must come off
+    // the ledger before we risk another call.
+    ledger = { ...ledger, payments: consumeCredits(ledger.payments, bal) };
+    await writeLedger(customerId, ledger);
+  }
+
+  // Whatever is left goes as a part-payment against the oldest bill still open.
+  let partial: PaymentAllocation["partial"] = null;
+  if (remaining > 0.001 && notCleared.length) {
+    const target = notCleared[0];
+    const amt = Math.round(remaining * 100) / 100;
+    await addInvoicePayment(target.id, { date, amount: amt, method, note: "Re-applied account credit" });
+    partial = { id: target.id, name: target.name, amount: amt };
+    remaining = 0;
+    ledger = { ...ledger, payments: consumeCredits(ledger.payments, amt) };
+    await writeLedger(customerId, ledger);
+  }
+
+  // Anything still unapplied simply stays on account — no bills left to pay.
+  return { ledger, allocation: { settled, partial, creditedToAccount: Math.max(0, Math.round(remaining * 100) / 100) } };
 }
 
 // Revoke (delete) an account payment by its index in the stored ledger.

@@ -3,7 +3,8 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
-import { generateStatementPdf } from "@/lib/statement-pdf";
+import { generateStatementPdf, buildStatementDoc, statementFilename } from "@/lib/statement-pdf";
+import { buildReceiptDoc, receiptFilename, type ReceiptInput } from "@/lib/receipt-pdf";
 import { buildInvoiceDoc } from "@/lib/invoice-pdf";
 import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
 import PdfPreviewModal from "@/components/PdfPreviewModal";
@@ -112,13 +113,49 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     } catch (e) { setTodayMsg(e instanceof Error ? e.message : "Failed."); } finally { setTodayBusy(""); }
   }
 
+  // Signed public link to the full account statement (all bills + all payments).
+  const [shareUrl, setShareUrl] = useState("");
+  const [stmtBusy, setStmtBusy] = useState("");
+  const [stmtMsg, setStmtMsg] = useState("");
+
+  // Send the FULL account statement: every bill (paid and unpaid), every payment
+  // received, and the balance still owed.
+  async function sendStatement() {
+    if (!c) return;
+    if (!confirm("Send this customer their full account statement — all bills, all payments and the balance owed?")) return;
+    setStmtBusy("send"); setStmtMsg("");
+    try {
+      const biz = await loadBusiness();
+      const input = { customerName: c.name || c.company || "Customer", company: c.company, email: c.email, phone: c.phone, invoices: c.invoices, openingBalance: c.openingBalance, payments: c.ledger.payments };
+      const doc = buildStatementDoc(input, biz);
+      const pdfBase64 = doc.output("datauristring").split("base64,").pop();
+      const summary = `Total billed: £${billed.toFixed(2)}\nTotal paid: £${paid.toFixed(2)}\nStill outstanding: £${outstanding.toFixed(2)}`;
+      let sent = "";
+      if (c.email) {
+        const er = await fetch("/api/email/invoice", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: c.email, subject: `Your account statement — ${BUSINESS.name}`, message: `Hi ${c.name}, your full account statement is attached.\n${summary}`, pdfBase64, filename: statementFilename(input) }) });
+        if (er.ok) sent += "email ";
+      }
+      if (c.phone) {
+        const text = `Hi ${c.name}, your account statement from ${BUSINESS.name}:\n${summary}${shareUrl ? `\n\nView / download: ${shareUrl}` : ""}`;
+        const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: text }) });
+        if (!wr.ok) {
+          // No WhatsApp API configured — fall back to click-to-send.
+          window.open(`https://wa.me/${c.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
+        }
+        sent += "WhatsApp";
+      }
+      setStmtMsg(sent.trim() ? `Statement sent via ${sent.trim().replace(/\s+/, " + ")}.` : "No email or phone on file to send to.");
+    } catch (e) { setStmtMsg(e instanceof Error ? e.message : "Failed to send."); } finally { setStmtBusy(""); }
+  }
+
   function load() {
     setLoading(true);
     fetch(`/api/customers/${id}`)
       .then((r) => r.json())
       .then((d) => {
         if (d.error) setError(d.error);
-        else setC(d.customer);
+        else { setC(d.customer); setShareUrl(d.accountShareUrl ? `${SITE_URL}${d.accountShareUrl}` : ""); }
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -213,6 +250,14 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           >
             📄 Statement
           </button>
+          <button
+            onClick={sendStatement}
+            disabled={!!stmtBusy || (c.invoices.length === 0 && c.openingBalance <= 0)}
+            title="Email the full statement (all bills + all payments + balance) and WhatsApp the customer a link"
+            className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200"
+          >
+            {stmtBusy === "send" ? "Sending…" : "📤 Send statement"}
+          </button>
           <button onClick={generateToday} disabled={!!todayBusy} className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200" title="Preview / download this customer's itemised bills for today">
             {todayBusy === "gen" ? "…" : "📅 Today's statement"}
           </button>
@@ -236,6 +281,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
+      {stmtMsg && <p className="mt-3 rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10">{stmtMsg}</p>}
       {todayMsg && <p className="mt-3 rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10">{todayMsg}</p>}
 
       {editing && <EditCard customerId={id} c={c} onSaved={() => { setEditing(false); load(); }} />}
@@ -316,7 +362,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 ))}
               </div>
             )}
-            <RecordPayment customerId={id} outstanding={outstanding} onAdded={load} />
+            <RecordPayment customerId={id} customer={c} outstanding={outstanding} onAdded={load} />
           </div>
           <div className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto px-4 dark:divide-neutral-800">
             {shownPayments.map((p, idx) => (
@@ -547,13 +593,16 @@ function Stat({ label, value, raw, tone }: { label: string; value?: number; raw?
   );
 }
 
-function RecordPayment({ customerId, outstanding, onAdded }: { customerId: string; outstanding: number; onAdded: () => void }) {
+function RecordPayment({ customerId, customer, outstanding, onAdded }: { customerId: string; customer: Detail; outstanding: number; onAdded: () => void }) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [okMsg, setOkMsg] = useState("");
+  // Held after a successful payment so staff can hand the customer a receipt.
+  const [receipt, setReceipt] = useState<ReceiptInput | null>(null);
+  const [rBusy, setRBusy] = useState("");
 
   async function save() {
     const amt = Number(amount);
@@ -580,6 +629,19 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
       if (partial) parts.push(`£${partial.amount.toFixed(2)} part-paid on ${partial.name}`);
       if (credit > 0.001) parts.push(`£${credit.toFixed(2)} on account`);
       setOkMsg(parts.length ? `Applied — ${parts.join(" · ")}.` : "Payment recorded.");
+      const settledFull = (d.allocation?.settled ?? []) as { name: string; amount: number }[];
+      setReceipt({
+        customerName: customer.name || customer.company || "Customer",
+        company: customer.company, email: customer.email, phone: customer.phone,
+        amount: amt, method, date: new Date().toISOString(), note,
+        applied: [
+          ...settledFull.map((x) => ({ name: x.name, amount: Number(x.amount) || 0, kind: "settled" as const })),
+          ...(partial ? [{ name: partial.name, amount: Number(partial.amount) || 0, kind: "part" as const }] : []),
+        ],
+        creditedToAccount: credit,
+        balanceBefore: outstanding,
+        balanceAfter: Math.max(0, outstanding - amt),
+      });
       setAmount("");
       setNote("");
       onAdded();
@@ -591,12 +653,55 @@ function RecordPayment({ customerId, outstanding, onAdded }: { customerId: strin
     }
   }
 
+  async function downloadReceipt() {
+    if (!receipt) return;
+    setRBusy("dl");
+    try { buildReceiptDoc(receipt, await loadBusiness()).save(receiptFilename(receipt)); } finally { setRBusy(""); }
+  }
+
+  async function sendReceipt() {
+    if (!receipt) return;
+    setRBusy("send"); setError("");
+    try {
+      const doc = buildReceiptDoc(receipt, await loadBusiness());
+      const pdfBase64 = doc.output("datauristring").split("base64,").pop();
+      const line = `We received £${receipt.amount.toFixed(2)} (${receipt.method}). ${receipt.balanceAfter > 0.001 ? `Still outstanding: £${receipt.balanceAfter.toFixed(2)}.` : "Your account is now fully settled."}`;
+      let sent = "";
+      if (receipt.email) {
+        const er = await fetch("/api/email/invoice", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: receipt.email, subject: `Payment received — thank you`, message: `Hi ${receipt.customerName}, ${line}`, pdfBase64, filename: receiptFilename(receipt) }) });
+        if (er.ok) sent += "email ";
+      }
+      if (receipt.phone) {
+        const text = `Hi ${receipt.customerName}, ${line} — ${BUSINESS.name}`;
+        const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: receipt.phone, message: text }) });
+        if (!wr.ok) window.open(`https://wa.me/${receipt.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
+        sent += "WhatsApp";
+      }
+      setOkMsg(sent.trim() ? `Receipt sent via ${sent.trim().replace(/\s+/, " + ")}.` : "No email or phone on file.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Couldn't send the receipt."); } finally { setRBusy(""); }
+  }
+
   const input = "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200";
 
   return (
     <div className="mt-3 rounded-xl bg-neutral-50 p-3">
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
       {okMsg && <p className="mb-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700">{okMsg}</p>}
+      {receipt && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-2 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+          <span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+            Receipt for £{receipt.amount.toFixed(2)} ready
+          </span>
+          <button onClick={downloadReceipt} disabled={!!rBusy} className="rounded-md border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+            {rBusy === "dl" ? "…" : "📄 Download"}
+          </button>
+          <button onClick={sendReceipt} disabled={!!rBusy} className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+            {rBusy === "send" ? "Sending…" : "📤 Send receipt"}
+          </button>
+          <button onClick={() => setReceipt(null)} className="ml-auto text-xs text-emerald-700/60 hover:text-emerald-900">dismiss</button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <input
           className={`${input} w-28`}

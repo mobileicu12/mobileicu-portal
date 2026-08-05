@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCustomer, addPayment, allocatePayment, reapplyAccountCredits, removePayment, updatePaymentAt, setCustomerSegments, setTradeCode, updateCustomer, type Payment } from "@/lib/customers";
 import type { SegmentKey } from "@/lib/segments";
 import { requirePermission } from "@/lib/guard";
+import { accountSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -66,7 +67,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const customer = await getCustomer(gid(id));
-    return NextResponse.json({ customer });
+    // Signed link to the full account statement (every bill + every payment), so
+    // the portal can share it without holding the signing secret.
+    const numId = gid(id).split("/").pop() || id;
+    return NextResponse.json({ customer, accountShareUrl: accountSharePath(numId) });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : "Failed to load customer.";
     return NextResponse.json({ error: msg }, { status: 502 });

@@ -38,3 +38,21 @@ export function verifyStatementToken(id: string, date: string, token: string | u
 export function statementSharePath(numericId: string, date: string): string {
   return `/api/public/statement/${numericId}?d=${date}&t=${signStatementToken(numericId, date)}`;
 }
+
+// ---- Full account statement (every bill + every payment, not one day) ----
+// Same capability-token approach: customer ids are sequential, so the link is
+// only safe because it carries an HMAC.
+export function signAccountToken(id: string): string {
+  return crypto.createHmac("sha256", SECRET).update(`acct:${id}`).digest("base64url");
+}
+export function verifyAccountToken(id: string, token: string | undefined | null): boolean {
+  if (!token) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(signAccountToken(id)));
+  } catch {
+    return false;
+  }
+}
+export function accountSharePath(numericId: string): string {
+  return `/api/public/account/${numericId}?t=${signAccountToken(numericId)}`;
+}
