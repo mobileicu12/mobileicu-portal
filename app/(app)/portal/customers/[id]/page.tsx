@@ -217,7 +217,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     await paymentAction({ action: "removePayment", index });
   }
   async function reapplyCredits() {
-    if (!confirm("Move all 'on account' credit onto this customer's open bills? Coverable bills get marked paid; the rest is part-paid. Outstanding total stays the same.")) return;
+    if (!confirm("Move all 'on account' credit onto this customer's open bills, oldest first? Bills it covers are marked paid; the oldest one it can't cover is part-paid. Outstanding total stays the same.")) return;
     await paymentAction({ action: "reapplyCredits" });
   }
 

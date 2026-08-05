@@ -484,13 +484,24 @@ export type PaymentAllocation = {
 //  2) any remainder is applied as a PART payment to the oldest bill still open
 //     (reducing its due), so the money always lands on a bill;
 //  3) only if there are no open bills at all does the surplus become an account credit.
-export async function allocatePayment(
+// Walk a customer's open bills oldest first, putting money onto each in turn.
+//
+// Strict FIFO: a bill too large to clear outright is PART-paid and the walk
+// stops there, so the oldest debt is always what gets reduced first. (An earlier
+// version skipped bills it couldn't clear and settled newer ones instead, which
+// cleared recent invoices while the oldest debt aged indefinitely.)
+//
+// `onApplied` fires after each bill is actually changed, so callers that have to
+// keep another store in step — the account ledger — can write it down before the
+// next Shopify call gets a chance to fail.
+type ApplyStep = { kind: "settled" | "part"; id: string; name: string; amount: number };
+
+async function applyToOpenBills(
   customerId: string,
   amount: number,
-  opts: { method?: string; date?: string; note?: string } = {},
-): Promise<{ ledger: Ledger; allocation: PaymentAllocation }> {
-  const method = opts.method || "cash";
-  const date = opts.date || new Date().toISOString();
+  opts: { method: string; date: string; note?: string },
+  onApplied?: (step: ApplyStep) => Promise<void>,
+): Promise<{ settled: PaymentAllocation["settled"]; partial: PaymentAllocation["partial"]; remaining: number; ledger: Ledger }> {
   const detail = await getCustomer(customerId);
   const open = detail.invoices
     .filter((i) => i.status !== "COMPLETED" && Number(i.balance) > 0.001)
@@ -498,30 +509,44 @@ export async function allocatePayment(
 
   let remaining = amount;
   const settled: PaymentAllocation["settled"] = [];
-  const notCleared: typeof open = [];
+  let partial: PaymentAllocation["partial"] = null;
+
   for (const inv of open) {
+    if (remaining <= 0.001) break;
     const bal = Number(inv.balance);
     if (bal <= remaining + 0.001) {
       await completeInvoice(inv.id); // fully covered → mark paid
       remaining -= bal;
       settled.push({ id: inv.id, name: inv.name, amount: bal });
+      await onApplied?.({ kind: "settled", id: inv.id, name: inv.name, amount: bal });
     } else {
-      notCleared.push(inv); // too big to clear in full — skip for now
+      const amt = Math.round(remaining * 100) / 100;
+      await addInvoicePayment(inv.id, { date: opts.date, amount: amt, method: opts.method, note: opts.note || "Part payment" });
+      partial = { id: inv.id, name: inv.name, amount: amt };
+      remaining = 0;
+      await onApplied?.({ kind: "part", id: inv.id, name: inv.name, amount: amt });
+      break;
     }
   }
 
-  // Apply any remainder as a part-payment against the oldest bill still open.
-  let partial: PaymentAllocation["partial"] = null;
-  if (remaining > 0.001 && notCleared.length) {
-    const target = notCleared[0];
-    const amt = Math.round(remaining * 100) / 100;
-    await addInvoicePayment(target.id, { date, amount: amt, method, note: opts.note || "Part payment" });
-    partial = { id: target.id, name: target.name, amount: amt };
-    remaining = 0;
-  }
+  return { settled, partial, remaining, ledger: detail.ledger };
+}
 
-  // True surplus (customer overpaid with no open bills) → account credit.
-  let ledger = detail.ledger;
+// Record a payment against a customer: clear their oldest bills first, and hold
+// any true surplus (nothing left to pay) as an account credit.
+export async function allocatePayment(
+  customerId: string,
+  amount: number,
+  opts: { method?: string; date?: string; note?: string } = {},
+): Promise<{ ledger: Ledger; allocation: PaymentAllocation }> {
+  const method = opts.method || "cash";
+  const date = opts.date || new Date().toISOString();
+
+  const { settled, partial, remaining, ledger: current } = await applyToOpenBills(
+    customerId, amount, { method, date, note: opts.note },
+  );
+
+  let ledger = current;
   const leftover = Math.max(0, Math.round(remaining * 100) / 100);
   if (leftover > 0.001) {
     ledger = await addPayment(customerId, { date, amount: leftover, method, note: opts.note || "Payment on account (credit)" });
@@ -563,42 +588,21 @@ export async function reapplyAccountCredits(customerId: string): Promise<{ ledge
 
   const method = ledger0.payments[0]?.method || "cash";
   const date = new Date().toISOString();
-  const detail = await getCustomer(customerId);
-  const open = detail.invoices
-    .filter((i) => i.status !== "COMPLETED" && Number(i.balance) > 0.001)
-    .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
-
-  let remaining = total;
   let ledger = ledger0;
-  const settled: PaymentAllocation["settled"] = [];
-  const notCleared: typeof open = [];
 
-  // Bills we can clear outright.
-  for (const inv of open) {
-    const bal = Number(inv.balance);
-    if (bal > remaining + 0.001) { notCleared.push(inv); continue; }
-    await completeInvoice(inv.id);
-    remaining -= bal;
-    settled.push({ id: inv.id, name: inv.name, amount: bal });
-    // Persist straight away: the money is now on the bill, so it must come off
-    // the ledger before we risk another call.
-    ledger = { ...ledger, payments: consumeCredits(ledger.payments, bal) };
-    await writeLedger(customerId, ledger);
-  }
+  // Write the ledger down immediately after each bill actually changes, so a
+  // failure part-way leaves it holding exactly the credit not yet applied.
+  const { settled, partial, remaining } = await applyToOpenBills(
+    customerId,
+    total,
+    { method, date, note: "Re-applied account credit" },
+    async (step) => {
+      ledger = { ...ledger, payments: consumeCredits(ledger.payments, step.amount) };
+      await writeLedger(customerId, ledger);
+    },
+  );
 
-  // Whatever is left goes as a part-payment against the oldest bill still open.
-  let partial: PaymentAllocation["partial"] = null;
-  if (remaining > 0.001 && notCleared.length) {
-    const target = notCleared[0];
-    const amt = Math.round(remaining * 100) / 100;
-    await addInvoicePayment(target.id, { date, amount: amt, method, note: "Re-applied account credit" });
-    partial = { id: target.id, name: target.name, amount: amt };
-    remaining = 0;
-    ledger = { ...ledger, payments: consumeCredits(ledger.payments, amt) };
-    await writeLedger(customerId, ledger);
-  }
-
-  // Anything still unapplied simply stays on account — no bills left to pay.
+  // Anything left simply stays on account — no open bills to put it against.
   return { ledger, allocation: { settled, partial, creditedToAccount: Math.max(0, Math.round(remaining * 100) / 100) } };
 }
 

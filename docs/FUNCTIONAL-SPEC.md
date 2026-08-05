@@ -80,24 +80,48 @@ Total due            = oldOutstanding + thisBillTotal
 New outstanding      = max(0, oldOutstanding + thisBillTotal − receivedNow)
 ```
 
-## 1.5 Payment allocation — oldest-first (`allocatePayment`)
+## 1.5 Payment allocation — strict FIFO (`allocatePayment`)
 
-The default when you record a payment against a customer. Open invoices are sorted
-oldest first, then:
+The default when you record a payment against a customer. Open invoices are walked
+oldest first, and a bill too large to clear outright is **part-paid** rather than
+skipped — so the oldest debt is always what gets reduced first:
 
 ```
 for each open invoice (oldest → newest):
-    if remaining < invoice.balance:  STOP        ← partial payments never split a bill
-    completeInvoice(invoice)                      ← marks PAID, deducts stock
-    remaining −= invoice.balance
+    if remaining <= 0: stop
+    if remaining >= invoice.balance:
+        completeInvoice(invoice)          ← marks PAID, deducts stock
+        remaining -= invoice.balance
+    else:
+        addInvoicePayment(invoice, remaining)   ← part-pay the oldest, then stop
+        remaining = 0
 
 leftover = max(0, round(remaining, 2))
-if leftover > 0: append to ledger as an account credit
+if leftover > 0: append to ledger as an account credit   ← only when no bills remain
 ```
 
-Worked example from the source comment: **£35** against bills of £10, £25, £15, £5, £10
-clears the £10 and the £25 and leaves £0. It stops at the £15 rather than part-paying
-it. Pass `allocate: false` to skip all of this and record a plain account credit.
+Worked example — bills of **£100** (oldest), £20, £30:
+
+| Payment | Result |
+| --- | --- |
+| £50 | £50 part-paid onto the **£100** bill (£50 left on it); £20 and £30 untouched |
+| £100 | oldest bill cleared; £20 and £30 untouched |
+| £150 | all three cleared |
+| £160 | all three cleared, £10 held as account credit |
+
+Pass `allocate: false` to skip allocation entirely and record a plain account credit.
+
+Two earlier versions of this are worth knowing about, because both were wrong in
+ways that showed up in the books:
+
+- The original stopped at the first bill it couldn't cover and credited the whole
+  payment to the account, so money never reached the bills.
+- The next version skipped bills it couldn't clear and settled newer ones instead,
+  which cleared recent invoices while the oldest debt aged indefinitely.
+
+`reapplyAccountCredits` (the "re-apply account credit" button) runs the same walk,
+writing the ledger down immediately after each bill changes so a mid-way failure
+leaves the ledger holding exactly the credit that has not been applied.
 
 ## 1.6 Dashboard "Today's takings"
 
@@ -159,8 +183,9 @@ out themselves on the storefront. Both create a Shopify **draft order** tagged
 **5. They pay.** Three routes, all landing in different places:
 - Paid in full at the till → invoice is *completed* (stock deducts, order created).
 - Partial payment on one invoice → appended to that invoice's `portal.payments`.
-- Payment against the account → runs the oldest-first allocation (§1.5), auto-clearing
-  whole invoices and crediting any surplus to `customer.portal.ledger`.
+- Payment against the account → runs the strict-FIFO allocation (§1.5): clears the
+  oldest bills first, part-pays the oldest one it can't cover, and credits any true
+  surplus to `customer.portal.ledger`.
 
 **6. They get their paperwork.** Per-invoice PDF, full statement, today's day
 statement (plain or itemised), or an outstanding-balance demand. Sent by email,
@@ -315,7 +340,7 @@ balance.
 (inline amount, method, note) and **Revoke**.
 
 **Record payment card:** amount, method, note → posts to `/api/customers/[id]`, which
-**allocates oldest-first by default** (§1.5) and reports back which invoices it
+**allocates strictly oldest-first** (§1.5) and reports back which invoices it
 auto-settled.
 
 **Edit customer card:** first name, last name, company, email, phone, opening balance,
