@@ -403,6 +403,23 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   };
 }
 
+// Money actually RECEIVED in a date window, wherever it landed: payments recorded
+// against ANY bill (including one raised weeks ago) plus on-account credits.
+//
+// Deliberately NOT "the paid portion of bills raised today" — that was the old
+// behaviour, and it reported £0 received on a day when a customer walked in and
+// settled an old invoice, because the only bill dated that day was still unpaid.
+export function receivedBetween(c: CustomerDetail, start: Date, end: Date): number {
+  const from = +start, to = +end;
+  const within = (iso: string) => { const t = +new Date(iso); return t >= from && t < to; };
+  const onBills = c.invoices.reduce(
+    (s, i) => s + i.paymentEntries.filter((p) => within(p.date)).reduce((a, p) => a + (Number(p.amount) || 0), 0),
+    0,
+  );
+  const onAccount = c.ledger.payments.filter((p) => within(p.date)).reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  return Math.round((onBills + onAccount) * 100) / 100;
+}
+
 // Bulk: add/remove segment tags across many customers (uses tagsAdd/tagsRemove — no read needed).
 export async function bulkCustomerSegments(
   ids: string[],
