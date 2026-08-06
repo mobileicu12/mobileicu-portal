@@ -301,6 +301,11 @@ export type InvoiceRow = {
 };
 
 export async function listInvoices(): Promise<InvoiceRow[]> {
+  return listInvoicesRaw("tag:portal-billing AND -tag:voided AND -tag:deleted");
+}
+
+// Shared fetch so the live list and the deleted-invoice bin can't drift apart.
+async function listInvoicesRaw(searchQuery: string): Promise<InvoiceRow[]> {
   const data = await adminGraphQL<{
     draftOrders: {
       edges: {
@@ -322,8 +327,8 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
       }[];
     };
   }>(
-    `query {
-      draftOrders(first: 100, reverse: true, query: "tag:portal-billing AND -tag:voided") {
+    `query($q: String!) {
+      draftOrders(first: 100, reverse: true, query: $q) {
         edges { node {
           id name status totalPrice createdAt invoiceUrl tags
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
@@ -335,6 +340,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
         } }
       }
     }`,
+    { q: searchQuery },
   );
   return data.draftOrders.edges.map((e) => ({
     id: e.node.id,
@@ -688,7 +694,34 @@ export async function voidInvoice(id: string): Promise<void> {
   if (r.tagsAdd.userErrors.length) throw new ShopifyError(r.tagsAdd.userErrors.map((e) => e.message).join("; "));
 }
 
-// ---- Delete a draft invoice ----
+// ---- Soft delete / restore ----
+// Shopify's draftOrderDelete is irreversible, so the portal's "delete" tags the
+// invoice instead: it drops out of every list, report and balance exactly like a
+// void, but the record survives and can be put back. Hard deletion still exists
+// (deleteInvoice) for the owner who really means it.
+export async function softDeleteInvoice(id: string): Promise<void> {
+  const r = await adminGraphQL<{ tagsAdd: { userErrors: { message: string }[] } }>(
+    `mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }`,
+    { id: toGid(id), tags: ["deleted"] },
+  );
+  if (r.tagsAdd.userErrors.length) throw new ShopifyError(r.tagsAdd.userErrors.map((e) => e.message).join("; "));
+}
+
+export async function restoreInvoice(id: string): Promise<void> {
+  const r = await adminGraphQL<{ tagsRemove: { userErrors: { message: string }[] } }>(
+    `mutation($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }`,
+    { id: toGid(id), tags: ["deleted"] },
+  );
+  if (r.tagsRemove.userErrors.length) throw new ShopifyError(r.tagsRemove.userErrors.map((e) => e.message).join("; "));
+}
+
+// List invoices that were soft-deleted, so they can be reviewed and restored.
+export async function listDeletedInvoices(): Promise<InvoiceRow[]> {
+  const all = await listInvoicesRaw("tag:portal-billing AND tag:deleted");
+  return all;
+}
+
+// ---- Permanently delete a draft invoice (irreversible) ----
 export async function deleteInvoice(id: string): Promise<void> {
   const res = await adminGraphQL<{
     draftOrderDelete: { deletedId: string | null; userErrors: { field: string[]; message: string }[] };

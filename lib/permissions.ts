@@ -9,6 +9,7 @@ export const PERMISSIONS = [
   { key: "reports", label: "Reports", desc: "Sales & team performance" },
   { key: "settings", label: "Settings", desc: "Business & portal settings" },
   { key: "users", label: "Team management", desc: "Add teammates & set access" },
+  { key: "logs", label: "Activity log", desc: "See who changed invoices & payments, restore deletions" },
 ] as const;
 
 export type PermKey = (typeof PERMISSIONS)[number]["key"];

@@ -323,7 +323,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         edges { node { id name status totalPrice createdAt completedAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
       }
     }`,
-    { q: `customer_id:${numericId} AND -tag:voided` },
+    { q: `customer_id:${numericId} AND -tag:voided AND -tag:deleted` },
   );
 
   let ledger: Ledger = { payments: [] };

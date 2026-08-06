@@ -3,6 +3,7 @@ import { getCustomer, addPayment, allocatePayment, reapplyAccountCredits, remove
 import type { SegmentKey } from "@/lib/segments";
 import { requirePermission } from "@/lib/guard";
 import { accountSharePath } from "@/lib/invoice-link";
+import { audit } from "@/lib/audit";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -35,16 +36,19 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
     if (body?.action === "reapplyCredits") {
       const { ledger, allocation } = await reapplyAccountCredits(gid(id));
+      await audit("customer.credit.reapply", { ref: gid(id), detail: `Settled ${allocation.settled.length} bill(s)${allocation.partial ? `, part-paid ${allocation.partial.name} £${allocation.partial.amount.toFixed(2)}` : ""}, £${allocation.creditedToAccount.toFixed(2)} left on account` });
       return NextResponse.json({ ok: true, ledger, allocation });
     }
     if (body?.action === "removePayment") {
       if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });
       const ledger = await removePayment(gid(id), body.index);
+      await audit("customer.payment.revoke", { ref: gid(id), detail: `Revoked on-account payment #${body.index}` });
       return NextResponse.json({ ok: true, ledger });
     }
     if (body?.action === "editPayment") {
       if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });
       const ledger = await updatePaymentAt(gid(id), body.index, { amount: body.amount, method: body.method, note: body.note, date: body.date });
+      await audit("customer.payment.edit", { ref: gid(id), detail: `Payment #${body.index} → £${Number(body.amount ?? 0).toFixed(2)} ${body.method || ""}`.trim() });
       return NextResponse.json({ ok: true, ledger });
     }
     if (body?.update) {
@@ -96,12 +100,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         method: body.method || "cash",
         note: body.note || "",
       });
+      await audit("customer.payment.add", { ref: gid(id), detail: `£${body.amount.toFixed(2)} ${body.method || "cash"} held on account` });
       return NextResponse.json({ ok: true, ledger });
     }
     const { ledger, allocation } = await allocatePayment(gid(id), body.amount, {
       method: body.method || "cash",
       date: body.date || new Date().toISOString(),
       note: body.note || "",
+    });
+    await audit("customer.payment.add", {
+      ref: gid(id),
+      detail: `£${body.amount.toFixed(2)} ${body.method || "cash"} — settled ${allocation.settled.length} bill(s)${allocation.partial ? `, part-paid ${allocation.partial.name} £${allocation.partial.amount.toFixed(2)}` : ""}${allocation.creditedToAccount > 0.001 ? `, £${allocation.creditedToAccount.toFixed(2)} on account` : ""}`,
     });
     return NextResponse.json({ ok: true, ledger, allocation });
   } catch (e) {
