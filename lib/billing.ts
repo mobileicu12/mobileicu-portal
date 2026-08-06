@@ -305,9 +305,30 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
 }
 
 // Shared fetch so the live list and the deleted-invoice bin can't drift apart.
-async function listInvoicesRaw(searchQuery: string): Promise<InvoiceRow[]> {
+//
+// Pages through Shopify rather than taking the first 100. The old single-page
+// fetch meant that past 100 invoices the oldest silently vanished from the list,
+// from every report, and from the end-of-day digest — while still counting
+// towards balances, so the totals stopped matching the rows.
+async function listInvoicesRaw(searchQuery: string, cap = 1000): Promise<InvoiceRow[]> {
+  const rows: InvoiceRow[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < 20 && rows.length < cap; page++) {
+    const { batch, hasNext, endCursor } = await listInvoicePage(searchQuery, after);
+    rows.push(...batch);
+    if (!hasNext) break;
+    after = endCursor;
+  }
+  return rows.slice(0, cap);
+}
+
+async function listInvoicePage(
+  searchQuery: string,
+  after: string | null,
+): Promise<{ batch: InvoiceRow[]; hasNext: boolean; endCursor: string | null }> {
   const data = await adminGraphQL<{
     draftOrders: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
       edges: {
         node: {
           id: string;
@@ -327,8 +348,9 @@ async function listInvoicesRaw(searchQuery: string): Promise<InvoiceRow[]> {
       }[];
     };
   }>(
-    `query($q: String!) {
-      draftOrders(first: 100, reverse: true, query: $q) {
+    `query($q: String!, $after: String) {
+      draftOrders(first: 100, reverse: true, query: $q, after: $after) {
+        pageInfo { hasNextPage endCursor }
         edges { node {
           id name status totalPrice createdAt invoiceUrl tags
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
@@ -340,9 +362,9 @@ async function listInvoicesRaw(searchQuery: string): Promise<InvoiceRow[]> {
         } }
       }
     }`,
-    { q: searchQuery },
+    { q: searchQuery, after },
   );
-  return data.draftOrders.edges.map((e) => ({
+  const batch = data.draftOrders.edges.map((e) => ({
     id: e.node.id,
     name: e.node.name,
     invoiceNo: e.node.invoiceNo?.value || e.node.name,
@@ -358,6 +380,7 @@ async function listInvoicesRaw(searchQuery: string): Promise<InvoiceRow[]> {
     staff: staffFromTags(e.node.tags ?? []),
     payMethod: e.node.payMethod?.value ?? null,
   }));
+  return { batch, hasNext: data.draftOrders.pageInfo.hasNextPage, endCursor: data.draftOrders.pageInfo.endCursor };
 }
 
 export type StaffSales = { staff: string; count: number; total: number; paid: number; open: number };
