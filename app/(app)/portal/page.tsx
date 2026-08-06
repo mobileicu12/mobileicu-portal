@@ -9,6 +9,7 @@ type Stats = {
   outOfStock: number;
   lowStock: number;
   collections: number;
+  lowStockThreshold?: number;
 };
 
 export default function Dashboard() {
@@ -56,7 +57,7 @@ export default function Dashboard() {
 
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total products" value={stats?.products} tone="ink" />
-        <Stat label="Low stock (≤5)" value={stats?.lowStock} tone="amber" />
+        <Stat label={`Low stock (≤${stats?.lowStockThreshold ?? 5})`} value={stats?.lowStock} tone="amber" />
         <Stat label="Out of stock" value={stats?.outOfStock} tone="red" />
         <Stat label="Collections" value={stats?.collections} tone="ink" />
       </div>

@@ -319,7 +319,10 @@ export type DashboardStats = {
   collections: number;
 };
 
-export async function getDashboardStats(): Promise<DashboardStats> {
+export async function getDashboardStats(lowStock = 5): Promise<DashboardStats> {
+  // Coerced to a positive integer before it goes into the query string — the
+  // threshold is part of Shopify's search syntax, not a bindable variable.
+  const threshold = Math.max(1, Math.floor(Number(lowStock) || 5));
   const data = await adminGraphQL<{
     products: { count: number };
     out: { count: number };
@@ -329,7 +332,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     query {
       products: productsCount { count }
       out: productsCount(query: "inventory_total:0") { count }
-      low: productsCount(query: "inventory_total:>0 inventory_total:<=5") { count }
+      low: productsCount(query: "inventory_total:>0 inventory_total:<=${threshold}") { count }
       collections: collectionsCount { count }
     }
   `);

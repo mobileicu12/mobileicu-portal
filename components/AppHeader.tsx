@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import { downloadCustomerReportsZip } from "@/lib/customer-zip";
 import { useMe } from "@/lib/use-me";
+import { loadPortalSettings } from "@/lib/settings-client";
 import { BUSINESS } from "@/lib/business";
 
 const LABELS: { match: (p: string) => boolean; label: string }[] = [
@@ -47,9 +48,17 @@ export default function AppHeader() {
   const [afterNine, setAfterNine] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState("");
-  // "Today's reports" shows after this hour (default 21). No per-page settings fetch.
+  // "Today's reports" appears after the owner's configured hour. Reading it is
+  // free here: loadPortalSettings shares one request with the favicon manager,
+  // and /api/settings is served from cache.
+  const hourRef = useRef(21);
   useEffect(() => {
-    const check = () => setAfterNine(new Date().getHours() >= 21);
+    const check = () => setAfterNine(new Date().getHours() >= hourRef.current);
+    void loadPortalSettings().then((s) => {
+      const h = Number(s?.reportButtonHour);
+      if (Number.isFinite(h) && h >= 0 && h <= 23) hourRef.current = h;
+      check();
+    });
     check();
     const t = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(t);
