@@ -39,12 +39,13 @@ discountAmt = type "%"  → subtotal × min(discount,100)/100
               type "£"  → min(discount, subtotal)
 
 net         = subtotal − discountAmt
-vatAmt      = vatEnabled ? net × 0.20 : 0
+vatAmt      = vatEnabled ? net × (settings.vatRate / 100) : 0
 total       = net + vatAmt
 ```
 
-The VAT rate is the **hardcoded constant `VAT_RATE = 0.2`** in the billing page, not
-the Settings value (see §6.1).
+The rate comes from Settings and drives the on-screen total and the "Charge VAT (x%)"
+label. The tax actually charged is applied by Shopify from its own tax config — keep
+the two in step (see §6.1).
 
 ## 1.2 One invoice's paid / balance
 
@@ -142,6 +143,22 @@ collectedToday = paid + ledgerToday
 
 Cached 2 minutes via `unstable_cache`. Note `outstanding` is all-time despite sitting
 in a "today" widget — that's deliberate, it's the debtor book.
+
+## 1.6a Per-customer day figures (statements, send drawer, digest)
+
+```
+Today's bills        = Σ total of invoices CREATED today
+Received today       = Σ payments DATED today, across every invoice's payment
+                       entries PLUS on-account ledger credits   (receivedBetween)
+Today's bills unpaid = Σ balance of invoices created today
+Total outstanding    = formula 1.3
+```
+
+"Received today" deliberately spans every bill, not just today's. It previously
+summed the paid portion of bills raised today, so a customer who walked in and
+cleared an older invoice was reported as having paid £0 that day. The two labels
+were renamed at the same time, because "Paid today" / "Today's outstanding" read as
+if they had to net off against each other, which is what hid the bug.
 
 ## 1.7 Staff performance (`summarizeByStaff`)
 
@@ -562,24 +579,72 @@ embeds one so the customer can open their statement with no account.
 
 ---
 
+# Part 5a — Traceability and safety nets
+
+## 5a.1 Activity log — **LIVE**
+
+`/portal/logs`, gated on the `logs` permission (owner always has it).
+
+Every action that moves money is recorded with the actor, timestamp, invoice
+number and amounts: invoice create/edit/mark-paid/void/duplicate/delete/restore,
+and payment record/edit/revoke on both the invoice and the account ledger.
+Invoice edits record before/after totals and line counts. Deletions snapshot
+customer, total, paid and balance **before** the record goes, so the trail
+outlives the thing it describes.
+
+Storage is one metafield per calendar month (`portal.audit_YYYYMM`), capped at
+400 entries each. A single growing metafield would eventually exceed Shopify's
+size ceiling and start failing writes silently — losing the trail exactly when
+the business is busiest.
+
+`audit()` never throws. Losing a log line is bad; failing a customer's payment
+because the log write failed is worse.
+
+Screen: search across actor/reference/detail, a "deletions & reversals only"
+filter, month range selector, and critical actions highlighted in red.
+
+## 5a.2 Reversible deletion — **LIVE**
+
+Shopify's `draftOrderDelete` cannot be undone, so the portal's Remove action
+tags the invoice `deleted` instead. It drops out of `listInvoices`, the
+customer's own invoice list, every report and every balance — but nothing is
+destroyed.
+
+- **Confirm:** staff must type the invoice number, not just click OK.
+- **Undo:** a banner on the invoice list immediately after, wired to the restore
+  endpoint. Also restorable any time from the Activity log.
+- **Permanent delete** still exists behind `?permanent=1`, owner-only, and is
+  always logged with the full snapshot first.
+
+## 5a.3 Customer documents — **LIVE**
+
+| Document | What it shows | How it goes out |
+| --- | --- | --- |
+| Full account statement | Every bill paid and unpaid, every payment, running balance | Download, email (PDF attached), WhatsApp link, signed public link |
+| Payment receipt | Amount received, method, which bills it cleared or part-paid, surplus held on account, balance before/after | Download or send, straight after recording a payment |
+| Day statement | Today's bills itemised + the day figures in §1.6a | Email, WhatsApp, ZIP, signed public link |
+
+Public links are HMAC-signed capability URLs and answer **404** (not 403) on a
+bad token, so sequential customer ids can't be enumerated.
+
+---
+
 # Part 6 — Dead settings, placeholders and flags
 
 The honest list. These look functional in the UI but aren't.
 
-## 6.1 VAT rate — **DEAD**
+## 6.1 VAT rate — **LIVE** (was dead)
 
-`settings.vatRate` is saved and shown, but **nothing reads it**. The billing page uses
-a hardcoded `const VAT_RATE = 0.2`, and the actual invoice tax comes from Shopify's own
-tax configuration via `taxExempt`. Changing this to 5% changes nothing anywhere. To
-make it real you'd have to load settings into the billing page *and* configure Shopify's
-tax rates to match.
+`settings.vatRate` now drives the billing screen's total and the "Charge VAT (x%)"
+label. Note the boundary: the tax **actually charged** is applied by Shopify from
+its own tax configuration. This setting controls what staff see; keep the two in
+step or the on-screen total and the issued invoice will disagree. Settings says
+this under the field.
 
-## 6.2 Low-stock threshold — **DEAD**
+## 6.2 Low-stock threshold — **LIVE** (was dead)
 
-`settings.lowStock` is saved but never read. Two places hardcode 5 independently:
-inventory's `LOW_STOCK_DEFAULT = 5`, and the dashboard's GraphQL query
-`inventory_total:>0 inventory_total:<=5`. The dashboard label even hardcodes the text
-"(≤5)".
+`settings.lowStock` now drives the dashboard's "Low stock" count and label, and
+Inventory's Low filter. Previously three places hardcoded 5 independently.
 
 ## 6.3 `ENABLE_LEDGER_TODAY` — **FLAGGED OFF**
 
@@ -624,12 +689,14 @@ Hard limits baked into queries, which matter as the business grows:
 
 | Limit | Where |
 | --- | --- |
-| 100 invoices | `listInvoices` — the invoice list, all reports and the digest only ever see the most recent 100 |
+| 1000 invoices | `listInvoices` pages through Shopify (20 pages × 100). Was a single un-paged 100 — see the note below |
 | 100 customers | `listCustomers` |
 | 100 line items | per invoice detail |
 | 12 products | POS search results |
 | 500 customers | backup snapshot |
 | 2000 records | attendance log (oldest trimmed) |
 
-The 100-invoice cap is the one to watch: once you pass 100 invoices in a period, the
-digest and the reports quietly stop seeing the older ones.
+**Fixed:** `listInvoices` used to fetch only Shopify's first 100 draft orders. Past
+100 invoices the oldest silently disappeared from the list, every report and the
+digest — while still counting towards customer balances, so totals stopped matching
+the rows on screen. It now pages through up to 1000.

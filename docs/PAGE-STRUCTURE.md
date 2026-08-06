@@ -1,6 +1,6 @@
 # Page Structure — wireframe snapshots of every page
 
-Layout snapshots of all 33 pages, plus the full route tree and navigation model.
+Layout snapshots of every page, plus the full route tree and navigation model.
 
 **These are wireframes, not screenshots.** They're reconstructed from the JSX, so the
 regions, controls and their order are accurate; exact pixel spacing and live data are
@@ -50,7 +50,9 @@ Companion docs: [`SITE-BLUEPRINT.md`](./SITE-BLUEPRINT.md) ·
         ├── collections              Collection list        [collections]
         │   └── [id]                 Collection detail      [collections]
         ├── import-export            Excel in/out           [inventory]
+        ├── till                     In-shop till items     [inventory]
         ├── channels                 Marketplace board      [any]  ← PLACEHOLDER
+        ├── logs                     Activity log & undo    [logs]
         ├── settings                 Business settings      [settings]
         ├── users                    Team & access          [users]
         └── tap-in                   Shift clock-in         [any]  ← FLAGGED OFF
@@ -68,7 +70,7 @@ Companion docs: [`SITE-BLUEPRINT.md`](./SITE-BLUEPRINT.md) ·
 Overview  →  Dashboard
 Sell      →  Billing · Invoices · Customers · Orders
 Catalog   →  Inventory · Add Product · Collections · Import/Export · Channels
-Admin     →  Settings · Team
+Admin     →  Settings · Team · Activity log
 ```
 
 **Mobile bottom bar** shows only `primary` items — Dashboard, Billing, Invoices,
@@ -230,7 +232,10 @@ The header's "today's reports" ZIP button only appears after the configured hour
 │MICU-…0043│ Acme Ltd │Online│ raj │ PAID   │27 Jul   │   £102.60  │
 │MICU-…0042│ Walk-in  │ Shop │ ana │ OPEN   │27 Jul   │    £84.00  │
 └──────────┴──────────┴──────┴─────┴────────┴─────────┴────────────┘
+  Show [20 ▾] per page · 1–20 of 143   « First ‹ Prev  Page 1 of 8  Next › Last »
+
         totals hidden unless owner or `reports` permission
+        after a removal, an Undo banner appears above the header
 ```
 
 ## `/portal/invoices/[id]` — editor
@@ -513,6 +518,31 @@ DETAIL
 │                                    │  raj    09:02–17:30  8h 28m │
 │                                    │  ana    09:15–       [in]   │
 └────────────────────────────────────┴─────────────────────────────┘
+```
+
+## `/portal/logs` — Activity log
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Activity log                        [Last 3 months ▾]  [↻]       │ sticky
+│ Every change to an invoice or a payment — who, what and when.    │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌─ DELETED INVOICES — RECOVERABLE (2) ───────────────────────┐   │
+│ │ Hidden from every list, report and balance. Nothing        │   │
+│ │ destroyed — Restore puts one back exactly as it was.       │   │
+│ │ MICU-2026-0043  Acme Ltd · 27 Jul   £102.60  [↩ Restore]   │   │
+│ └────────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│ [Search invoice #, person, amount…] [Everything|Deletions] 42    │
+├──────────┬──────────┬───────────────┬───────────┬───────────────┤
+│ When     │ Who      │ What          │ Reference │ Detail        │
+├──────────┼──────────┼───────────────┼───────────┼───────────────┤
+│ 05 Aug   │ raj@…    │[Payment recvd]│MICU-…0042 │ £50 cash —    │
+│ 19:41    │          │               │           │ settled 2     │
+│ 05 Aug   │ owner@…  │[Invoice       │MICU-…0039 │ Recoverable — │
+│ 18:02    │          │ DELETED] red  │           │ total £84.00  │
+└──────────┴──────────┴───────────────┴───────────┴───────────────┘
+     critical rows (deletes, voids, revokes) tinted red
 ```
 
 ## `/portal/users`
