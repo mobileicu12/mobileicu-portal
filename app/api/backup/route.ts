@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
-import { getSettings, getIntegrations } from "@/lib/settings";
-import { getAllProductsForExport, getCollectionsDetailed } from "@/lib/products";
-import { listCustomers, getCustomer } from "@/lib/customers";
-import { listInvoices } from "@/lib/billing";
-import { mapLimit } from "@/lib/async";
+import { buildBackupSnapshot } from "@/lib/backup-snapshot";
 import { BRAND_SLUG } from "@/lib/brand";
 
 export const runtime = "nodejs";
@@ -19,37 +15,7 @@ export async function GET() {
   if (!(await isOwnerRequest())) return NextResponse.json({ error: "Owner only." }, { status: 403 });
 
   try {
-    const [settings, integrations, products, collections, customerList, invoices] = await Promise.all([
-      getSettings(),
-      getIntegrations(),
-      getAllProductsForExport(),
-      getCollectionsDetailed(),
-      listCustomers(),
-      listInvoices(),
-    ]);
-
-    // Pull each customer's full detail (ledger, opening balance, invoices) — capped
-    // to stay within the request budget on very large customer bases.
-    const CAP = 500;
-    const detailed = await mapLimit(customerList.slice(0, CAP), 4, (c) =>
-      getCustomer(c.id).catch(() => ({ ...c, _detailError: true })),
-    );
-
-    const backup = {
-      app: `${BRAND_SLUG}-portal`,
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      counts: { products: products.length, collections: collections.length, customers: detailed.length, invoices: invoices.length },
-      settings,
-      // token redacted even from the backup file; phone-id/template kept for reference.
-      integrations: { whatsappPhoneId: integrations.whatsappPhoneId, whatsappTemplate: integrations.whatsappTemplate, whatsappTokenSet: !!integrations.whatsappToken },
-      products,
-      collections,
-      customers: detailed,
-      invoices,
-      truncated: customerList.length > CAP ? { customers: customerList.length - CAP } : null,
-    };
-
+    const backup = await buildBackupSnapshot();
     const stamp = new Date().toISOString().slice(0, 10);
     return new NextResponse(JSON.stringify(backup, null, 2), {
       headers: {

@@ -482,6 +482,31 @@ async function writeLedger(customerId: string, ledger: Ledger): Promise<void> {
   if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
 }
 
+/**
+ * Restore a customer's financial metafields (ledger + opening balance) from a
+ * backup. Overwrites in place on an EXISTING customer, matched by id — it never
+ * creates or deletes a customer, so it cannot duplicate Shopify records. If the
+ * customer no longer exists, metafieldsSet errors and the caller skips it.
+ */
+export async function restoreCustomerFinancials(
+  id: string,
+  data: { ledger?: Ledger; openingBalance?: number },
+): Promise<void> {
+  const mf: { ownerId: string; namespace: string; key: string; type: string; value: string }[] = [];
+  if (data.ledger) {
+    mf.push({ ownerId: id, namespace: LEDGER_NS, key: LEDGER_KEY, type: "json", value: JSON.stringify(data.ledger) });
+  }
+  if (data.openingBalance !== undefined) {
+    mf.push({ ownerId: id, namespace: LEDGER_NS, key: "opening_balance", type: "number_decimal", value: String(Math.max(0, data.openingBalance)) });
+  }
+  if (!mf.length) return;
+  const res = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf },
+  );
+  if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+}
+
 export async function addPayment(customerId: string, payment: Payment): Promise<Ledger> {
   const ledger = await readLedger(customerId);
   ledger.payments = [...ledger.payments, payment];
