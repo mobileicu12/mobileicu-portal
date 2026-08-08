@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment, voidInvoice } from "@/lib/billing";
+import { getInvoiceDetail, completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment, voidInvoice } from "@/lib/billing";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { audit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -24,14 +25,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     date?: string;
     index?: number;
   };
+  // Label the log lines with the human invoice number, not the Shopify gid.
+  const label = await getInvoiceDetail(decoded).then((i) => i.invoiceNo || i.name).catch(() => decoded);
+
   try {
     switch (body.action) {
       case "complete": {
         const r = await completeInvoice(decoded, !!body.paymentPending);
+        await audit("invoice.complete", { ref: decoded, name: label, detail: "Marked paid; stock deducted" });
         return NextResponse.json({ ok: true, ...r });
       }
       case "duplicate": {
         const r = await duplicateInvoice(decoded);
+        await audit("invoice.duplicate", { ref: decoded, name: label, detail: `Copied to ${r.name}` });
         return NextResponse.json({ ok: true, ...r });
       }
       case "send": {
@@ -48,15 +54,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           method: body.method || "cash",
           note: body.note || "",
         });
+        await audit("invoice.payment.add", { ref: decoded, name: label, detail: `£${body.amount.toFixed(2)} ${body.method || "cash"}${body.note ? ` — ${body.note}` : ""}` });
         return NextResponse.json({ ok: true, payments });
       }
       case "removePayment": {
         if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });
+        const gone = (await getInvoiceDetail(decoded).catch(() => null))?.payments?.[body.index];
         const payments = await removeInvoicePayment(decoded, body.index);
+        await audit("invoice.payment.revoke", { ref: decoded, name: label, detail: gone ? `Removed £${Number(gone.amount).toFixed(2)} ${gone.method}` : `Removed payment #${body.index}` });
         return NextResponse.json({ ok: true, payments });
       }
       case "void": {
         await voidInvoice(decoded);
+        await audit("invoice.void", { ref: decoded, name: label, detail: "Voided — order cancelled and stock restored" });
         return NextResponse.json({ ok: true });
       }
       default:

@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { listInvoices, getInvoiceDetail } from "@/lib/billing";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { BRAND_SLUG } from "@/lib/brand";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -22,7 +23,7 @@ export async function GET(req: Request) {
   try {
     const wb = new ExcelJS.Workbook();
     const stamp = new Date().toISOString().slice(0, 10);
-    let filename = `mobileicu-invoices-${stamp}.xlsx`;
+    let filename = `${BRAND_SLUG}-invoices-${stamp}.xlsx`;
 
     const headerStyle = (ws: ExcelJS.Worksheet, count: number) => {
       ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -72,7 +73,7 @@ export async function GET(req: Request) {
       headerStyle(meta, 2);
     } else {
       let invoices = await listInvoices();
-      if (idSet) { invoices = invoices.filter((inv) => idSet.has(inv.id)); filename = `mobileicu-invoices-selected-${stamp}.xlsx`; }
+      if (idSet) { invoices = invoices.filter((inv) => idSet.has(inv.id)); filename = `${BRAND_SLUG}-invoices-selected-${stamp}.xlsx`; }
       const ws = wb.addWorksheet("Invoices");
       ws.columns = [
         { header: "Invoice", key: "name", width: 14 },

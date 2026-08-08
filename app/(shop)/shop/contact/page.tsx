@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { getSettings } from "@/lib/settings";
 import { STORE_DOMAIN } from "@/lib/storefront";
+import { BUSINESS } from "@/lib/business";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContactPage() {
   const s = await getSettings().catch(() => null);
-  const email = s?.email || "mobileicu12@gmail.com";
+  const email = s?.email || BUSINESS.email;
   const phone = s?.phone || "";
   const address = (s?.address || "United Kingdom").split("\n").filter(Boolean);
 

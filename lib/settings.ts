@@ -1,5 +1,11 @@
 // Portal settings (business details for invoices, etc.) stored in a shop metafield.
+import { unstable_cache, revalidateTag } from "next/cache";
 import { adminGraphQL, ShopifyError } from "./shopify";
+import { BRAND_INVOICE_PREFIX } from "./brand";
+import { BUSINESS } from "./business";
+
+// Cache tag for portal settings — busted on every save.
+const SETTINGS_TAG = "portal-settings";
 
 export type PortalSettings = {
   bizName: string;
@@ -27,16 +33,16 @@ export type PortalSettings = {
 };
 
 export const DEFAULT_SETTINGS: PortalSettings = {
-  bizName: "MOBILE ICU",
-  tagline: "Phone & Laptop Parts — Wholesale",
+  bizName: BUSINESS.name,
+  tagline: BUSINESS.tagline,
   address: "United Kingdom",
-  email: "mobileicu12@gmail.com",
+  email: BUSINESS.email,
   phone: "",
-  website: "mobile-icu-cws.myshopify.com",
+  website: BUSINESS.website,
   vatNumber: "",
   bank: "",
   invoiceFooter: "Thank you for your business.",
-  invoicePrefix: "MICU",
+  invoicePrefix: BRAND_INVOICE_PREFIX,
   vatRate: 20,
   lowStock: 5,
   faviconUrl: "",
@@ -96,7 +102,8 @@ async function shopGid(): Promise<string> {
   return d.shop.id;
 }
 
-export async function getSettings(): Promise<PortalSettings> {
+// Always hits Shopify. Use on write paths, which must merge onto current values.
+export async function readSettings(): Promise<PortalSettings> {
   const d = await adminGraphQL<{ shop: { metafield: { value: string } | null } }>(
     `query { shop { metafield(namespace: "${NS}", key: "${KEY}") { value } } }`,
   );
@@ -108,11 +115,19 @@ export async function getSettings(): Promise<PortalSettings> {
   }
 }
 
+// Cached read for the hot path. The header, favicon manager and invoice/PDF
+// builders all read settings on nearly every request; this keeps that off
+// Shopify. Busted immediately on save, so edits still apply straight away.
+export const getSettings = unstable_cache(readSettings, ["portal-settings"], {
+  revalidate: 300,
+  tags: [SETTINGS_TAG],
+});
+
 // Generate the next unique, sequential invoice number: PREFIX-YYYY-0001.
 // Backed by an atomically-read counter in a shop metafield.
 export async function nextInvoiceNumber(): Promise<string> {
   const settings = await getSettings();
-  const prefix = (settings.invoicePrefix || "MICU").trim();
+  const prefix = (settings.invoicePrefix || BRAND_INVOICE_PREFIX).trim();
   const d = await adminGraphQL<{ shop: { id: string; metafield: { value: string } | null } }>(
     `query { shop { id metafield(namespace: "${NS}", key: "invoice_counter") { value } } }`,
   );
@@ -127,7 +142,9 @@ export async function nextInvoiceNumber(): Promise<string> {
 }
 
 export async function saveSettings(input: Partial<PortalSettings>): Promise<PortalSettings> {
-  const merged = { ...DEFAULT_SETTINGS, ...(await getSettings()), ...input };
+  // Uncached read: merging onto a stale copy would silently revert fields the
+  // caller didn't send (the digest saves only digestLastRun, for example).
+  const merged = { ...DEFAULT_SETTINGS, ...(await readSettings()), ...input };
   const ownerId = await shopGid();
   const res = await adminGraphQL<{
     metafieldsSet: { userErrors: { field: string[]; message: string }[] };
@@ -139,5 +156,6 @@ export async function saveSettings(input: Partial<PortalSettings>): Promise<Port
   );
   const errs = res.metafieldsSet.userErrors;
   if (errs.length) throw new ShopifyError(errs.map((e) => e.message).join("; "));
+  try { revalidateTag(SETTINGS_TAG, { expire: 0 }); } catch { /* outside a request scope (cron) — fine */ }
   return merged;
 }

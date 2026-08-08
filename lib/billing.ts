@@ -301,8 +301,34 @@ export type InvoiceRow = {
 };
 
 export async function listInvoices(): Promise<InvoiceRow[]> {
+  return listInvoicesRaw("tag:portal-billing AND -tag:voided AND -tag:deleted");
+}
+
+// Shared fetch so the live list and the deleted-invoice bin can't drift apart.
+//
+// Pages through Shopify rather than taking the first 100. The old single-page
+// fetch meant that past 100 invoices the oldest silently vanished from the list,
+// from every report, and from the end-of-day digest — while still counting
+// towards balances, so the totals stopped matching the rows.
+async function listInvoicesRaw(searchQuery: string, cap = 1000): Promise<InvoiceRow[]> {
+  const rows: InvoiceRow[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < 20 && rows.length < cap; page++) {
+    const { batch, hasNext, endCursor } = await listInvoicePage(searchQuery, after);
+    rows.push(...batch);
+    if (!hasNext) break;
+    after = endCursor;
+  }
+  return rows.slice(0, cap);
+}
+
+async function listInvoicePage(
+  searchQuery: string,
+  after: string | null,
+): Promise<{ batch: InvoiceRow[]; hasNext: boolean; endCursor: string | null }> {
   const data = await adminGraphQL<{
     draftOrders: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
       edges: {
         node: {
           id: string;
@@ -322,8 +348,9 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
       }[];
     };
   }>(
-    `query {
-      draftOrders(first: 100, reverse: true, query: "tag:portal-billing AND -tag:voided") {
+    `query($q: String!, $after: String) {
+      draftOrders(first: 100, reverse: true, query: $q, after: $after) {
+        pageInfo { hasNextPage endCursor }
         edges { node {
           id name status totalPrice createdAt invoiceUrl tags
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
@@ -335,8 +362,9 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
         } }
       }
     }`,
+    { q: searchQuery, after },
   );
-  return data.draftOrders.edges.map((e) => ({
+  const batch = data.draftOrders.edges.map((e) => ({
     id: e.node.id,
     name: e.node.name,
     invoiceNo: e.node.invoiceNo?.value || e.node.name,
@@ -352,6 +380,7 @@ export async function listInvoices(): Promise<InvoiceRow[]> {
     staff: staffFromTags(e.node.tags ?? []),
     payMethod: e.node.payMethod?.value ?? null,
   }));
+  return { batch, hasNext: data.draftOrders.pageInfo.hasNextPage, endCursor: data.draftOrders.pageInfo.endCursor };
 }
 
 export type StaffSales = { staff: string; count: number; total: number; paid: number; open: number };
@@ -688,7 +717,34 @@ export async function voidInvoice(id: string): Promise<void> {
   if (r.tagsAdd.userErrors.length) throw new ShopifyError(r.tagsAdd.userErrors.map((e) => e.message).join("; "));
 }
 
-// ---- Delete a draft invoice ----
+// ---- Soft delete / restore ----
+// Shopify's draftOrderDelete is irreversible, so the portal's "delete" tags the
+// invoice instead: it drops out of every list, report and balance exactly like a
+// void, but the record survives and can be put back. Hard deletion still exists
+// (deleteInvoice) for the owner who really means it.
+export async function softDeleteInvoice(id: string): Promise<void> {
+  const r = await adminGraphQL<{ tagsAdd: { userErrors: { message: string }[] } }>(
+    `mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }`,
+    { id: toGid(id), tags: ["deleted"] },
+  );
+  if (r.tagsAdd.userErrors.length) throw new ShopifyError(r.tagsAdd.userErrors.map((e) => e.message).join("; "));
+}
+
+export async function restoreInvoice(id: string): Promise<void> {
+  const r = await adminGraphQL<{ tagsRemove: { userErrors: { message: string }[] } }>(
+    `mutation($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }`,
+    { id: toGid(id), tags: ["deleted"] },
+  );
+  if (r.tagsRemove.userErrors.length) throw new ShopifyError(r.tagsRemove.userErrors.map((e) => e.message).join("; "));
+}
+
+// List invoices that were soft-deleted, so they can be reviewed and restored.
+export async function listDeletedInvoices(): Promise<InvoiceRow[]> {
+  const all = await listInvoicesRaw("tag:portal-billing AND tag:deleted");
+  return all;
+}
+
+// ---- Permanently delete a draft invoice (irreversible) ----
 export async function deleteInvoice(id: string): Promise<void> {
   const res = await adminGraphQL<{
     draftOrderDelete: { deletedId: string | null; userErrors: { field: string[]; message: string }[] };

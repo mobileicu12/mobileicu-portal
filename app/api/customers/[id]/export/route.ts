@@ -4,6 +4,8 @@ import { getCustomer } from "@/lib/customers";
 import { SEGMENTS } from "@/lib/segments";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { BRAND_SLUG } from "@/lib/brand";
+import { BUSINESS } from "@/lib/business";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,7 +36,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const p = wb.addWorksheet("Profile");
     p.columns = [{ width: 24 }, { width: 48 }];
     const prow = (k: string, v: string | number) => p.addRow([k, v]);
-    p.addRow(["MOBILE ICU — Customer record"]).font = { bold: true, size: 14 };
+    p.addRow([`${BUSINESS.name} — Customer record`]).font = { bold: true, size: 14 };
     p.addRow(["Exported", new Date().toLocaleString("en-GB")]);
     p.addRow([]);
     prow("Name", c.name);
@@ -92,7 +94,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="mobileicu-customer-${safe}.xlsx"`,
+        "Content-Disposition": `attachment; filename="${BRAND_SLUG}-customer-${safe}.xlsx"`,
       },
     });
   } catch (e) {

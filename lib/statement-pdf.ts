@@ -1,5 +1,6 @@
-// Client-side customer statement PDF via jsPDF + autotable.
-"use client";
+// Customer statement PDF via jsPDF + autotable.
+// Universal (no browser APIs) so the same document renders on the server for
+// public share links as well as in the browser for a direct download.
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -37,7 +38,13 @@ export type StatementInput = {
   payments?: StatementPayment[]; // on-account (ledger) payments
 };
 
-export function generateStatementPdf(s: StatementInput, business: Business = BUSINESS) {
+export function statementFilename(s: StatementInput): string {
+  return `Statement_${s.customerName.replace(/[^\w-]/g, "_")}.pdf`;
+}
+
+// Build the document and hand it back — the caller decides whether to download
+// it, attach it to an email, or stream it from a route handler.
+export function buildStatementDoc(s: StatementInput, business: Business = BUSINESS): jsPDF {
   void business; // customer statements are issued without seller identity
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -168,5 +175,10 @@ export function generateStatementPdf(s: StatementInput, business: Business = BUS
   doc.setTextColor(MUTED);
   doc.text("Please settle any outstanding balance at your earliest convenience.", M, footY);
 
-  doc.save(`Statement_${s.customerName.replace(/[^\w-]/g, "_")}.pdf`);
+  return doc;
+}
+
+// Backwards-compatible: build + immediately download (browser only).
+export function generateStatementPdf(s: StatementInput, business: Business = BUSINESS): void {
+  buildStatementDoc(s, business).save(statementFilename(s));
 }

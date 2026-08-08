@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import FaviconManager from "@/components/FaviconManager";
+import { storageKey } from "@/lib/brand";
+import { BUSINESS } from "@/lib/business";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MOBILE ICU Portal",
-  description: "Inventory control for MOBILE ICU",
+  title: `${BUSINESS.name} Portal`,
+  description: `Inventory control for ${BUSINESS.name}`,
 };
 
 export default function RootLayout({
@@ -32,7 +34,9 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('mi-theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}})();`,
+            // Key is injected so it stays in step with ThemeToggle; JSON.stringify
+            // keeps it safely quoted inside the inline script.
+            __html: `(function(){try{var t=localStorage.getItem(${JSON.stringify(storageKey("theme"))});if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}})();`,
           }}
         />
       </head>

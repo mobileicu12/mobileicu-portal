@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { getAllProductsForExport, EXPORT_COLUMNS } from "@/lib/products";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { BRAND_SLUG } from "@/lib/brand";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -30,7 +31,7 @@ export async function GET(req: Request) {
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="mobileicu-${till ? "till" : "catalog"}-${stamp}.xlsx"`,
+        "Content-Disposition": `attachment; filename="${BRAND_SLUG}-${till ? "till" : "catalog"}-${stamp}.xlsx"`,
       },
     });
   } catch (e) {

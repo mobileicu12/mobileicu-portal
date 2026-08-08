@@ -7,6 +7,7 @@ import { CHANNELS, channelKeysFromTags } from "@/lib/channels";
 import type { TierPrices } from "@/lib/pricing";
 import { printBarcodeLabels, LABEL_PRESETS, type LabelPresetKey } from "@/lib/barcode-labels";
 import ColumnChooser, { useColumns, type ColumnDef } from "@/components/ColumnChooser";
+import { loadPortalSettings } from "@/lib/settings-client";
 
 const LOW_STOCK_DEFAULT = 5;
 
@@ -81,6 +82,13 @@ export default function InventoryPage() {
   const [locationId, setLocationId] = useState<string>("");
   const [query, setQuery] = useState("");
   const [lowStock, setLowStock] = useState(LOW_STOCK_DEFAULT);
+  // Owner-configured threshold from Settings; falls back to the constant.
+  useEffect(() => {
+    void loadPortalSettings().then((s) => {
+      const n = Number(s?.lowStock);
+      if (Number.isFinite(n) && n > 0) setLowStock(n);
+    });
+  }, []);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasNext, setHasNext] = useState(false);
   const [loading, setLoading] = useState(false);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCustomer } from "@/lib/customers";
+import { getCustomer, receivedBetween } from "@/lib/customers";
 import { getInvoiceDetail } from "@/lib/billing";
 import { mapLimit } from "@/lib/async";
 import { getSettings } from "@/lib/settings";
@@ -34,13 +34,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
     const num = (s: string) => parseFloat(s) || 0;
     const details = await mapLimit(dayInv, 5, (i) => getInvoiceDetail(i.id).catch(() => null));
-    let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
+    let todayTotal = 0, todayOutstanding = 0;
     const bills = [];
     for (const inv of details) {
       if (!inv) continue;
-      todayTotal += num(inv.total); todayPaid += inv.amountPaid; todayOutstanding += inv.balance;
+      todayTotal += num(inv.total); todayOutstanding += inv.balance;
       bills.push({ invoiceNo: inv.invoiceNo, name: inv.name, status: inv.status, createdAt: inv.createdAt, total: inv.total, amountPaid: inv.amountPaid, balance: inv.balance, lines: inv.lines.map((l) => ({ title: l.title, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })) });
     }
+
+    // Received on the statement's date, wherever it was applied.
+    const todayPaid = receivedBetween(c, day, end);
 
     const s = await getSettings().catch(() => null);
     const business: Business = s

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { NAV, visibleNav, type Me, type NavItem } from "@/lib/nav";
+import { NAV, visibleNav, type NavItem } from "@/lib/nav";
+import { useMe } from "@/lib/use-me";
 
 function isActive(pathname: string, href: string) {
   return href === "/portal" ? pathname === "/portal" : pathname.startsWith(href);
@@ -22,12 +23,8 @@ function NavIcon({ d, className }: { d: string; className?: string }) {
 export default function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [me, setMe] = useState<Me>(null);
+  const me = useMe();
   const [moreOpen, setMoreOpen] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
-  }, []);
 
   // Close the "More" sheet whenever the route changes.
   useEffect(() => { setMoreOpen(false); }, [pathname]);

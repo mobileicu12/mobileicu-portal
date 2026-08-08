@@ -5,6 +5,8 @@ import { SEGMENTS } from "@/lib/segments";
 import { getSettings } from "@/lib/settings";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { BRAND_SLUG } from "@/lib/brand";
+import { BUSINESS } from "@/lib/business";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,7 +34,7 @@ export async function GET(req: Request) {
 
   try {
     const settings = await getSettings().catch(() => null);
-    const bizName = settings?.bizName || "MOBILE ICU";
+    const bizName = settings?.bizName || BUSINESS.name;
 
     const all = await listInvoices();
     const rows: InvoiceRow[] = all.filter((r) => {
@@ -124,7 +126,7 @@ export async function GET(req: Request) {
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="mobileicu-report-${stamp}.xlsx"`,
+        "Content-Disposition": `attachment; filename="${BRAND_SLUG}-report-${stamp}.xlsx"`,
       },
     });
   } catch (e) {

@@ -1,10 +1,8 @@
 // Full product editing: load all fields, update everything, manage images.
 import { adminGraphQL, getLocations, setAvailable, ShopifyError } from "./shopify";
+import { PRODUCT_TYPES } from "./brand";
 
-export const PRODUCT_TYPE_CHOICES = [
-  "LCD", "Batteries", "Cables", "Chargers", "Car Chargers", "Adptors",
-  "Holders", "Cases", "Screen Protectors", "Audio", "Power Banks", "Parts",
-];
+export const PRODUCT_TYPE_CHOICES = PRODUCT_TYPES;
 
 export type EditProduct = {
   id: string;

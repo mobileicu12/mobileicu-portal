@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import { downloadCustomerReportsZip } from "@/lib/customer-zip";
 import { useMe } from "@/lib/use-me";
+import { loadPortalSettings } from "@/lib/settings-client";
+import { BUSINESS } from "@/lib/business";
 
 const LABELS: { match: (p: string) => boolean; label: string }[] = [
   { match: (p) => p === "/portal", label: "Dashboard" },
@@ -46,9 +48,17 @@ export default function AppHeader() {
   const [afterNine, setAfterNine] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState("");
-  // "Today's reports" shows after this hour (default 21). No per-page settings fetch.
+  // "Today's reports" appears after the owner's configured hour. Reading it is
+  // free here: loadPortalSettings shares one request with the favicon manager,
+  // and /api/settings is served from cache.
+  const hourRef = useRef(21);
   useEffect(() => {
-    const check = () => setAfterNine(new Date().getHours() >= 21);
+    const check = () => setAfterNine(new Date().getHours() >= hourRef.current);
+    void loadPortalSettings().then((s) => {
+      const h = Number(s?.reportButtonHour);
+      if (Number.isFinite(h) && h >= 0 && h <= 23) hourRef.current = h;
+      check();
+    });
     check();
     const t = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(t);
@@ -69,7 +79,7 @@ export default function AppHeader() {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-8">
       <div className="flex items-center gap-2 text-sm">
-        <span className="font-semibold text-ink">MOBILE ICU</span>
+        <span className="font-semibold text-ink">{BUSINESS.name}</span>
         <span className="text-muted/50">/</span>
         <span className="text-muted">{label}</span>
       </div>

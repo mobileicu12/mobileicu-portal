@@ -4,23 +4,25 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { NAV, visibleNav, groupedNav, type Me } from "@/lib/nav";
+import { NAV, visibleNav, groupedNav } from "@/lib/nav";
+import { useMe } from "@/lib/use-me";
+import { storageKey } from "@/lib/brand";
+import { BUSINESS } from "@/lib/business";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [me, setMe] = useState<Me>(null);
+  const me = useMe();
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    fetch("/api/me").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
-    try { setCollapsed(localStorage.getItem("sidebar:collapsed") === "1"); } catch { /* ignore */ }
+    try { setCollapsed(localStorage.getItem(storageKey("sidebar-collapsed")) === "1"); } catch { /* ignore */ }
   }, []);
 
   function toggle() {
     setCollapsed((v) => {
       const n = !v;
-      try { localStorage.setItem("sidebar:collapsed", n ? "1" : "0"); } catch { /* ignore */ }
+      try { localStorage.setItem(storageKey("sidebar-collapsed"), n ? "1" : "0"); } catch { /* ignore */ }
       return n;
     });
   }
@@ -49,7 +51,7 @@ export default function Sidebar() {
         <div className="brand-mark flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-accentfg shadow-sm">MI</div>
         {!collapsed && (
           <div>
-            <p className="text-sm font-semibold leading-tight text-ink">MOBILE ICU</p>
+            <p className="text-sm font-semibold leading-tight text-ink">{BUSINESS.name}</p>
             <p className="text-xs leading-tight text-muted">Control Portal</p>
           </div>
         )}

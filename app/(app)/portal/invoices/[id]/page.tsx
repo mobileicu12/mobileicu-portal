@@ -7,6 +7,7 @@ import { loadBusiness, type Business } from "@/lib/business";
 import { SITE_URL } from "@/lib/site";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import type { InvoiceDetail } from "@/lib/billing";
+import { BUSINESS } from "@/lib/business";
 
 const VAT_RATE = 0.2;
 
@@ -258,14 +259,30 @@ export default function InvoiceEditPage() {
   }
 
   async function del() {
-    if (!window.confirm(`Delete invoice ${meta?.name}? This cannot be undone.`)) return;
+    const label = meta?.invoiceNo || meta?.name || "";
+    const money = meta ? `£${Number(meta.total).toFixed(2)}` : "";
+    // Typed confirmation, not a one-click OK. Deleting a bill changes what a
+    // customer owes, so it should be hard to do by accident.
+    const typed = window.prompt(
+      `Remove invoice ${label} (${money}) for ${meta?.customerName ?? "this customer"}?\n\n` +
+      `It will be hidden from every list, report and balance. Nothing is destroyed — ` +
+      `you can put it back from Admin → Activity log, and the removal is recorded there.\n\n` +
+      `Type the invoice number to confirm:`,
+    );
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== label.toUpperCase()) {
+      setError(`Not removed — you typed "${typed.trim()}", expected "${label}".`);
+      return;
+    }
     setBusy("delete");
     setError("");
     try {
       const res = await fetch(`/api/billing/${encId}`, { method: "DELETE" });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Delete failed");
-      router.push("/portal/invoices");
+      // Hand the undo straight back rather than making them hunt for it.
+      sessionStorage.setItem("mi:lastRemovedInvoice", JSON.stringify({ id: meta?.id, label, at: Date.now() }));
+      router.push("/portal/invoices?removed=" + encodeURIComponent(label));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
       setBusy("");
@@ -283,7 +300,7 @@ export default function InvoiceEditPage() {
 
   // WhatsApp click-to-send (opens WhatsApp with a prefilled message + invoice link).
   const waPhone = (meta.customerPhone || "").replace(/[^0-9]/g, "");
-  const waText = `Hi ${meta.customerName !== "—" ? meta.customerName : "there"}, here is your invoice ${meta.invoiceNo} from MOBILE ICU — total £${Number(meta.total).toFixed(2)}${Number(meta.balance) > 0.001 ? ` (£${Number(meta.balance).toFixed(2)} due)` : " (paid)"}.${shareUrl ? ` View / download it here: ${shareUrl}` : ""}`;
+  const waText = `Hi ${meta.customerName !== "—" ? meta.customerName : "there"}, here is your invoice ${meta.invoiceNo} from ${BUSINESS.name} — total £${Number(meta.total).toFixed(2)}${Number(meta.balance) > 0.001 ? ` (£${Number(meta.balance).toFixed(2)} due)` : " (paid)"}.${shareUrl ? ` View / download it here: ${shareUrl}` : ""}`;
   const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : null;
 
   return (
@@ -310,7 +327,7 @@ export default function InvoiceEditPage() {
           <button onClick={() => doAction("duplicate")} disabled={!!busy} className={btnGhost}>{busy === "duplicate" ? "…" : "Duplicate"}</button>
           {!completed && <button onClick={sendEmail} disabled={!!busy} className={btnGhost}>{busy === "send" ? "…" : "✉ Send"}</button>}
           {completed && <button onClick={voidIt} disabled={!!busy} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50">{busy === "void" ? "…" : "↩ Void / undo paid"}</button>}
-          <button onClick={del} disabled={!!busy} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">{busy === "delete" ? "…" : "Delete"}</button>
+          <button onClick={del} disabled={!!busy} title="Hide this invoice from lists and balances. Recoverable from the Activity log." className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">{busy === "delete" ? "…" : "Remove"}</button>
         </div>
       </div>
 

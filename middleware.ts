@@ -23,6 +23,7 @@ const GATE: { prefix: string; perm: string }[] = [
   { prefix: "/portal/reports", perm: "reports" },
   { prefix: "/portal/settings", perm: "settings" },
   { prefix: "/portal/users", perm: "users" },
+  { prefix: "/portal/logs", perm: "logs" },
 ];
 
 export default auth((req) => {

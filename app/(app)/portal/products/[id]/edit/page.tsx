@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { STORE_DOMAIN_PUBLIC } from "@/lib/brand";
 
 const TYPE_CHOICES = ["", "LCD", "Batteries", "Cables", "Chargers", "Car Chargers", "Adptors", "Holders", "Cases", "Screen Protectors", "Audio", "Power Banks", "Parts"];
 
@@ -101,7 +102,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         </div>
         <div className="flex items-center gap-2">
           {flash && <span className="text-sm text-emerald-600">{flash}</span>}
-          <a href={`https://mobile-icu-cws.myshopify.com/products/${p.handle}`} target="_blank" rel="noreferrer" className="rounded-lg border border-line px-3 py-2 text-sm text-muted hover:text-ink">View</a>
+          <a href={`https://${STORE_DOMAIN_PUBLIC}/products/${p.handle}`} target="_blank" rel="noreferrer" className="rounded-lg border border-line px-3 py-2 text-sm text-muted hover:text-ink">View</a>
           <button onClick={save} disabled={saving} className="rounded-lg bg-ink px-5 py-2 text-sm font-medium text-bg transition hover:bg-accent hover:text-accentfg disabled:opacity-60">{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </div>

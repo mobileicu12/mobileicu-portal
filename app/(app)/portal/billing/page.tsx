@@ -6,9 +6,11 @@ import { priceForContext, type TierPrices } from "@/lib/pricing";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import { loadBusiness, type Business } from "@/lib/business";
+import { loadPortalSettings } from "@/lib/settings-client";
 import type { InvoiceDetail } from "@/lib/billing";
 
-const VAT_RATE = 0.2;
+// Fallback only — the live rate comes from Settings (see vatRate below).
+const VAT_RATE_FALLBACK = 0.2;
 
 type Hit = {
   variantId: string;
@@ -42,6 +44,16 @@ type BillResult = {
 
 export default function BillingPage() {
   const [mode, setMode] = useState<"invoice" | "pos">("invoice");
+  // The owner's configured VAT rate. This drives the total shown on screen and
+  // on the preview; the tax actually charged is applied by Shopify from its own
+  // tax configuration, so the two must be kept in step (noted in Settings).
+  const [vatRate, setVatRate] = useState(VAT_RATE_FALLBACK);
+  useEffect(() => {
+    void loadPortalSettings().then((s) => {
+      const n = Number(s?.vatRate);
+      if (Number.isFinite(n) && n >= 0 && n <= 100) setVatRate(n / 100);
+    });
+  }, []);
   const [segment, setSegment] = useState<SegmentKey>("online");
   const [vat, setVat] = useState(true);
   const [discount, setDiscount] = useState(0);
@@ -299,7 +311,7 @@ export default function BillingPage() {
   const net = subtotal - discountAmt;
   // Payload for the API: Shopify wants PERCENTAGE (value = %) or FIXED_AMOUNT (value = £).
   const discountPayload = { discountType: discountType === "pct" ? "PERCENTAGE" : "FIXED_AMOUNT", discountValue: discount };
-  const vatAmt = vat ? net * VAT_RATE : 0;
+  const vatAmt = vat ? net * vatRate : 0;
   const total = net + vatAmt;
 
   // Clear the whole bill back to a fresh slate after a sale is created.
@@ -611,7 +623,7 @@ export default function BillingPage() {
           </label>
 
           <label className="mt-3 flex items-center justify-between text-sm">
-            <span className="font-medium text-neutral-700">Charge VAT (20%)</span>
+            <span className="font-medium text-neutral-700">Charge VAT ({(vatRate * 100).toFixed(vatRate * 100 % 1 ? 1 : 0)}%)</span>
             <input type="checkbox" checked={vat} onChange={(e) => setVat(e.target.checked)} className="h-4 w-4" />
           </label>
 
@@ -714,7 +726,7 @@ export default function BillingPage() {
           <div className="mt-4 space-y-1.5 border-t border-neutral-200 pt-4 text-sm">
             <Row label="Subtotal" value={subtotal} />
             {discount > 0 && <Row label={discountType === "pct" ? `Discount (${discount}%)` : "Discount"} value={-discountAmt} />}
-            {vat && <Row label="VAT (20%)" value={vatAmt} />}
+            {vat && <Row label={`VAT (${(vatRate * 100).toFixed(vatRate * 100 % 1 ? 1 : 0)}%)`} value={vatAmt} />}
             <div className="flex items-center justify-between border-t border-neutral-200 pt-2 text-base font-semibold text-neutral-900">
               <span>This bill</span>
               <span>£{total.toFixed(2)}</span>

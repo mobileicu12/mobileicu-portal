@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BRAND_INVOICE_PREFIX } from "@/lib/brand";
 
 type Settings = {
   bizName: string;
@@ -157,10 +158,12 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Defaults">
-          <Field label="Invoice number prefix"><input className={inp} value={s.invoicePrefix} onChange={(e) => set("invoicePrefix", e.target.value)} placeholder="MICU" /></Field>
-          <p className="text-xs text-neutral-400">New invoices are numbered <strong>{s.invoicePrefix || "MICU"}-{new Date().getFullYear()}-0001</strong>, incrementing uniquely.</p>
+          <Field label="Invoice number prefix"><input className={inp} value={s.invoicePrefix} onChange={(e) => set("invoicePrefix", e.target.value)} placeholder={BRAND_INVOICE_PREFIX} /></Field>
+          <p className="text-xs text-neutral-400">New invoices are numbered <strong>{s.invoicePrefix || BRAND_INVOICE_PREFIX}-{new Date().getFullYear()}-0001</strong>, incrementing uniquely.</p>
           <Field label="VAT rate (%)"><input type="number" className={inp} value={s.vatRate} onChange={(e) => set("vatRate", Number(e.target.value))} /></Field>
+          <p className="text-xs text-neutral-400">Used for the total shown on the billing screen. The tax actually charged is applied by Shopify from its own tax settings — keep the two the same.</p>
           <Field label="Low-stock threshold"><input type="number" className={inp} value={s.lowStock} onChange={(e) => set("lowStock", Number(e.target.value))} /></Field>
+          <p className="text-xs text-neutral-400">Drives the &ldquo;Low stock&rdquo; count on the dashboard and the Low filter in Inventory.</p>
         </Section>
 
         <Section title="Automatic WhatsApp">

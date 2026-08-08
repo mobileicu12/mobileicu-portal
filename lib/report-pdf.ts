@@ -236,9 +236,12 @@ export function buildCustomerDayItemisedDoc(
   // Summary tiles (4)
   let y = 122;
   const tiles: [string, string, boolean][] = [
+    // "Received today" is all money taken today, including against older bills —
+    // distinct from how much of TODAY's bills is still unpaid. The old wording
+    // ("Paid today" / "Today's outstanding") read as if they had to net off.
     ["Today's bills", gbp(totals.todayTotal), false],
-    ["Paid today", gbp(totals.todayPaid), false],
-    ["Today's outstanding", gbp(totals.todayOutstanding), totals.todayOutstanding > 0],
+    ["Received today", gbp(totals.todayPaid), false],
+    ["Today's bills unpaid", gbp(totals.todayOutstanding), totals.todayOutstanding > 0],
     ["Total outstanding", gbp(totals.accountOutstanding), totals.accountOutstanding > 0],
   ];
   const tileW = (W - M * 2 - 30) / 4;

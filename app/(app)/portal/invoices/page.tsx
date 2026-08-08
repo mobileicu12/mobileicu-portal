@@ -12,6 +12,7 @@ import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useCanSeeFinance } from "@/lib/use-me";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
+import { BRAND_SLUG } from "@/lib/brand";
 
 const INV_COLUMNS: ColumnDef[] = [
   { key: "invoice", label: "Invoice", locked: true },
@@ -121,6 +122,16 @@ export default function InvoicesPage() {
     });
   }, [filtered, sort.key, sort.dir]);
 
+  // --- Paging. Filters/sort apply across the whole set; only the rows shown are paged.
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = useMemo(
+    () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [sorted, safePage, pageSize],
+  );
+
   // Live summary of whatever range/filters are currently applied.
   const rangeStats = useMemo(() => {
     let total = 0, paid = 0, outstanding = 0;
@@ -162,7 +173,7 @@ export default function InvoicesPage() {
     const reportRows: ReportRow[] = rows.map((r) => ({ invoiceNo: r.invoiceNo, name: r.name, customer: r.customer, staff: r.staff, segment: r.segment, status: r.status, total: r.total, createdAt: r.createdAt, payMethod: r.payMethod }));
     const doc = buildInvoicesReportDoc(reportRows, { rangeLabel: label, business: biz });
     const stamp = (dateFrom || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
-    setReport({ doc, filename: `mobileicu-report-${stamp}.pdf`, subtitle: `${rows.length} invoice(s) · ${label}` });
+    setReport({ doc, filename: `${BRAND_SLUG}-report-${stamp}.pdf`, subtitle: `${rows.length} invoice(s) · ${label}` });
   }
 
   // Download one PDF report PER CUSTOMER for the current filtered set, zipped and
@@ -196,7 +207,7 @@ export default function InvoicesPage() {
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `mobileicu-customer-reports-${stamp}.zip`; a.click();
+      a.href = url; a.download = `${BRAND_SLUG}-customer-reports-${stamp}.zip`; a.click();
       URL.revokeObjectURL(url);
       setFlash(`Bundled ${groups.size} customer report(s).`);
     } catch (e) { setError(e instanceof Error ? e.message : "ZIP failed"); } finally { setBusy(""); }
@@ -261,8 +272,54 @@ export default function InvoicesPage() {
     if (ids) window.location.href = `/api/billing/export?ids=${ids}`;
   }
 
+  // Undo banner after a removal, so the way back is right where it happened.
+  const [removed, setRemoved] = useState<{ id: string; label: string } | null>(null);
+  const [undoMsg, setUndoMsg] = useState("");
+  useEffect(() => {
+    // Deferred a tick: reading this synchronously in the effect body would set
+    // state during the effect and cascade a second render.
+    let alive = true;
+    void Promise.resolve().then(() => {
+      if (!alive) return;
+      const label = new URLSearchParams(window.location.search).get("removed");
+      if (!label) return;
+      try {
+        const raw = sessionStorage.getItem("mi:lastRemovedInvoice");
+        const v = raw ? JSON.parse(raw) : null;
+        if (v?.id && Date.now() - (v.at ?? 0) < 10 * 60 * 1000) setRemoved({ id: v.id, label: v.label || label });
+      } catch { /* ignore */ }
+    });
+    return () => { alive = false; };
+  }, []);
+
+  async function undoRemove() {
+    if (!removed) return;
+    const res = await fetch(`/api/billing/${encodeURIComponent(removed.id)}`, { method: "PUT" });
+    if (res.ok) {
+      setUndoMsg(`${removed.label} restored.`);
+      setRemoved(null);
+      sessionStorage.removeItem("mi:lastRemovedInvoice");
+      reload();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setUndoMsg(d.error || "Couldn't restore it — try Admin → Activity log.");
+    }
+  }
+
   return (
     <div className="px-8 py-7 pb-28">
+      {removed && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <span className="text-sm text-amber-800 dark:text-amber-300">
+            <strong>{removed.label}</strong> removed. It&apos;s hidden from lists and balances — nothing was destroyed.
+          </span>
+          <button onClick={undoRemove} className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-neutral-900 transition hover:bg-amber-400">
+            ↩ Undo
+          </button>
+          <button onClick={() => setRemoved(null)} className="ml-auto text-xs text-amber-700/70 hover:text-amber-900">dismiss</button>
+        </div>
+      )}
+      {undoMsg && <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10">{undoMsg}</p>}
       <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -374,7 +431,7 @@ export default function InvoicesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {sorted.map((inv) => (
+            {pageRows.map((inv) => (
               <tr key={inv.id} onClick={() => router.push(`/portal/invoices/${encodeURIComponent(inv.id)}`)} className={`cursor-pointer ${selected.has(inv.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggleRow(inv.id)} className="h-4 w-4 accent-amber-500" /></td>
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{inv.invoiceNo}<span className="ml-1 text-xs font-normal text-neutral-400">{inv.name}</span></td>
@@ -410,6 +467,32 @@ export default function InvoicesPage() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Pager */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div className="flex items-center gap-2 text-neutral-500">
+          <span>Show</span>
+          <select
+            value={pageSize}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+            className="rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+          >
+            {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span>
+            per page · {sorted.length === 0 ? "no invoices" : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, sorted.length)} of ${sorted.length}`}
+          </span>
+        </div>
+        {pageCount > 1 && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => setPage(1)} disabled={safePage === 1} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">« First</button>
+            <button onClick={() => setPage(safePage - 1)} disabled={safePage === 1} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">‹ Prev</button>
+            <span className="px-3 text-xs text-neutral-500">Page {safePage} of {pageCount}</span>
+            <button onClick={() => setPage(safePage + 1)} disabled={safePage === pageCount} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">Next ›</button>
+            <button onClick={() => setPage(pageCount)} disabled={safePage === pageCount} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">Last »</button>
+          </div>
+        )}
       </div>
 
       {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}

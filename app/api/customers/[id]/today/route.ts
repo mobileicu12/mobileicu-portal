@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/guard";
-import { getCustomer } from "@/lib/customers";
+import { getCustomer, receivedBetween } from "@/lib/customers";
 import { getInvoiceDetail } from "@/lib/billing";
 import { mapLimit } from "@/lib/async";
 import { waConfigured } from "@/lib/whatsapp";
@@ -33,12 +33,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const num = (s: string) => parseFloat(s) || 0;
     // Fetch each bill's itemised detail in parallel (bounded) instead of one-by-one.
     const details = await mapLimit(todaysInv, 5, (i) => getInvoiceDetail(i.id).catch(() => null));
-    let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
+    let todayTotal = 0, todayOutstanding = 0;
     const bills = [];
     for (const inv of details) {
       if (!inv) continue;
       todayTotal += num(inv.total);
-      todayPaid += inv.amountPaid;
       todayOutstanding += inv.balance;
       bills.push({
         invoiceNo: inv.invoiceNo, name: inv.name, status: inv.status, createdAt: inv.createdAt,
@@ -46,6 +45,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         lines: inv.lines.map((l) => ({ title: l.title, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })),
       });
     }
+
+    // Money received TODAY, wherever it landed — settling an old bill still
+    // counts. Summing the paid portion of today's bills reported £0 on days when
+    // a customer cleared an older invoice.
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    const todayPaid = receivedBetween(c, start, end);
 
     const numId = c.id.split("/").pop() || c.id;
     const dateStr = start.toISOString().slice(0, 10);

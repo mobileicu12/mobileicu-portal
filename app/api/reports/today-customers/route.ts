@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/guard";
 import { listInvoices, getInvoiceDetail } from "@/lib/billing";
-import { getCustomer } from "@/lib/customers";
+import { getCustomer, receivedBetween } from "@/lib/customers";
 import { mapLimit } from "@/lib/async";
 import { waConfigured } from "@/lib/whatsapp";
 import { statementSharePath } from "@/lib/invoice-link";
@@ -43,11 +43,10 @@ export async function GET() {
 
       const details = await mapLimit(rows, 4, (r) => getInvoiceDetail(r.id).catch(() => null));
       const bills = [];
-      let todayTotal = 0, todayPaid = 0, todayOutstanding = 0;
+      let todayTotal = 0, todayOutstanding = 0;
       for (const inv of details) {
         if (!inv) continue;
         todayTotal += num(inv.total);
-        todayPaid += inv.amountPaid;
         todayOutstanding += inv.balance;
         bills.push({
           invoiceNo: inv.invoiceNo,
@@ -60,6 +59,10 @@ export async function GET() {
           lines: inv.lines.map((l) => ({ title: l.title, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })),
         });
       }
+
+      // Received today across every bill + on-account, not just today's bills.
+      const end = new Date(start); end.setDate(end.getDate() + 1);
+      const todayPaid = receivedBetween(detail, start, end);
 
       const numId = cid.split("/").pop() || cid;
       return {

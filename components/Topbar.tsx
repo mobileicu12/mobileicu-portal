@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { BUSINESS } from "@/lib/business";
 
 export default function Topbar() {
   const router = useRouter();
@@ -19,7 +20,7 @@ export default function Topbar() {
         </div>
         <div>
           <p className="text-sm font-semibold leading-tight text-neutral-900">
-            MOBILE ICU Portal
+            {BUSINESS.name} Portal
           </p>
           <p className="text-xs leading-tight text-neutral-500">Inventory control</p>
         </div>

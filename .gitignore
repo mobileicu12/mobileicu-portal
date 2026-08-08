@@ -42,3 +42,6 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# ...but the documented template is safe to commit (contains no secrets).
+!.env.example

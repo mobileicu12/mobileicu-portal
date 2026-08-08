@@ -5,6 +5,7 @@
 
 import { buildCustomerDayDoc } from "./report-pdf";
 import { loadBusiness } from "./business";
+import { BRAND_SLUG } from "./brand";
 
 type Row = { invoiceNo: string; name: string; customer: string; customerId: string | null; status: string; total: string; createdAt: string };
 
@@ -50,7 +51,7 @@ export async function downloadCustomerReportsZip(opts: { onlyToday?: boolean } =
   const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = `mobileicu-customer-reports-${stamp}.zip`; a.click();
+  a.href = url; a.download = `${BRAND_SLUG}-customer-reports-${stamp}.zip`; a.click();
   URL.revokeObjectURL(url);
   return { customers: groups.size };
 }
