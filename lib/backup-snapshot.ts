@@ -23,10 +23,10 @@ export async function buildBackupSnapshot() {
       listInvoices(),
     ]);
 
-  // Pull each customer's full detail (ledger, opening balance, invoices) — capped
-  // to stay within the request budget on very large customer bases.
-  const CAP = 500;
-  const detailed = await mapLimit(customerList.slice(0, CAP), 4, (c) =>
+  // Pull EVERY customer's full detail (ledger, opening balance, invoices). A
+  // high safety bound only guards against a runaway list, not real usage.
+  const CAP = 20000;
+  const detailed = await mapLimit(customerList.slice(0, CAP), 6, (c) =>
     getCustomer(c.id).catch(() => ({ ...c, _detailError: true })),
   );
 
