@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
-import { requirePermission } from "@/lib/guard";
+import { canSeeFinanceRequest } from "@/lib/guard";
 import { listInvoices } from "@/lib/billing";
 import { adminGraphQL, shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -86,11 +86,11 @@ const computeToday = unstable_cache(async () => {
   { revalidate: 120 },
 );
 
-// "Today's takings" / today's collection — visible to any billing-capable teammate.
+// "Today's takings" / today's collection — sensitive figures. Owner always;
+// staff only during an owner-approved reveal window (see lib/finance-access).
 export async function GET() {
   if (!shopifyConfigured()) return NextResponse.json({ error: "not configured" }, { status: 503 });
-  const denied = await requirePermission("billing");
-  if (denied) return denied;
+  if (!(await canSeeFinanceRequest())) return NextResponse.json({ error: "Financial figures are hidden. Ask the owner to approve access." }, { status: 403 });
   try {
     return NextResponse.json(await computeToday());
   } catch (e) {

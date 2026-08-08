@@ -7,6 +7,7 @@ export const PERMISSIONS = [
   { key: "customers", label: "Customers", desc: "Register & manage customers" },
   { key: "collections", label: "Collections", desc: "Organise collections" },
   { key: "reports", label: "Reports", desc: "Sales & team performance" },
+  { key: "expenses", label: "Expenses", desc: "Record & view shop expenses" },
   { key: "settings", label: "Settings", desc: "Business & portal settings" },
   { key: "users", label: "Team management", desc: "Add teammates & set access" },
   { key: "logs", label: "Activity log", desc: "See who changed invoices & payments, restore deletions" },

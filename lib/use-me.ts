@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { PermKey } from "./permissions";
 
-export type Me = { email: string | null; name?: string; role: "owner" | "member" | null; permissions: PermKey[] } | null;
+export type Me = { email: string | null; name?: string; role: "owner" | "member" | null; permissions: PermKey[]; canSeeFinance?: boolean; financeExpiresAt?: string | null; financePending?: boolean } | null;
 
 // Shared, deduped fetch: many components call useMe() on a page — we only hit
 // /api/me once and share the result (a big win for staff, where it costs a query).
@@ -33,11 +33,65 @@ export function useIsOwner(): boolean {
   return me?.role === "owner";
 }
 
-// Who may see business totals — total sales / earnings / paid figures.
-// Owner always; a teammate must be granted the "reports" permission.
-// Everyone else (default staff) sees only outstanding balances + today's collection.
-export function useCanSeeFinance(): boolean {
+// Live finance-visibility gate. Sensitive totals (sales / earnings / profit) are
+// hidden for staff by default — even on pages they can open. A staff member
+// requests a reveal; the owner approves it for a short window; it then auto-hides.
+// This hook polls so a fresh grant (or an early revoke / expiry) is reflected
+// without a page reload, and ticks a live countdown while access is active.
+export type FinanceGate = {
+  visible: boolean;      // may the figures be shown right now?
+  pending: boolean;      // this staff member has a request awaiting the owner
+  secondsLeft: number;   // remaining seconds on an active grant (0 if none)
+  isOwner: boolean;
+  loading: boolean;
+  request: () => Promise<boolean>;
+};
+
+type FinStatus = { visible: boolean; expiresAt: string | null; pending: boolean; owner?: boolean };
+
+export function useFinanceGate(): FinanceGate {
   const me = useMe();
-  if (!me) return false;
-  return me.role === "owner" || me.permissions.includes("reports");
+  const isOwner = me?.role === "owner";
+  const [status, setStatus] = useState<FinStatus | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!me) return;
+    if (isOwner) { setStatus({ visible: true, expiresAt: null, pending: false, owner: true }); return; }
+    let alive = true;
+    const poll = () =>
+      fetch("/api/finance-access/status")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: FinStatus | null) => { if (alive && d) setStatus(d); })
+        .catch(() => {});
+    poll();
+    const t = setInterval(poll, 20000);
+    return () => { alive = false; clearInterval(t); };
+  }, [me, isOwner]);
+
+  // Only tick a 1s countdown while a grant is actually active.
+  useEffect(() => {
+    if (!status?.expiresAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [status?.expiresAt]);
+
+  const expMs = status?.expiresAt ? +new Date(status.expiresAt) : 0;
+  const visible = isOwner || (!!status?.visible && (!expMs || now < expMs));
+  const secondsLeft = expMs ? Math.max(0, Math.floor((expMs - now) / 1000)) : 0;
+
+  async function request(): Promise<boolean> {
+    try {
+      const r = await fetch("/api/finance-access/status", { method: "POST" });
+      if (r.ok) setStatus((s) => (s ? { ...s, pending: true } : { visible: false, expiresAt: null, pending: true }));
+      return r.ok;
+    } catch { return false; }
+  }
+
+  return { visible, pending: !!status?.pending, secondsLeft, isOwner: !!isOwner, loading: !isOwner && status === null, request };
+}
+
+// Boolean convenience used by pages that simply show/hide finance tiles.
+export function useCanSeeFinance(): boolean {
+  return useFinanceGate().visible;
 }

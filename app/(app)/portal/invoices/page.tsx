@@ -11,6 +11,7 @@ import type { jsPDF } from "jspdf";
 import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useCanSeeFinance } from "@/lib/use-me";
+import { FinanceLockBar } from "@/components/Finance";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import { BRAND_SLUG } from "@/lib/brand";
 
@@ -387,8 +388,9 @@ export default function InvoicesPage() {
       </div>
 
       {/* stat tiles — outstanding is shown to all staff; sales/earnings totals need finance access */}
+      <div className="mt-5"><FinanceLockBar label="Sales & earnings totals" /></div>
       {stats && (
-        <div className={`mt-5 grid grid-cols-2 gap-3 ${canSeeFinance ? "sm:grid-cols-4" : "sm:grid-cols-2"}`}>
+        <div className={`mt-2 grid grid-cols-2 gap-3 ${canSeeFinance ? "sm:grid-cols-4" : "sm:grid-cols-2"}`}>
           <Tile label="Invoices" value={String(stats.count)} />
           <Tile label="Outstanding" value={`£${stats.outstanding.toFixed(2)}`} sub={`${stats.openCount} open`} accent="amber" />
           {canSeeFinance && <Tile label="Paid" value={`£${stats.paid.toFixed(2)}`} sub={`${stats.paidCount} completed`} accent="emerald" />}

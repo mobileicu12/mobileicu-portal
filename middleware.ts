@@ -20,6 +20,7 @@ const GATE: { prefix: string; perm: string }[] = [
   { prefix: "/portal/billing", perm: "billing" },
   { prefix: "/portal/invoices", perm: "invoices" },
   { prefix: "/portal/orders", perm: "orders" },
+  { prefix: "/portal/expenses", perm: "expenses" },
   { prefix: "/portal/reports", perm: "reports" },
   { prefix: "/portal/settings", perm: "settings" },
   { prefix: "/portal/users", perm: "users" },

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BUSINESS } from "@/lib/business";
+import { useFinanceGate } from "@/lib/use-me";
+import { FinanceLockBar, FinanceApprovals } from "@/components/Finance";
 
 type Stats = {
   products: number;
@@ -16,6 +18,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [error, setError] = useState("");
+  const finance = useFinanceGate();
 
   useEffect(() => {
     fetch("/api/stats")
@@ -52,8 +55,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Today's collection — visible to staff (today only, not all-time totals) */}
-      <TodayTakings />
+      {/* Owner: approve/deny staff requests to view financial figures. */}
+      <FinanceApprovals />
+
+      {/* Sensitive money figures — hidden for staff until the owner approves a
+          temporary reveal. Owners (and granted staff) see the live takings. */}
+      {finance.visible ? <TodayTakings /> : <div className="mt-6"><FinanceLockBar label="Today's takings & totals" /></div>}
 
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total products" value={stats?.products} tone="ink" />

@@ -14,14 +14,19 @@ export async function isOwnerRequest(): Promise<boolean> {
   return !!(s && process.env.PORTAL_SESSION_SECRET && s === process.env.PORTAL_SESSION_SECRET);
 }
 
-// May the request see business totals (sales / earnings)? Owner or "reports" permission.
+// May the request see business totals (sales / earnings / profit)?
+// Owner always. For staff, visibility is NOT a standing permission — it must be
+// granted by the owner for a short window (see lib/finance-access). This means
+// sensitive figures stay hidden in staff accounts by default, even on pages they
+// can open, until the owner approves a temporary reveal.
 export async function canSeeFinanceRequest(): Promise<boolean> {
   if (await isOwnerRequest()) return true;
   const session = await auth().catch(() => null);
   const email = session?.user?.email;
   if (!email) return false;
   try {
-    return permsFor(await getPortalUser(email)).includes("reports");
+    const { financeStatusFor } = await import("@/lib/finance-access");
+    return (await financeStatusFor(email)).visible;
   } catch {
     return false;
   }
