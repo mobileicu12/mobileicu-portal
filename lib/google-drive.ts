@@ -36,9 +36,18 @@ async function accessToken(): Promise<string> {
     }),
   });
   if (!res.ok) {
-    throw new Error(
-      `Google token exchange failed (${res.status}). Check the refresh token and OAuth credentials.`,
-    );
+    // Surface Google's own reason so the fix is obvious:
+    //  • invalid_grant  → refresh token is wrong/expired/revoked, OR was minted
+    //    with a different OAuth client than GOOGLE_DRIVE_CLIENT_ID/SECRET.
+    //  • invalid_client → client id/secret don't match the one that minted it.
+    const body = (await res.json().catch(() => ({}))) as { error?: string; error_description?: string };
+    const reason = [body.error, body.error_description].filter(Boolean).join(": ");
+    const hint = body.error === "invalid_grant"
+      ? " The refresh token is invalid/expired, or was created with a different Google OAuth client than the one the app uses. Re-generate it with the SAME client id/secret set in Vercel."
+      : body.error === "invalid_client"
+        ? " The GOOGLE_DRIVE_CLIENT_ID / _SECRET don't match the client that created the refresh token."
+        : "";
+    throw new Error(`Google token exchange failed (${res.status})${reason ? ` — ${reason}` : ""}.${hint}`);
   }
   const data = (await res.json()) as { access_token?: string };
   if (!data.access_token) throw new Error("Google did not return an access token.");
