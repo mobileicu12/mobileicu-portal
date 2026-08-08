@@ -43,6 +43,24 @@ export default function SettingsPage() {
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
 
+  // Google Drive off-site backup: connection status + manual "back up now".
+  const [drive, setDrive] = useState<{ configured: boolean } | null>(null);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveMsg, setDriveMsg] = useState("");
+
+  async function backupToDriveNow() {
+    setDriveBusy(true); setDriveMsg("");
+    try {
+      const res = await fetch("/api/cron/backup-drive", { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Backup failed.");
+      setDriveMsg(`✓ Backed up to Drive${d.file ? ` (${d.file})` : ""}.`);
+      setDrive({ configured: true });
+    } catch (e) {
+      setDriveMsg(e instanceof Error ? e.message : "Backup failed.");
+    } finally { setDriveBusy(false); }
+  }
+
   async function restoreBackup(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -92,6 +110,7 @@ export default function SettingsPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     fetch("/api/settings/whatsapp").then((r) => (r.ok ? r.json() : null)).then((d) => d && setWa({ configured: !!d.configured, phoneId: d.phoneId || "", template: d.template || "" })).catch(() => {});
+    fetch("/api/backup/drive-status").then((r) => (r.ok ? r.json() : null)).then((d) => d && setDrive({ configured: !!d.configured })).catch(() => {});
     loadShifts();
   }, []);
 
@@ -240,6 +259,24 @@ export default function SettingsPage() {
           <p className="text-xs text-neutral-500">Download a full snapshot of everything — products, collections, customers (with balances &amp; ledgers), invoices and settings — as one JSON file. Keep it safe; if anything goes wrong you can restore from it.</p>
           <a href="/api/backup" className="inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">⬇ Download full backup (.json)</a>
           <p className="text-xs text-neutral-400">Products &amp; collections can be re-imported from Excel. Customer balances and invoice history are preserved in the file for assisted restore.</p>
+          <div className="mt-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">☁ Google Drive backup:</span>
+              {drive === null ? (
+                <span className="text-xs text-neutral-400">checking…</span>
+              ) : drive.configured ? (
+                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15">Connected — nightly at ~22:00</span>
+              ) : (
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-500/15">Not configured</span>
+              )}
+              <button onClick={backupToDriveNow} disabled={driveBusy} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200">
+                {driveBusy ? "Backing up…" : "Back up to Drive now"}
+              </button>
+            </div>
+            {driveMsg && <p className="mt-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-300">{driveMsg}</p>}
+            <p className="mt-1 text-xs text-neutral-400">Keeps the last 7 daily snapshots in a &ldquo;{s.bizName || "Business"} Backups&rdquo; folder in your Google Drive.</p>
+          </div>
+
           <div className="mt-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
             <p className="text-xs text-neutral-500">Restore from a backup: overwrites <strong>settings and every customer&apos;s ledger / opening balance</strong> from the file. Products, customers and orders stay in Shopify and are not touched. Current state is copied to Drive first.</p>
             <label className="mt-2 inline-block">
