@@ -14,6 +14,7 @@ import type { InvoiceDetail } from "@/lib/billing";
 import type { jsPDF } from "jspdf";
 import { useCanSeeFinance } from "@/lib/use-me";
 import { FinanceLockBar } from "@/components/Finance";
+import { invoiceStatus } from "@/lib/invoice-status";
 import { BRAND_SLUG } from "@/lib/brand";
 import { BUSINESS } from "@/lib/business";
 
@@ -385,7 +386,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <Link key={i.id} href={`/portal/invoices/${i.id.split("/").pop()}`} className="flex items-center justify-between py-2.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                 <div>
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">{i.name}</p>
-                  <p className="text-xs text-neutral-500">{new Date(i.createdAt).toLocaleDateString("en-GB")} · {i.status === "COMPLETED" ? "Paid" : "Draft"}</p>
+                  <p className="text-xs text-neutral-500">{new Date(i.createdAt).toLocaleDateString("en-GB")} · {invoiceStatus(i).label}</p>
                 </div>
                 <div className="text-right">
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">£{i.total}</p>

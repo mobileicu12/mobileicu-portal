@@ -171,7 +171,7 @@ export function buildInvoicesReportDoc(rows: ReportRow[], opts: { rangeLabel: st
         r.customer,
         r.staff ? r.staff.split("@")[0] : "—",
         seg?.label ?? "—",
-        r.status === "COMPLETED" ? "PAID" : "DRAFT",
+        r.status === "COMPLETED" ? "PAID" : "UNPAID",
         new Date(r.createdAt).toLocaleDateString("en-GB"),
         money(num(r.total)),
       ];

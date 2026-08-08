@@ -59,9 +59,11 @@ const computeToday = unstable_cache(async () => {
       byMethod[m in byMethod ? m : "other"] += t;
     }
 
-    // Total outstanding across ALL invoices (unpaid/draft totals) — visible to staff.
+    // Total still owed across ALL invoices — each bill's remaining BALANCE, so a
+    // part-paid invoice only adds what's still due (not its whole value).
     let outstanding = 0;
-    for (const r of all) if (r.status !== "COMPLETED") outstanding += num(r.total);
+    for (const r of all) outstanding += Number(r.balance) || 0;
+    outstanding = Math.round(outstanding * 100) / 100;
 
     // Full collection today = today's paid sales + on-account (ledger) payments today.
     // The all-customer ledger scan is DISABLED by default for performance; set

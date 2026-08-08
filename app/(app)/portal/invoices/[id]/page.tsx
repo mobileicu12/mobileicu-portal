@@ -8,6 +8,7 @@ import { SITE_URL } from "@/lib/site";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import type { InvoiceDetail } from "@/lib/billing";
 import { BUSINESS } from "@/lib/business";
+import { invoiceStatus, STATUS_BADGE } from "@/lib/invoice-status";
 
 const VAT_RATE = 0.2;
 
@@ -311,9 +312,10 @@ export default function InvoiceEditPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{meta.invoiceNo}</h1>
           <span className="text-sm text-neutral-400">{meta.name}</span>
-          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-            {completed ? "PAID" : "DRAFT"}
-          </span>
+          {(() => {
+            const st = invoiceStatus({ status: meta.status, amountPaid: meta.amountPaid, balance: meta.balance });
+            return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase ${STATUS_BADGE[st.tone]}`}>{st.label}</span>;
+          })()}
           <span className="text-sm text-neutral-400">{new Date(meta.createdAt).toLocaleDateString("en-GB")}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">

@@ -298,6 +298,8 @@ export type InvoiceRow = {
   segment: SegmentKey | null;
   staff: string | null;
   payMethod: string | null;
+  amountPaid: number; // COMPLETED → full total; else sum of recorded part-payments
+  balance: number;    // total − amountPaid (0 when fully paid)
 };
 
 export async function listInvoices(): Promise<InvoiceRow[]> {
@@ -344,6 +346,7 @@ async function listInvoicePage(
           custPhone: { value: string } | null;
           customer: { id: string; displayName: string | null; email: string | null; phone: string | null } | null;
           email: string | null;
+          payments: { value: string } | null;
         };
       }[];
     };
@@ -357,6 +360,7 @@ async function listInvoicePage(
           custName: metafield(namespace: "portal", key: "cust_name") { value }
           payMethod: metafield(namespace: "portal", key: "pay_method") { value }
           custPhone: metafield(namespace: "portal", key: "cust_phone") { value }
+          payments: metafield(namespace: "portal", key: "payments") { value }
           customer { id displayName email phone }
           email
         } }
@@ -364,22 +368,40 @@ async function listInvoicePage(
     }`,
     { q: searchQuery, after },
   );
-  const batch = data.draftOrders.edges.map((e) => ({
-    id: e.node.id,
-    name: e.node.name,
-    invoiceNo: e.node.invoiceNo?.value || e.node.name,
-    customer: e.node.customer?.displayName || e.node.custName?.value || e.node.email || "—",
-    customerId: e.node.customer?.id ?? null,
-    customerEmail: e.node.customer?.email ?? e.node.email ?? null,
-    customerPhone: e.node.customer?.phone ?? e.node.custPhone?.value ?? null,
-    status: e.node.status,
-    total: e.node.totalPrice,
-    createdAt: e.node.createdAt,
-    invoiceUrl: e.node.invoiceUrl,
-    segment: segmentsFromTags(e.node.tags ?? [])[0] ?? null,
-    staff: staffFromTags(e.node.tags ?? []),
-    payMethod: e.node.payMethod?.value ?? null,
-  }));
+  const batch = data.draftOrders.edges.map((e) => {
+    const total = parseFloat(e.node.totalPrice) || 0;
+    // Money settled on this bill: a COMPLETED sale is paid in full; otherwise sum
+    // the part-payments recorded against it. This is what lets a partly-paid
+    // invoice reduce the outstanding total instead of counting its whole value.
+    let amountPaid = 0;
+    if (e.node.status === "COMPLETED") {
+      amountPaid = total;
+    } else if (e.node.payments?.value) {
+      try {
+        const arr = JSON.parse(e.node.payments.value);
+        if (Array.isArray(arr)) amountPaid = arr.reduce((s: number, p: { amount?: number }) => s + (Number(p.amount) || 0), 0);
+      } catch { /* ignore */ }
+    }
+    const balance = Math.max(0, Math.round((total - amountPaid) * 100) / 100);
+    return {
+      id: e.node.id,
+      name: e.node.name,
+      invoiceNo: e.node.invoiceNo?.value || e.node.name,
+      customer: e.node.customer?.displayName || e.node.custName?.value || e.node.email || "—",
+      customerId: e.node.customer?.id ?? null,
+      customerEmail: e.node.customer?.email ?? e.node.email ?? null,
+      customerPhone: e.node.customer?.phone ?? e.node.custPhone?.value ?? null,
+      status: e.node.status,
+      total: e.node.totalPrice,
+      createdAt: e.node.createdAt,
+      invoiceUrl: e.node.invoiceUrl,
+      segment: segmentsFromTags(e.node.tags ?? [])[0] ?? null,
+      staff: staffFromTags(e.node.tags ?? []),
+      payMethod: e.node.payMethod?.value ?? null,
+      amountPaid,
+      balance,
+    };
+  });
   return { batch, hasNext: data.draftOrders.pageInfo.hasNextPage, endCursor: data.draftOrders.pageInfo.endCursor };
 }
 
@@ -393,7 +415,9 @@ export function summarizeByStaff(rows: InvoiceRow[]): StaffSales[] {
     const s = m.get(key)!;
     const t = parseFloat(r.total) || 0;
     s.count++; s.total += t;
-    if (r.status === "COMPLETED") s.paid += t; else s.open += t;
+    // Split by money settled vs still due (part-payments included), not by status.
+    s.paid += Number(r.amountPaid) || 0;
+    s.open += Number(r.balance) || 0;
   }
   return [...m.values()].sort((a, b) => b.total - a.total);
 }
@@ -823,9 +847,12 @@ export type InvoiceStats = {
 export function summarizeInvoices(rows: InvoiceRow[]): InvoiceStats {
   let outstanding = 0, paid = 0, openCount = 0, paidCount = 0;
   for (const r of rows) {
-    const t = parseFloat(r.total) || 0;
-    if (r.status === "COMPLETED") { paid += t; paidCount++; }
-    else { outstanding += t; openCount++; }
+    // Count money actually settled vs still due — so a part-paid invoice adds its
+    // paid portion to "paid" and only its remaining balance to "outstanding".
+    paid += Number(r.amountPaid) || 0;
+    outstanding += Number(r.balance) || 0;
+    if (r.status === "COMPLETED") paidCount++;
+    if ((Number(r.balance) || 0) > 0.001) openCount++;
   }
-  return { count: rows.length, outstanding, paid, openCount, paidCount };
+  return { count: rows.length, outstanding: Math.round(outstanding * 100) / 100, paid: Math.round(paid * 100) / 100, openCount, paidCount };
 }

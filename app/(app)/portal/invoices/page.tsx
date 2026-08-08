@@ -12,6 +12,7 @@ import type { InvoiceDetail } from "@/lib/billing";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useCanSeeFinance } from "@/lib/use-me";
 import { FinanceLockBar } from "@/components/Finance";
+import { invoiceStatus, STATUS_BADGE } from "@/lib/invoice-status";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import { BRAND_SLUG } from "@/lib/brand";
 
@@ -37,15 +38,9 @@ type Invoice = {
   segment: SegmentKey | null;
   staff: string | null;
   payMethod: string | null;
+  amountPaid: number;
+  balance: number;
 };
-
-type Stats = {
-  count: number;
-  outstanding: number;
-  paid: number;
-  openCount: number;
-  paidCount: number;
-} | null;
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -53,7 +48,6 @@ export default function InvoicesPage() {
   const cols = useColumns("cols:invoices", INV_COLUMNS);
   const sort = useSort<"invoice" | "customer" | "source" | "staff" | "status" | "date" | "total">("date", "desc");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [stats, setStats] = useState<Stats>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -78,7 +72,6 @@ export default function InvoicesPage() {
       .then((d) => {
         if (d.error) setError(d.error);
         setInvoices(d.invoices ?? []);
-        setStats(d.stats ?? null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -133,15 +126,24 @@ export default function InvoicesPage() {
     [sorted, safePage, pageSize],
   );
 
-  // Live summary of whatever range/filters are currently applied.
+  // Live summary of whatever range/filters are currently applied. Counts money
+  // actually settled vs still due, so a part-paid bill splits correctly.
   const rangeStats = useMemo(() => {
-    let total = 0, paid = 0, outstanding = 0;
+    let total = 0, paid = 0, outstanding = 0, openCount = 0, paidCount = 0;
     for (const inv of filtered) {
-      const t = parseFloat(inv.total) || 0;
-      total += t;
-      if (inv.status === "COMPLETED") paid += t; else outstanding += t;
+      total += parseFloat(inv.total) || 0;
+      paid += Number(inv.amountPaid) || 0;
+      outstanding += Number(inv.balance) || 0;
+      if (inv.status === "COMPLETED") paidCount++;
+      if ((Number(inv.balance) || 0) > 0.001) openCount++;
     }
-    return { count: filtered.length, total, paid, outstanding };
+    return {
+      count: filtered.length,
+      total: Math.round(total * 100) / 100,
+      paid: Math.round(paid * 100) / 100,
+      outstanding: Math.round(outstanding * 100) / 100,
+      openCount, paidCount,
+    };
   }, [filtered]);
 
   function todayStr() { return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD (local)
@@ -375,28 +377,22 @@ export default function InvoicesPage() {
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
           <span className="text-xs text-neutral-400">to</span>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
-          {canSeeFinance ? (
-            <span className="ml-auto rounded-lg bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-              {dateFrom || dateTo ? "Range" : "All time"}: <strong>{rangeStats.count}</strong> bills · <strong>£{rangeStats.total.toFixed(2)}</strong> · paid £{rangeStats.paid.toFixed(2)} · due £{rangeStats.outstanding.toFixed(2)}
-            </span>
-          ) : (
-            <span className="ml-auto rounded-lg bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-              {rangeStats.count} bills · due <strong>£{rangeStats.outstanding.toFixed(2)}</strong>
-            </span>
-          )}
         </div>
       </div>
 
-      {/* stat tiles — outstanding is shown to all staff; sales/earnings totals need finance access */}
-      <div className="mt-5"><FinanceLockBar label="Sales & earnings totals" /></div>
-      {stats && (
-        <div className={`mt-2 grid grid-cols-2 gap-3 ${canSeeFinance ? "sm:grid-cols-4" : "sm:grid-cols-2"}`}>
-          <Tile label="Invoices" value={String(stats.count)} />
-          <Tile label="Outstanding" value={`£${stats.outstanding.toFixed(2)}`} sub={`${stats.openCount} open`} accent="amber" />
-          {canSeeFinance && <Tile label="Paid" value={`£${stats.paid.toFixed(2)}`} sub={`${stats.paidCount} completed`} accent="emerald" />}
-          {canSeeFinance && <Tile label="Total billed" value={`£${(stats.outstanding + stats.paid).toFixed(2)}`} />}
-        </div>
-      )}
+      {/* Summary reflects the CURRENT filters/date range, so picking "Last 7 days"
+          etc. updates these figures. Outstanding is shown to all staff; the
+          sales/earnings totals need finance access. */}
+      <div className="mt-5 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Summary · {rangeLabel()}</p>
+      </div>
+      <div className="mt-2"><FinanceLockBar label="Sales & earnings totals" /></div>
+      <div className={`mt-2 grid grid-cols-2 gap-3 ${canSeeFinance ? "sm:grid-cols-4" : "sm:grid-cols-2"}`}>
+        <Tile label="Invoices" value={String(rangeStats.count)} sub={`${rangeStats.paidCount} paid · ${rangeStats.openCount} unpaid`} />
+        <Tile label="Outstanding" value={`£${rangeStats.outstanding.toFixed(2)}`} sub={`${rangeStats.openCount} unpaid`} accent="amber" />
+        {canSeeFinance && <Tile label="Received" value={`£${rangeStats.paid.toFixed(2)}`} sub="paid so far" accent="emerald" />}
+        {canSeeFinance && <Tile label="Total billed" value={`£${rangeStats.total.toFixed(2)}`} />}
+      </div>
 
       {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{flash}</p>}
@@ -449,9 +445,10 @@ export default function InvoicesPage() {
                 {cols.isVisible("staff") && <td className="px-4 py-3 text-xs text-neutral-500">{inv.staff ? inv.staff.split("@")[0] : "—"}</td>}
                 {cols.isVisible("status") && (
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${inv.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                      {inv.status === "COMPLETED" ? "PAID" : "DRAFT"}
-                    </span>
+                    {(() => {
+                      const st = invoiceStatus(inv);
+                      return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase ${STATUS_BADGE[st.tone]}`}>{st.label}</span>;
+                    })()}
                   </td>
                 )}
                 {cols.isVisible("date") && <td className="px-4 py-3 text-neutral-500">{new Date(inv.createdAt).toLocaleDateString("en-GB")}</td>}
