@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
-import { generateStatementPdf, buildStatementDoc, statementFilename } from "@/lib/statement-pdf";
+import { generateStatementPdf, buildStatementDoc, statementFilename, buildPeriodStatementDoc, periodStatementFilename, type PeriodCharge, type PeriodPayment } from "@/lib/statement-pdf";
 import { buildReceiptDoc, receiptFilename, type ReceiptInput } from "@/lib/receipt-pdf";
 import { buildInvoiceDoc } from "@/lib/invoice-pdf";
 import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
@@ -38,6 +38,63 @@ type Detail = {
   ledger: { payments: Payment[] };
   invoices: Invoice[];
 };
+
+// Selectable statement periods. "custom" reveals two date inputs.
+const STATEMENT_PERIODS: { key: string; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "7d", label: "Last 7 days" },
+  { key: "1m", label: "Last month" },
+  { key: "3m", label: "Last 3 months" },
+  { key: "6m", label: "Last 6 months" },
+  { key: "1y", label: "Last year" },
+  { key: "all", label: "All time" },
+  { key: "custom", label: "Custom range" },
+];
+
+// Turn a period key (+ optional custom dates) into a concrete [start, end] range
+// and a human label. `end` runs through the end of today (or the custom "to" day).
+function periodRange(key: string, fromStr: string, toStr: string): { start: Date; end: Date; label: string } {
+  const now = new Date();
+  let start = new Date();
+  let end = new Date(); end.setHours(23, 59, 59, 999);
+  switch (key) {
+    case "today": start.setHours(0, 0, 0, 0); break;
+    case "7d": start.setDate(now.getDate() - 7); start.setHours(0, 0, 0, 0); break;
+    case "1m": start.setMonth(now.getMonth() - 1); start.setHours(0, 0, 0, 0); break;
+    case "3m": start.setMonth(now.getMonth() - 3); start.setHours(0, 0, 0, 0); break;
+    case "6m": start.setMonth(now.getMonth() - 6); start.setHours(0, 0, 0, 0); break;
+    case "1y": start.setFullYear(now.getFullYear() - 1); start.setHours(0, 0, 0, 0); break;
+    case "all": start = new Date(0); break;
+    case "custom":
+      start = fromStr ? new Date(`${fromStr}T00:00:00`) : new Date(0);
+      end = toStr ? new Date(`${toStr}T23:59:59`) : end;
+      break;
+  }
+  const label = key === "all" ? "All time" : `${start.toLocaleDateString("en-GB")} – ${end.toLocaleDateString("en-GB")}`;
+  return { start, end, label };
+}
+
+// Split a customer's activity into: the balance carried into the period, charges
+// raised inside it, and payments received inside it (from any bill, or on account).
+function buildPeriodData(c: Detail, start: Date, end: Date): { charges: PeriodCharge[]; payments: PeriodPayment[]; broughtForward: number } {
+  const s = +start, e = +end;
+  const within = (iso: string) => { const t = +new Date(iso); return t >= s && t <= e; };
+  const before = (iso: string) => +new Date(iso) < s;
+  const charges: PeriodCharge[] = c.invoices
+    .filter((i) => within(i.createdAt))
+    .map((i) => ({ date: i.createdAt, name: i.name, amount: Number(i.total) || 0, status: i.status }));
+  const payments: PeriodPayment[] = [];
+  for (const i of c.invoices) for (const p of i.paymentEntries) if (within(p.date)) payments.push({ date: p.date, label: i.name, method: p.method, amount: Number(p.amount) || 0 });
+  for (const p of c.ledger.payments) if (within(p.date)) payments.push({ date: p.date, label: "On account", method: p.method, amount: Number(p.amount) || 0 });
+  // Balance carried in = old opening balance + everything charged before the
+  // period − everything paid before the period.
+  let chargedBefore = 0, paidBefore = 0;
+  for (const i of c.invoices) if (before(i.createdAt)) chargedBefore += Number(i.total) || 0;
+  for (const i of c.invoices) for (const p of i.paymentEntries) if (before(p.date)) paidBefore += Number(p.amount) || 0;
+  for (const p of c.ledger.payments) if (before(p.date)) paidBefore += Number(p.amount) || 0;
+  const broughtForward = (c.openingBalance || 0) + chargedBefore - paidBefore;
+  return { charges, payments, broughtForward };
+}
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -295,6 +352,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <Stat label="Invoices" raw={c.invoices.length} />
       </div>
 
+      <PeriodStatementCard c={c} />
+
       <div className="mt-7 grid gap-5 lg:grid-cols-2">
         {/* Invoices */}
         <section className="flex max-h-[520px] flex-col rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
@@ -400,6 +459,103 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           title="Outstanding balance invoice"
           subtitle={`£${outstanding.toFixed(2)} due · ${c.name}`}
           onClose={() => setOutDoc(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Account statement for a chosen period — preview/download or send by email +
+// WhatsApp. Shows the balance brought into the period, activity within it, and
+// the closing balance, so a customer can see exactly what happened in that time.
+function PeriodStatementCard({ c }: { c: Detail }) {
+  const [period, setPeriod] = useState("1m");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+  const [doc, setDoc] = useState<jsPDF | null>(null);
+
+  function compute() {
+    const { start, end, label } = periodRange(period, from, to);
+    const { charges, payments, broughtForward } = buildPeriodData(c, start, end);
+    const input = {
+      customerName: c.name || c.company || "Customer",
+      company: c.company, email: c.email, phone: c.phone,
+      periodLabel: label, broughtForward, charges, payments,
+    };
+    return { input, label };
+  }
+
+  async function preview() {
+    setBusy("gen"); setMsg("");
+    try {
+      const { input } = compute();
+      if (!input.charges.length && !input.payments.length && Math.abs(input.broughtForward) < 0.001) { setMsg("No activity in this period."); return; }
+      setDoc(buildPeriodStatementDoc(input, await loadBusiness()));
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Failed."); } finally { setBusy(""); }
+  }
+
+  async function send() {
+    const { input, label } = compute();
+    if (!input.charges.length && !input.payments.length && Math.abs(input.broughtForward) < 0.001) { setMsg("No activity in this period."); return; }
+    if (!c.email && !c.phone) { setMsg("No email or phone on file to send to."); return; }
+    if (!confirm(`Send ${c.name || "this customer"} their account statement for ${label}?`)) return;
+    setBusy("send"); setMsg("");
+    try {
+      const pdf = buildPeriodStatementDoc(input, await loadBusiness());
+      const pdfBase64 = pdf.output("datauristring").split("base64,").pop();
+      const filename = periodStatementFilename(input.customerName, label);
+      const chargesTotal = input.charges.reduce((a, x) => a + x.amount, 0);
+      const paymentsTotal = input.payments.reduce((a, x) => a + x.amount, 0);
+      const closing = input.broughtForward + chargesTotal - paymentsTotal;
+      const summary = `Period: ${label}\nBrought forward: £${input.broughtForward.toFixed(2)}\nCharges: £${chargesTotal.toFixed(2)}\nPayments: £${paymentsTotal.toFixed(2)}\nBalance now: £${closing.toFixed(2)}`;
+      let sent = "";
+      if (c.email) {
+        const er = await fetch("/api/email/invoice", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: c.email, subject: `Your account statement (${label}) — ${BUSINESS.name}`, message: `Hi ${c.name}, your account statement for ${label} is attached.\n${summary}`, pdfBase64, filename }) });
+        if (er.ok) sent += "email ";
+      }
+      if (c.phone) {
+        const text = `Hi ${c.name}, your account statement from ${BUSINESS.name}:\n${summary}`;
+        const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: c.phone, message: text }) });
+        if (!wr.ok) window.open(`https://wa.me/${c.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
+        sent += "WhatsApp";
+      }
+      setMsg(sent.trim() ? `Statement sent via ${sent.trim().replace(/\s+/, " + ")}.` : "No email or phone on file to send to.");
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Failed to send."); } finally { setBusy(""); }
+  }
+
+  const sel = "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100";
+  return (
+    <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">📄 Account statement for period:</span>
+        <select value={period} onChange={(e) => setPeriod(e.target.value)} className={sel}>
+          {STATEMENT_PERIODS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+        </select>
+        {period === "custom" && (
+          <>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={sel} title="From" />
+            <span className="text-sm text-neutral-400">→</span>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={sel} title="To" />
+          </>
+        )}
+        <button onClick={preview} disabled={!!busy} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200">
+          {busy === "gen" ? "…" : "Preview / download"}
+        </button>
+        <button onClick={send} disabled={!!busy} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-amber-400 disabled:opacity-60" title="Email the PDF + WhatsApp the customer this period's statement">
+          {busy === "send" ? "Sending…" : "📤 Send"}
+        </button>
+      </div>
+      {msg && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10">{msg}</p>}
+      {doc && (
+        <PdfPreviewModal
+          doc={doc}
+          filename={periodStatementFilename(c.name || "customer", periodRange(period, from, to).label)}
+          title="Account statement"
+          subtitle={`${c.name} · ${periodRange(period, from, to).label}`}
+          onClose={() => setDoc(null)}
         />
       )}
     </div>
