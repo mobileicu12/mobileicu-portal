@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
-import { useIsOwner } from "@/lib/use-me";
+import { useCanSeeFinance } from "@/lib/use-me";
+import { FinanceLockBar } from "@/components/Finance";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 
 const ORDER_COLUMNS: ColumnDef[] = [
@@ -48,7 +49,7 @@ function pretty(s: string) {
 
 export default function OrdersPage() {
   const router = useRouter();
-  const isOwner = useIsOwner();
+  const canSeeFinance = useCanSeeFinance();
   const cols = useColumns("cols:orders", ORDER_COLUMNS);
   const sort = useSort<"order" | "customer" | "source" | "payment" | "fulfilment" | "date" | "total">("date", "desc");
   const [orders, setOrders] = useState<Order[]>([]);
@@ -166,10 +167,11 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      <FinanceLockBar label="Orders sales total" />
       {stats && (
-        <div className={`grid grid-cols-2 gap-3 ${isOwner ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+        <div className={`grid grid-cols-2 gap-3 ${canSeeFinance ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
           <Tile label="Orders" value={String(stats.count)} />
-          {isOwner && <Tile label="Sales" value={`£${stats.sales.toFixed(2)}`} />}
+          {canSeeFinance && <Tile label="Sales" value={`£${stats.sales.toFixed(2)}`} />}
           <Tile label="Unfulfilled" value={String(stats.unfulfilled)} accent="rose" />
           <Tile label="Unpaid" value={String(stats.unpaid)} accent="amber" />
         </div>

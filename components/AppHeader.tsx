@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import { downloadCustomerReportsZip } from "@/lib/customer-zip";
-import { useMe } from "@/lib/use-me";
+import { useCanSeeFinance } from "@/lib/use-me";
 import { loadPortalSettings } from "@/lib/settings-client";
 import { BUSINESS } from "@/lib/business";
 
@@ -27,10 +27,10 @@ export default function AppHeader() {
   const pathname = usePathname();
   const label = LABELS.find((l) => l.match(pathname))?.label ?? "Portal";
 
-  // After 9 PM, surface a one-click "download today's per-customer reports" ZIP.
-  // Only for owner / teammates with invoice access (it contains customer money data).
-  const me = useMe();
-  const canSeeReports = !!me && (me.role === "owner" || me.permissions.includes("invoices"));
+  // After the report hour, surface a one-click "download today's per-customer
+  // reports" ZIP. It contains each customer's sales/statement figures, so it
+  // follows the finance-reveal gate: owner always, staff only during a grant.
+  const canSeeReports = useCanSeeFinance();
 
   // Tap-out button — only wired up when the tap-in system is enabled. Disabled by
   // default so the header does NOT hit /api/attendance (Shopify) on every page.
