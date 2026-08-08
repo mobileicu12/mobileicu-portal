@@ -12,6 +12,8 @@ import { loadBusiness } from "@/lib/business";
 import { SITE_URL } from "@/lib/site";
 import type { InvoiceDetail } from "@/lib/billing";
 import type { jsPDF } from "jspdf";
+import { useCanSeeFinance } from "@/lib/use-me";
+import { FinanceLockBar } from "@/components/Finance";
 import { BRAND_SLUG } from "@/lib/brand";
 import { BUSINESS } from "@/lib/business";
 
@@ -98,6 +100,7 @@ function buildPeriodData(c: Detail, start: Date, end: Date): { charges: PeriodCh
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const canSeeFinance = useCanSeeFinance();
   const [c, setC] = useState<Detail | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -345,9 +348,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       <SegmentEditor customerId={id} current={c.segments} onSaved={load} />
       {c.segments.includes("online") && <TradeCodeCard customerId={id} code={c.tradeCode} onSaved={load} />}
 
-      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Total billed" value={billed} />
-        <Stat label="Total paid" value={paid} tone="emerald" />
+      <FinanceLockBar label="This customer's billed / paid totals" />
+      <div className={`mt-6 grid grid-cols-2 gap-4 ${canSeeFinance ? "lg:grid-cols-4" : "lg:grid-cols-2"}`}>
+        {canSeeFinance && <Stat label="Total billed" value={billed} />}
+        {canSeeFinance && <Stat label="Total paid" value={paid} tone="emerald" />}
         <Stat label={outstanding < -0.001 ? "Account credit" : "Outstanding"} value={Math.abs(outstanding)} tone={outstanding > 0.001 ? "red" : "emerald"} />
         <Stat label="Invoices" raw={c.invoices.length} />
       </div>

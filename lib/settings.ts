@@ -30,6 +30,7 @@ export type PortalSettings = {
   digestLastRun: string; // YYYY-MM-DD of the last successful run (idempotency)
   reportButtonHour: number; // hour (0-23) after which the header "Today's reports" ZIP button shows
   requireTapIn: boolean; // staff must tap in (re-enter password) after login before using the portal
+  financeGrantMinutes: number; // how long an owner-approved finance reveal lasts for staff
 };
 
 export const DEFAULT_SETTINGS: PortalSettings = {
@@ -54,6 +55,7 @@ export const DEFAULT_SETTINGS: PortalSettings = {
   digestLastRun: "",
   reportButtonHour: 21,
   requireTapIn: false,
+  financeGrantMinutes: 15,
 };
 
 const NS = "portal";

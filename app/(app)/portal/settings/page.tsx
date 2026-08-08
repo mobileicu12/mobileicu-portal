@@ -24,6 +24,7 @@ type Settings = {
   digestOwnerPhone: string;
   reportButtonHour: number;
   requireTapIn: boolean;
+  financeGrantMinutes: number;
 };
 
 type Shift = { email: string; name?: string; tapIn: string; tapOut?: string; open: boolean; autoOut?: boolean; minutes: number };
@@ -224,6 +225,11 @@ export default function SettingsPage() {
           <p className="text-xs text-neutral-400">Used for the total shown on the billing screen. The tax actually charged is applied by Shopify from its own tax settings — keep the two the same.</p>
           <Field label="Low-stock threshold"><input type="number" className={inp} value={s.lowStock} onChange={(e) => set("lowStock", Number(e.target.value))} /></Field>
           <p className="text-xs text-neutral-400">Drives the &ldquo;Low stock&rdquo; count on the dashboard and the Low filter in Inventory.</p>
+        </Section>
+
+        <Section title="Financial privacy">
+          <p className="text-xs text-neutral-500">Sales, earnings and takings figures are hidden from staff by default. When a staff member requests access, you approve it from the dashboard for this long — then it hides again automatically. You can also revoke instantly.</p>
+          <Field label="Reveal window (minutes)"><input type="number" min={1} max={120} className={inp} value={s.financeGrantMinutes} onChange={(e) => set("financeGrantMinutes", Math.min(120, Math.max(1, Number(e.target.value))))} /></Field>
         </Section>
 
         <Section title="Automatic WhatsApp">
