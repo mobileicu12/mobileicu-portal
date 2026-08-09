@@ -17,21 +17,18 @@
 import { adminGraphQL, ShopifyError } from "./shopify";
 import { listInvoices } from "./billing";
 import { listExpenses } from "./expenses";
+import { zeroSplit, bucket, round2, type MethodSplit, type CashUp, type CashUpLine, type DayTakings } from "./cashup-types";
+
+export * from "./cashup-types";
 
 const NS = "portal";
 
 // ---- Stored record -------------------------------------------------------
 // One per day. Monthly metafield buckets, same reasoning as the audit log: a
 // single growing blob eventually exceeds Shopify's metafield size ceiling.
-export type CashUp = {
-  date: string;          // YYYY-MM-DD
-  openingFloat: number;  // counted into the drawer at the start of the day
-  countedCash: number;   // counted out of the drawer at close
-  countedCard: number;   // card terminal total, if they reconcile it too
-  note: string;
-  closedBy: string;
-  closedAt: string;      // ISO
-};
+
+
+
 
 function bucketKey(date: string): string {
   return `cashup_${date.slice(0, 4)}${date.slice(5, 7)}`;
@@ -88,32 +85,7 @@ export async function saveCashUp(entry: CashUp): Promise<CashUp> {
 
 // ---- What the system says ------------------------------------------------
 
-export type MethodSplit = { cash: number; card: number; "bank transfer": number; other: number };
-const zeroSplit = (): MethodSplit => ({ cash: 0, card: 0, "bank transfer": 0, other: 0 });
-const bucket = (m: string | null | undefined): keyof MethodSplit => {
-  const k = (m || "other").toLowerCase();
-  return k === "cash" || k === "card" || k === "bank transfer" ? k : "other";
-};
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export type DayTakings = {
-  date: string;
-  /** Money received against a registered customer's bills. */
-  fromAccounts: number;
-  /** Money received on walk-in / one-off bills (no customer account). */
-  fromCounter: number;
-  /** Surplus paid onto an account with no open bill to clear. */
-  onAccountCredit: number;
-  receivedByMethod: MethodSplit;
-  receivedTotal: number;
-  expensesByMethod: MethodSplit;
-  expensesTotal: number;
-  /** Expenses paid in cash — the only ones that come out of the drawer. */
-  cashExpenses: number;
-  /** Sources are only trustworthy if the two ways of counting agree. */
-  sourcesTotal: number;
-  balanced: boolean;
-};
 
 // Sum on-account (ledger) credits dated within the window, across all customers.
 // This pages through every customer, so it is deliberately NOT used anywhere on
@@ -165,15 +137,32 @@ export async function takingsFor(date: string): Promise<DayTakings> {
 
   const receivedByMethod = zeroSplit();
   let fromAccounts = 0, fromCounter = 0;
+  // Roll several bills for the same customer into one line, split by method —
+  // the sheet says "Haji Mahmood paid cash 100", not one row per invoice.
+  const perCustomer = new Map<string, number>();
 
   for (const inv of invoices) {
     for (const p of inv.paymentEntries) {
       if (!within(p.date)) continue;
       const amt = Number(p.amount) || 0;
-      receivedByMethod[bucket(p.method)] += amt;
-      if (inv.customerId) fromAccounts += amt; else fromCounter += amt;
+      const m = bucket(p.method);
+      receivedByMethod[m] += amt;
+      if (inv.customerId) {
+        fromAccounts += amt;
+        const key = `${inv.customer}||${m}`;
+        perCustomer.set(key, (perCustomer.get(key) ?? 0) + amt);
+      } else {
+        fromCounter += amt;
+      }
     }
   }
+
+  const accountLines: CashUpLine[] = [...perCustomer.entries()]
+    .map(([key, amount]) => {
+      const [name, method] = key.split("||");
+      return { name, method, amount: round2(amount) };
+    })
+    .sort((a, b) => b.amount - a.amount);
 
   // On-account credit is money in the till too, just not against a bill yet.
   const onAccountCredit = round2(Object.values(ledger).reduce((a, b) => a + b, 0));
@@ -182,9 +171,15 @@ export async function takingsFor(date: string): Promise<DayTakings> {
   }
 
   const expensesByMethod = zeroSplit();
+  const expenseLines: CashUpLine[] = [];
   for (const x of expenses) {
     if (!within(x.date)) continue;
     expensesByMethod[bucket(x.method)] += Number(x.amount) || 0;
+    expenseLines.push({
+      name: x.description || x.category || "Expense",
+      amount: round2(Number(x.amount) || 0),
+      method: bucket(x.method),
+    });
   }
 
   const receivedTotal = round2(Object.values(receivedByMethod).reduce((a, b) => a + b, 0));
@@ -203,6 +198,8 @@ export async function takingsFor(date: string): Promise<DayTakings> {
     sourcesTotal,
     // Float comparison, not equality — these are sums of rounded currency.
     balanced: Math.abs(sourcesTotal - receivedTotal) < 0.01,
+    accountLines,
+    expenseLines,
   };
 }
 

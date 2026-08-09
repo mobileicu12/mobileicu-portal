@@ -22,7 +22,8 @@ const INV_COLUMNS: ColumnDef[] = [
   { key: "source", label: "Source" },
   { key: "staff", label: "Staff" },
   { key: "status", label: "Status" },
-  { key: "date", label: "Date" },
+  { key: "date", label: "Raised" },
+  { key: "paidOn", label: "Paid on" },
   { key: "total", label: "Total", locked: true },
 ];
 
@@ -40,6 +41,7 @@ type Invoice = {
   payMethod: string | null;
   amountPaid: number;
   balance: number;
+  completedAt: string | null; // when the money actually arrived
 };
 
 export default function InvoicesPage() {
@@ -423,7 +425,8 @@ export default function InvoicesPage() {
               {cols.isVisible("source") && <th className="px-4 py-3"><button onClick={() => sort.onSort("source")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Source{sort.arrow("source")}</button></th>}
               {cols.isVisible("staff") && <th className="px-4 py-3"><button onClick={() => sort.onSort("staff")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Staff{sort.arrow("staff")}</button></th>}
               {cols.isVisible("status") && <th className="px-4 py-3"><button onClick={() => sort.onSort("status")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Status{sort.arrow("status")}</button></th>}
-              {cols.isVisible("date") && <th className="px-4 py-3"><button onClick={() => sort.onSort("date")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Date{sort.arrow("date")}</button></th>}
+              {cols.isVisible("date") && <th className="px-4 py-3"><button onClick={() => sort.onSort("date")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Raised{sort.arrow("date")}</button></th>}
+              {cols.isVisible("paidOn") && <th className="px-4 py-3 uppercase">Paid on</th>}
               <th className="px-4 py-3 text-right"><button onClick={() => sort.onSort("total")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Total{sort.arrow("total")}</button></th>
               <th className="px-4 py-3 text-right">Export</th>
             </tr>
@@ -452,6 +455,17 @@ export default function InvoicesPage() {
                   </td>
                 )}
                 {cols.isVisible("date") && <td className="px-4 py-3 text-neutral-500">{new Date(inv.createdAt).toLocaleDateString("en-GB")}</td>}
+                {cols.isVisible("paidOn") && (
+                  // Settled date, NOT the raised date — a July bill paid today
+                  // reads "09 Aug", which is where that money actually counts.
+                  <td className="px-4 py-3 text-neutral-500">
+                    {inv.completedAt
+                      ? new Date(inv.completedAt).toLocaleDateString("en-GB")
+                      : inv.amountPaid > 0.001
+                        ? <span className="text-amber-600">part-paid</span>
+                        : <span className="text-neutral-300">—</span>}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-right font-medium text-neutral-900 dark:text-neutral-100">£{inv.total}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
