@@ -300,6 +300,8 @@ export type InvoiceRow = {
   payMethod: string | null;
   amountPaid: number; // COMPLETED → full total; else sum of recorded part-payments
   balance: number;    // total − amountPaid (0 when fully paid)
+  completedAt: string | null; // when it was settled — NOT when it was raised
+  paymentEntries: InvoicePayment[]; // dated part-payments recorded against the bill
 };
 
 export async function listInvoices(): Promise<InvoiceRow[]> {
@@ -338,6 +340,7 @@ async function listInvoicePage(
           status: string;
           totalPrice: string;
           createdAt: string;
+          completedAt: string | null;
           invoiceUrl: string | null;
           tags: string[];
           invoiceNo: { value: string } | null;
@@ -355,7 +358,7 @@ async function listInvoicePage(
       draftOrders(first: 100, reverse: true, query: $q, after: $after) {
         pageInfo { hasNextPage endCursor }
         edges { node {
-          id name status totalPrice createdAt invoiceUrl tags
+          id name status totalPrice createdAt completedAt invoiceUrl tags
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
           custName: metafield(namespace: "portal", key: "cust_name") { value }
           payMethod: metafield(namespace: "portal", key: "pay_method") { value }
@@ -373,14 +376,36 @@ async function listInvoicePage(
     // Money settled on this bill: a COMPLETED sale is paid in full; otherwise sum
     // the part-payments recorded against it. This is what lets a partly-paid
     // invoice reduce the outstanding total instead of counting its whole value.
+    let paymentEntries: InvoicePayment[] = [];
+    if (e.node.payments?.value) {
+      try {
+        const arr = JSON.parse(e.node.payments.value);
+        if (Array.isArray(arr)) {
+          paymentEntries = arr.map((p: { date?: string; amount?: number; method?: string; note?: string }) => ({
+            date: p.date || e.node.createdAt,
+            amount: Number(p.amount) || 0,
+            method: p.method || "cash",
+            note: p.note || "",
+          }));
+        }
+      } catch { /* ignore */ }
+    }
+    const recorded = paymentEntries.reduce((s2, p) => s2 + p.amount, 0);
     let amountPaid = 0;
     if (e.node.status === "COMPLETED") {
       amountPaid = total;
-    } else if (e.node.payments?.value) {
-      try {
-        const arr = JSON.parse(e.node.payments.value);
-        if (Array.isArray(arr)) amountPaid = arr.reduce((s: number, p: { amount?: number }) => s + (Number(p.amount) || 0), 0);
-      } catch { /* ignore */ }
+      // The rest was taken at completion — date it by completedAt, not the day
+      // the bill was raised, so day takings land in the right day.
+      if (recorded < total - 0.001) {
+        paymentEntries = [...paymentEntries, {
+          date: e.node.completedAt || e.node.createdAt,
+          amount: Math.round((total - recorded) * 100) / 100,
+          method: e.node.payMethod?.value || "cash",
+          note: "Settled",
+        }];
+      }
+    } else {
+      amountPaid = recorded;
     }
     const balance = Math.max(0, Math.round((total - amountPaid) * 100) / 100);
     return {
@@ -398,6 +423,8 @@ async function listInvoicePage(
       segment: segmentsFromTags(e.node.tags ?? [])[0] ?? null,
       staff: staffFromTags(e.node.tags ?? []),
       payMethod: e.node.payMethod?.value ?? null,
+      completedAt: e.node.completedAt ?? null,
+      paymentEntries,
       amountPaid,
       balance,
     };
