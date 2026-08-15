@@ -31,8 +31,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     switch (body.action) {
       case "complete": {
-        const r = await completeInvoice(decoded, !!body.paymentPending);
-        await audit("invoice.complete", { ref: decoded, name: label, detail: "Marked paid; stock deducted" });
+        const r = await completeInvoice(decoded, !!body.paymentPending, body.method);
+        await audit("invoice.complete", { ref: decoded, name: label, detail: `Marked paid${body.method ? ` (${body.method})` : ""}; stock deducted` });
         return NextResponse.json({ ok: true, ...r });
       }
       case "duplicate": {

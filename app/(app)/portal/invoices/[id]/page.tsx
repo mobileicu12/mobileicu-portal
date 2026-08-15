@@ -471,7 +471,14 @@ export default function InvoiceEditPage() {
               <button onClick={save} disabled={!!busy || !dirty} className="mt-5 w-full rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">
                 {busy === "save" ? "Saving…" : dirty ? "Save changes" : "Saved"}
               </button>
-              <button onClick={() => { if (window.confirm(`Mark ${meta.name} as PAID? This creates the order and deducts stock.`)) doAction("complete"); }} disabled={!!busy} className="mt-2 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50">
+              <button onClick={() => {
+                // Ask HOW it was paid — the day's cash-up splits takings by
+                // method, and guessing here puts the money in the wrong column.
+                const m = window.prompt(`Mark ${meta.name} as PAID? This creates the order and deducts stock.\n\nHow was it paid? (cash / card / bank transfer)`, "cash");
+                if (m === null) return;
+                const method = m.trim().toLowerCase() || "cash";
+                doAction("complete", { method });
+              }} disabled={!!busy} className="mt-2 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50">
                 {busy === "complete" ? "Processing…" : `✓ Mark paid (£${total.toFixed(2)})`}
               </button>
             </>

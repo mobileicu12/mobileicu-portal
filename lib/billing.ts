@@ -346,6 +346,7 @@ async function listInvoicePage(
           invoiceNo: { value: string } | null;
           custName: { value: string } | null;
           payMethod: { value: string } | null;
+          paidMethod: { value: string } | null;
           custPhone: { value: string } | null;
           customer: { id: string; displayName: string | null; email: string | null; phone: string | null } | null;
           email: string | null;
@@ -362,6 +363,7 @@ async function listInvoicePage(
           invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
           custName: metafield(namespace: "portal", key: "cust_name") { value }
           payMethod: metafield(namespace: "portal", key: "pay_method") { value }
+          paidMethod: metafield(namespace: "portal", key: "paid_method") { value }
           custPhone: metafield(namespace: "portal", key: "cust_phone") { value }
           payments: metafield(namespace: "portal", key: "payments") { value }
           customer { id displayName email phone }
@@ -400,7 +402,8 @@ async function listInvoicePage(
         paymentEntries = [...paymentEntries, {
           date: e.node.completedAt || e.node.createdAt,
           amount: Math.round((total - recorded) * 100) / 100,
-          method: e.node.payMethod?.value || "cash",
+          // How it was ACTUALLY settled beats how it was expected to be paid.
+          method: e.node.paidMethod?.value || e.node.payMethod?.value || "cash",
           note: "Settled",
         }];
       }
@@ -714,7 +717,24 @@ export async function fulfillOrder(orderId: string | null): Promise<void> {
 }
 
 // ---- Complete a draft = mark paid, create the order, deduct stock ----
-export async function completeInvoice(id: string, paymentPending = false): Promise<{ orderId: string | null }> {
+// `method` is HOW this settlement was paid — cash, card, bank transfer.
+//
+// It is deliberately stored separately from the invoice's `pay_method`, which
+// records how the bill was EXPECTED to be paid when it was raised. A bill raised
+// weeks ago as "cash" can be settled today by card, and the day's takings must
+// follow the card. Without this, FIFO clearing an old bill reported the money
+// under the wrong method and the cash-up would never reconcile.
+export async function completeInvoice(
+  id: string,
+  paymentPending = false,
+  method?: string,
+): Promise<{ orderId: string | null }> {
+  if (method?.trim()) {
+    await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+      `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+      { mf: [{ ownerId: toGid(id), namespace: "portal", key: "paid_method", type: "single_line_text_field", value: method.trim().slice(0, 40) }] },
+    ).catch(() => { /* never block the sale on a label */ });
+  }
   const res = await adminGraphQL<{
     draftOrderComplete: {
       draftOrder: { id: string; order: { id: string } | null } | null;
