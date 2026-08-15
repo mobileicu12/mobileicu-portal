@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { downloadFile } from "@/lib/download";
 import { buildCashUpDoc, cashUpFilename } from "@/lib/cashup-pdf";
 import { sheetTotals, emptyCashUp, type CashUp, type CashUpLine, type DayTakings } from "@/lib/cashup-types";
 import { loadBusiness, BUSINESS } from "@/lib/business";
@@ -110,7 +111,10 @@ export default function CashUpPage() {
   function downloadExcel() {
     // Server-rendered from the SAVED record, so save first or you'll export stale numbers.
     if (!savedAt) { setError("Save the cash-up first — the Excel export is built from the saved record."); return; }
-    window.location.href = `/api/cashup/export?date=${date}`;
+    setBusy("excel"); setError("");
+    downloadFile(`/api/cashup/export?date=${date}`, `cashup-${date}.xlsx`)
+      .catch((e) => setError(e instanceof Error ? e.message : "Export failed."))
+      .finally(() => setBusy(""));
   }
 
   // Share to a WhatsApp group: wa.me can't attach a file, so the message carries

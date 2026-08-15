@@ -208,7 +208,7 @@ export default function InvoiceEditPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Action failed");
       if (action === "duplicate" && d.id) {
-        router.push(`/portal/invoices/${encodeURIComponent(d.id)}`);
+        router.push(`/portal/invoices/${String(d.id).split("/").pop()}`);
         return;
       }
       await load();

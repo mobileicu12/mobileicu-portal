@@ -19,7 +19,10 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const id = sp.get("id");
   const idsParam = sp.get("ids");
-  const idSet = idsParam ? new Set(idsParam.split(",").map((x) => decodeURIComponent(x))) : null;
+  // Match on the numeric tail so a caller can pass either the full Shopify GID
+  // or the plain id the portal's own URLs use.
+  const numeric = (x: string) => x.split("/").pop() || x;
+  const idSet = idsParam ? new Set(idsParam.split(",").map((x) => numeric(decodeURIComponent(x)))) : null;
   try {
     const wb = new ExcelJS.Workbook();
     const stamp = new Date().toISOString().slice(0, 10);
@@ -73,7 +76,7 @@ export async function GET(req: Request) {
       headerStyle(meta, 2);
     } else {
       let invoices = await listInvoices();
-      if (idSet) { invoices = invoices.filter((inv) => idSet.has(inv.id)); filename = `${BRAND_SLUG}-invoices-selected-${stamp}.xlsx`; }
+      if (idSet) { invoices = invoices.filter((inv) => idSet.has(numeric(inv.id))); filename = `${BRAND_SLUG}-invoices-selected-${stamp}.xlsx`; }
       const ws = wb.addWorksheet("Invoices");
       ws.columns = [
         { header: "Invoice", key: "name", width: 14 },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import { downloadFile } from "@/lib/download";
 import Link from "next/link";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { generateStatementPdf, buildStatementDoc, statementFilename, buildPeriodStatementDoc, periodStatementFilename, type PeriodCharge, type PeriodPayment } from "@/lib/statement-pdf";
@@ -298,7 +299,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setEditing((v) => !v)} className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-200">{editing ? "Close" : "✏ Edit"}</button>
           <button
-            onClick={() => (window.location.href = `/api/customers/${id}/export`)}
+            onClick={() => void downloadFile(`/api/customers/${id}/export`, "customer.xlsx").catch((e) => setError(e instanceof Error ? e.message : "Export failed."))}
             className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-200"
             title="Download this customer's full record (profile, invoices, payments) as Excel"
           >

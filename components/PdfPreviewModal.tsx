@@ -37,6 +37,14 @@ export default function PdfPreviewModal({
     return () => URL.revokeObjectURL(u);
   }, [doc, filename]);
 
+  // Escape closes it. Without this the only way out is the Close button, and a
+  // preview that won't dismiss reads as the portal having frozen.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   function download() {
     doc.save(filename);
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { downloadFile } from "@/lib/download";
 import { useRouter } from "next/navigation";
 import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useCanSeeFinance } from "@/lib/use-me";
@@ -129,9 +130,21 @@ export default function OrdersPage() {
       clearSel(); reload();
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setBulkBusy(false); }
   }
+  // Fetched rather than navigated to, so a failed export shows here instead of
+  // replacing the page with a JSON error.
+  async function pullExport(url: string, name: string) {
+    setBulkBusy(true); setError(""); setFlash("");
+    try {
+      const file = await downloadFile(url, name);
+      setFlash(`Downloaded ${file}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed.");
+    } finally { setBulkBusy(false); }
+  }
+
   function bulkExport() {
     const ids = Array.from(selected).map((x) => encodeURIComponent(x)).join(",");
-    if (ids) window.location.href = `/api/orders/export?ids=${ids}`;
+    if (ids) void pullExport(`/api/orders/export?ids=${ids}`, "orders-selected.xlsx");
   }
 
   return (
@@ -142,7 +155,7 @@ export default function OrdersPage() {
             <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Orders</h1>
             <p className="text-sm text-neutral-500">Completed sales across all sources — store, shop, eBay &amp; Amazon.</p>
           </div>
-          <button onClick={() => (window.location.href = "/api/orders/export")} disabled={orders.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ Export all</button>
+          <button onClick={() => void pullExport("/api/orders/export", "orders.xlsx")} disabled={orders.length === 0} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">⬇ Export all</button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order # or customer…" className="w-56 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
