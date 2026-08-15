@@ -118,6 +118,17 @@ export default function CashUpPage() {
   }
 
   async function save() {
+    // Last stop before the day is closed. Suggestions sitting untouched almost
+    // always mean someone was forgotten rather than deliberately left off, and
+    // once the sheet is saved nobody looks at the chips again.
+    if (suggestions.length > 0) {
+      const who = suggestions.map((s) => `  • ${s.name} — ${gbp(s.amount)} ${s.method}`).join("\n");
+      const ok = confirm(
+        `${suggestions.length} customer payment${suggestions.length > 1 ? "s" : ""} the portal recorded today ${suggestions.length > 1 ? "are" : "is"} not on your sheet:\n\n${who}\n\n` +
+        `Save the cash-up without ${suggestions.length > 1 ? "them" : "it"}?`,
+      );
+      if (!ok) return;
+    }
     setBusy("save"); setError(""); setFlash("");
     try {
       const res = await fetch("/api/cashup", {
