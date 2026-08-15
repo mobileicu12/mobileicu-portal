@@ -89,6 +89,13 @@ export type DayTakings = {
   balanced: boolean;
   /** Who paid what, per registered customer — the detail the report needs. */
   accountLines: CashUpLine[];
+  /** Named customers who paid onto their account with no open bill to clear.
+   *  Separate from accountLines so Σ accountLines still equals fromAccounts,
+   *  but just as much a customer payment when reconciling the sheet. */
+  creditLines: CashUpLine[];
+  /** fromCounter, split by method — needed to tell a missing counter card
+   *  takings from a missing customer card payment. */
+  counterByMethod: MethodSplit;
   /** Expenses recorded for the day, used to pre-fill the closing sheet. */
   expenseLines: CashUpLine[];
 };

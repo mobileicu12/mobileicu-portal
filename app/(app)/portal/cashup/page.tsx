@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { downloadFile } from "@/lib/download";
 import { buildCashUpDoc, cashUpFilename } from "@/lib/cashup-pdf";
-import { sheetTotals, emptyCashUp, type CashUp, type CashUpLine, type DayTakings } from "@/lib/cashup-types";
+import { sheetTotals, emptyCashUp, bucket, round2, type CashUp, type CashUpLine, type DayTakings } from "@/lib/cashup-types";
 import { loadBusiness, BUSINESS } from "@/lib/business";
 
 const gbp = (n: number) => `£${(Number(n) || 0).toFixed(2)}`;
@@ -67,6 +67,48 @@ export default function CashUpPage() {
     : [];
   const anyDrift = diffs.some((d) => Math.abs(d.sheet - d.sys) >= 0.01);
 
+  // A method total that's £120 out tells you nothing about WHICH payment it is.
+  // This lines the two sides up name by name and method by method, and keeps
+  // only the rows that disagree — so the odd one out is the row on screen.
+  const COUNTER = "Counter / other";
+  const driftLines = useMemo(() => {
+    if (!takings) return [];
+    const rows = new Map<string, { name: string; method: string; sheet: number; portal: number }>();
+    const put = (name: string, method: string, side: "sheet" | "portal", amount: number) => {
+      const clean = (name || "—").trim();
+      if (!clean && !amount) return;
+      const key = `${clean.toLowerCase()}||${bucket(method)}`;
+      const row = rows.get(key) ?? { name: clean, method: bucket(method), sheet: 0, portal: 0 };
+      row[side] = round2(row[side] + (Number(amount) || 0));
+      // Keep whichever spelling has capitals the staff would recognise.
+      if (side === "sheet" && clean) row.name = clean;
+      rows.set(key, row);
+    };
+
+    for (const l of takings.accountLines) put(l.name, l.method, "portal", l.amount);
+    for (const l of takings.creditLines) put(l.name, l.method, "portal", l.amount);
+    for (const m of Object.keys(takings.counterByMethod) as (keyof typeof takings.counterByMethod)[]) {
+      if (takings.counterByMethod[m]) put(COUNTER, m, "portal", takings.counterByMethod[m]);
+    }
+
+    for (const l of sheet.customerLines) put(l.name, l.method, "sheet", l.amount);
+    if (sheet.otherCash) put(COUNTER, "cash", "sheet", sheet.otherCash);
+    if (sheet.otherCard) put(COUNTER, "card", "sheet", sheet.otherCard);
+
+    return [...rows.values()]
+      .map((r) => ({ ...r, diff: round2(r.sheet - r.portal) }))
+      .filter((r) => Math.abs(r.diff) >= 0.01)
+      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  }, [takings, sheet]);
+
+  // The same name out by the same amount in two directions is one payment
+  // logged under the wrong method, not two missing payments.
+  const methodMixUps = new Set(
+    driftLines
+      .filter((r) => driftLines.some((o) => o !== r && o.name.toLowerCase() === r.name.toLowerCase() && Math.abs(o.diff + r.diff) < 0.01))
+      .map((r) => r.name.toLowerCase()),
+  );
+
   function set<K extends keyof CashUp>(k: K, v: CashUp[K]) { setSheet((p) => ({ ...p, [k]: v })); }
   function setLine(key: "customerLines" | "expenseLines", i: number, patch: Partial<CashUpLine>) {
     setSheet((p) => ({ ...p, [key]: p[key].map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
@@ -93,7 +135,9 @@ export default function CashUpPage() {
   // The cost is that a copied amount can't disagree with the portal, so the
   // sheet-vs-portal check below can't vouch for it — those lines are tracked
   // here and called out there, rather than being quietly counted as verified.
-  const suggestions = (takings?.accountLines ?? []).filter(
+  // Credits count too — someone who paid onto their account with no bill open
+  // is still a customer who handed money over today.
+  const suggestions = [...(takings?.accountLines ?? []), ...(takings?.creditLines ?? [])].filter(
     (s) => !sheet.customerLines.some((l) => l.name.trim().toLowerCase() === s.name.trim().toLowerCase()),
   );
 
@@ -344,6 +388,48 @@ export default function CashUpPage() {
                     ? "✓ Your sheet matches the portal — but see below, some of it was copied from it."
                     : "✓ Your sheet matches the portal exactly."}
               </p>
+              {/* Name-by-name, so the odd one out is a row you can point at
+                  rather than a total you have to hunt through. */}
+              {driftLines.length > 0 && (
+                <div className="mt-3 overflow-hidden rounded-xl border border-line">
+                  <div className="border-b border-line bg-subtle px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Where the difference is</p>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] uppercase tracking-wide text-muted">
+                        <th className="px-3 py-1.5 text-left font-medium">Who</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Sheet</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Portal</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Difference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {driftLines.map((r, i) => (
+                        <tr key={i} className="border-t border-line">
+                          <td className="px-3 py-2">
+                            <span className="text-ink">{r.name}</span> <span className="text-xs text-muted">· {r.method}</span>
+                            <span className="ml-2 text-[11px] text-muted">
+                              {methodMixUps.has(r.name.toLowerCase())
+                                ? "method may be wrong"
+                                : r.diff < 0 ? "missing from your sheet" : "portal has no record of this"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted">{gbp(r.sheet)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted">{gbp(r.portal)}</td>
+                          <td className={`px-3 py-2 text-right font-semibold tabular-nums ${r.diff < 0 ? "text-red-600" : "text-amber-600"}`}>
+                            {r.diff > 0 ? "+" : "−"}{gbp(Math.abs(r.diff))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="border-t border-line bg-subtle px-3 py-2 text-[11px] text-muted">
+                    Negative = the portal has it and your sheet doesn&apos;t. Positive = you counted it but no invoice or payment backs it up.
+                  </p>
+                </div>
+              )}
+
               {/* A copied figure agrees with the portal by construction. Saying so
                   keeps a green tick from being read as more assurance than it is. */}
               {prefilled.size > 0 && (
