@@ -18,6 +18,15 @@ export default function InvoicePreviewModal({ invoice, business, onClose }: { in
     return () => URL.revokeObjectURL(u);
   }, [invoice, business]);
 
+  // Escape closes it. Without this the only way out is the Close button, and a
+  // preview that won't dismiss reads as the portal having frozen.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+
   function download() {
     buildInvoiceDoc(invoice, business).save(invoiceFilename(invoice, business));
   }

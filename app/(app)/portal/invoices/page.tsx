@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loadBusiness, type Business } from "@/lib/business";
 import InvoicePreviewModal from "@/components/InvoicePreviewModal";
@@ -15,6 +16,12 @@ import { FinanceLockBar } from "@/components/Finance";
 import { invoiceStatus, STATUS_BADGE } from "@/lib/invoice-status";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import { BRAND_SLUG } from "@/lib/brand";
+import { downloadFile } from "@/lib/download";
+
+// Shopify hands back a GID ("gid://shopify/DraftOrder/123"); the route takes the
+// plain number. Keeping the slashes out of the path also keeps the URL readable
+// and shareable.
+const invoiceHref = (id: string) => `/portal/invoices/${id.split("/").pop() || id}`;
 
 const INV_COLUMNS: ColumnDef[] = [
   { key: "invoice", label: "Invoice", locked: true },
@@ -157,12 +164,26 @@ export default function InvoicesPage() {
     if (preset === "7d") { const d = new Date(now); d.setDate(d.getDate() - 6); setDateFrom(d.toLocaleDateString("en-CA")); setDateTo(to); return; }
     if (preset === "month") { const d = new Date(now.getFullYear(), now.getMonth(), 1); setDateFrom(d.toLocaleDateString("en-CA")); setDateTo(to); }
   }
+  // Every export goes through here so a failure lands as a message on this page
+  // instead of navigating the tab at the API route.
+  async function pull(url: string, name: string, busyKey: string) {
+    setBusy(busyKey); setError(""); setFlash("");
+    try {
+      const file = await downloadFile(url, name);
+      setFlash(`Downloaded ${file}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   function downloadReport() {
     const params = new URLSearchParams();
     if (dateFrom) params.set("from", dateFrom);
     if (dateTo) params.set("to", dateTo);
     // No range selected → report defaults to today on the server.
-    window.location.href = `/api/billing/report?${params.toString()}`;
+    void pull(`/api/billing/report?${params.toString()}`, `${BRAND_SLUG}-report.xlsx`, "report");
   }
 
   function rangeLabel() {
@@ -235,7 +256,11 @@ export default function InvoicesPage() {
   }
 
   function downloadXlsx(id?: string) {
-    window.location.href = id ? `/api/billing/export?id=${encodeURIComponent(id)}` : "/api/billing/export";
+    void pull(
+      id ? `/api/billing/export?id=${encodeURIComponent(id)}` : "/api/billing/export",
+      id ? `invoice.xlsx` : `${BRAND_SLUG}-invoices.xlsx`,
+      id ? id + ":xlsx" : "xlsx",
+    );
   }
 
   const allSelected = filtered.length > 0 && filtered.every((i) => selected.has(i.id));
@@ -274,7 +299,7 @@ export default function InvoicesPage() {
 
   function bulkExport() {
     const ids = Array.from(selected).map((x) => encodeURIComponent(x)).join(",");
-    if (ids) window.location.href = `/api/billing/export?ids=${ids}`;
+    if (ids) void pull(`/api/billing/export?ids=${ids}`, `${BRAND_SLUG}-invoices-selected.xlsx`, "xlsx");
   }
 
   // Undo banner after a removal, so the way back is right where it happened.
@@ -433,9 +458,16 @@ export default function InvoicesPage() {
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
             {pageRows.map((inv) => (
-              <tr key={inv.id} onClick={() => router.push(`/portal/invoices/${encodeURIComponent(inv.id)}`)} className={`cursor-pointer ${selected.has(inv.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
+              <tr key={inv.id} onClick={() => router.push(invoiceHref(inv.id))} onMouseEnter={() => router.prefetch(invoiceHref(inv.id))} className={`cursor-pointer ${selected.has(inv.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggleRow(inv.id)} className="h-4 w-4 accent-amber-500" /></td>
-                <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{inv.invoiceNo}<span className="ml-1 text-xs font-normal text-neutral-400">{inv.name}</span></td>
+                {/* A real Link, not just the row's onClick: Link prefetches the
+                    invoice route while the list is on screen, so the click opens
+                    it straight away instead of hanging on a server round trip. */}
+                <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">
+                  <Link href={invoiceHref(inv.id)} onClick={(e) => e.stopPropagation()} className="hover:text-amber-600">
+                    {inv.invoiceNo}<span className="ml-1 text-xs font-normal text-neutral-400">{inv.name}</span>
+                  </Link>
+                </td>
                 {cols.isVisible("customer") && <td className="px-4 py-3 text-neutral-600 dark:text-neutral-300">{inv.customer}</td>}
                 {cols.isVisible("source") && (
                   <td className="px-4 py-3">
@@ -470,7 +502,7 @@ export default function InvoicesPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={(e) => downloadPdf(e, inv)} disabled={busy === inv.id + ":pdf"} className="rounded-md bg-neutral-900 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">{busy === inv.id + ":pdf" ? "…" : "PDF"}</button>
-                    <button onClick={(e) => { e.stopPropagation(); downloadXlsx(inv.id); }} className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-semibold text-neutral-700 transition hover:border-neutral-900 dark:border-neutral-700 dark:text-neutral-200">Excel</button>
+                    <button onClick={(e) => { e.stopPropagation(); downloadXlsx(inv.id); }} disabled={busy === inv.id + ":xlsx"} className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-semibold text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200">{busy === inv.id + ":xlsx" ? "…" : "Excel"}</button>
                   </div>
                 </td>
               </tr>

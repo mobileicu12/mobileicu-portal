@@ -66,6 +66,11 @@ export async function GET(req: Request) {
     s.addRow([]);
     s.addRow(["Card taken today", "", "", t.byMethod.card]).getCell(4).numFmt = money;
     s.addRow(["Card terminal total", "", "", sheet.countedCard]).getCell(4).numFmt = money;
+    // What's physically in hand at close — the counted drawer (float included)
+    // plus the day's card. Not the same as takings, which exclude the float.
+    const inHand = s.addRow(["TOTAL IN HAND — cash + card", "", "", sheet.countedCash + t.byMethod.card]);
+    inHand.font = { bold: true };
+    inHand.getCell(4).numFmt = money;
     if (sheet.note) { s.addRow([]); s.addRow(["Note", sheet.note]); }
 
     // --- Customer payments ---

@@ -208,7 +208,7 @@ export default function InvoiceEditPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Action failed");
       if (action === "duplicate" && d.id) {
-        router.push(`/portal/invoices/${encodeURIComponent(d.id)}`);
+        router.push(`/portal/invoices/${String(d.id).split("/").pop()}`);
         return;
       }
       await load();
@@ -471,7 +471,14 @@ export default function InvoiceEditPage() {
               <button onClick={save} disabled={!!busy || !dirty} className="mt-5 w-full rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50">
                 {busy === "save" ? "Saving…" : dirty ? "Save changes" : "Saved"}
               </button>
-              <button onClick={() => { if (window.confirm(`Mark ${meta.name} as PAID? This creates the order and deducts stock.`)) doAction("complete"); }} disabled={!!busy} className="mt-2 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50">
+              <button onClick={() => {
+                // Ask HOW it was paid — the day's cash-up splits takings by
+                // method, and guessing here puts the money in the wrong column.
+                const m = window.prompt(`Mark ${meta.name} as PAID? This creates the order and deducts stock.\n\nHow was it paid? (cash / card / bank transfer)`, "cash");
+                if (m === null) return;
+                const method = m.trim().toLowerCase() || "cash";
+                doAction("complete", { method });
+              }} disabled={!!busy} className="mt-2 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50">
                 {busy === "complete" ? "Processing…" : `✓ Mark paid (£${total.toFixed(2)})`}
               </button>
             </>
@@ -514,6 +521,22 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
     } finally {
       setSaving(false);
     }
+  }
+
+  // Cash picked when it went on the card doesn't change the balance, but it puts
+  // the money in the wrong column of the day's cash-up. Fixed in place so the
+  // payment keeps its date and its position in the FIFO order.
+  async function changeMethod(index: number | null, next: string) {
+    setErr("");
+    try {
+      const res = await fetch(`/api/billing/${invoiceId}/action`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(index === null ? { action: "setMethod", method: next } : { action: "setMethod", index, method: next }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed");
+      onChanged();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
   }
 
   async function revoke(index: number) {
@@ -563,18 +586,59 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
       </div>
 
       <div className="mt-3 divide-y divide-neutral-100 dark:divide-neutral-800">
-        {meta.payments.map((p, i) => ({ p, i })).reverse().map(({ p, i }) => (
-          <div key={i} className="flex items-center justify-between gap-2 py-2.5 text-sm">
+        {/* Settled with "Mark paid" rather than a recorded payment: there's no
+            row to correct, so the settlement method gets its own control. */}
+        {meta.status === "COMPLETED" && (
+          <div className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
             <div className="min-w-0">
-              <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(p.amount).toFixed(2)} <span className="font-normal text-neutral-500">· {p.method}</span></p>
+              <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(meta.total).toFixed(2)} <span className="font-normal text-neutral-500">· settled in full</span></p>
+              <p className="text-xs text-neutral-500">Marked paid{meta.paidMethod ? "" : " before the method was recorded — set it here"}</p>
+            </div>
+            <label className="flex shrink-0 items-center gap-2 text-xs text-neutral-500">
+              Paid by
+              <MethodSelect value={meta.paidMethod || meta.payMethod || "cash"} onChange={(m) => changeMethod(null, m)} />
+            </label>
+          </div>
+        )}
+        {meta.payments.map((p, i) => ({ p, i })).reverse().map(({ p, i }) => (
+          <div key={i} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+            <div className="min-w-0">
+              <p className="font-medium text-neutral-900 dark:text-neutral-100">£{Number(p.amount).toFixed(2)}</p>
               <p className="truncate text-xs text-neutral-500">{new Date(p.date).toLocaleDateString("en-GB")}{p.note ? ` · ${p.note}` : ""}</p>
             </div>
-            <button onClick={() => revoke(i)} className="shrink-0 rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50" title="Revoke this payment">Revoke</button>
+            <div className="flex shrink-0 items-center gap-2">
+              <MethodSelect value={p.method || "cash"} onChange={(m) => changeMethod(i, m)} />
+              <button onClick={() => revoke(i)} className="rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50" title="Revoke this payment">Revoke</button>
+            </div>
           </div>
         ))}
-        {meta.payments.length === 0 && <p className="py-4 text-sm text-neutral-400">No payments recorded on this invoice yet.</p>}
+        {meta.payments.length === 0 && meta.status !== "COMPLETED" && <p className="py-4 text-sm text-neutral-400">No payments recorded on this invoice yet.</p>}
       </div>
     </div>
+  );
+}
+
+const PAY_METHODS = [
+  { value: "cash", label: "Cash" },
+  { value: "card", label: "Card" },
+  { value: "bank transfer", label: "Bank transfer" },
+  { value: "cheque", label: "Cheque" },
+  { value: "other", label: "Other" },
+];
+
+// A method already on record that isn't one of the five is still shown, so
+// changing something else on the row can't silently rewrite it.
+function MethodSelect({ value, onChange, className = "" }: { value: string; onChange: (v: string) => void; className?: string }) {
+  const known = PAY_METHODS.some((m) => m.value === value);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`rounded-lg border border-neutral-300 px-2 py-1 text-xs font-medium capitalize dark:border-neutral-700 dark:bg-neutral-800 ${className}`}
+    >
+      {!known && <option value={value}>{value}</option>}
+      {PAY_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+    </select>
   );
 }
 

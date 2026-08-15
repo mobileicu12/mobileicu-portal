@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInvoiceDetail, completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment, voidInvoice } from "@/lib/billing";
+import { getInvoiceDetail, completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment, setInvoicePaymentMethod, setSettlementMethod, voidInvoice } from "@/lib/billing";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 import { audit } from "@/lib/audit";
@@ -31,8 +31,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     switch (body.action) {
       case "complete": {
-        const r = await completeInvoice(decoded, !!body.paymentPending);
-        await audit("invoice.complete", { ref: decoded, name: label, detail: "Marked paid; stock deducted" });
+        const r = await completeInvoice(decoded, !!body.paymentPending, body.method);
+        await audit("invoice.complete", { ref: decoded, name: label, detail: `Marked paid${body.method ? ` (${body.method})` : ""}; stock deducted` });
         return NextResponse.json({ ok: true, ...r });
       }
       case "duplicate": {
@@ -63,6 +63,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const payments = await removeInvoicePayment(decoded, body.index);
         await audit("invoice.payment.revoke", { ref: decoded, name: label, detail: gone ? `Removed £${Number(gone.amount).toFixed(2)} ${gone.method}` : `Removed payment #${body.index}` });
         return NextResponse.json({ ok: true, payments });
+      }
+      // Correct cash↔card after the fact. Logged loudly: it moves money between
+      // columns on a day that may already have been cashed up.
+      case "setMethod": {
+        if (!body.method?.trim()) return NextResponse.json({ error: "A payment method is required." }, { status: 400 });
+        const before = await getInvoiceDetail(decoded).catch(() => null);
+        if (typeof body.index === "number") {
+          const old = before?.payments?.[body.index];
+          const payments = await setInvoicePaymentMethod(decoded, body.index, body.method);
+          await audit("invoice.payment.method", {
+            ref: decoded, name: label,
+            detail: `£${Number(old?.amount ?? 0).toFixed(2)} payment: ${old?.method || "?"} → ${body.method.trim().toLowerCase()}`,
+          });
+          return NextResponse.json({ ok: true, payments });
+        }
+        const method = await setSettlementMethod(decoded, body.method);
+        await audit("invoice.payment.method", {
+          ref: decoded, name: label,
+          detail: `Settlement of £${Number(before?.total ?? 0).toFixed(2)}: ${before?.paidMethod || before?.payMethod || "?"} → ${method}`,
+        });
+        return NextResponse.json({ ok: true, paidMethod: method });
       }
       case "void": {
         await voidInvoice(decoded);

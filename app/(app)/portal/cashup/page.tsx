@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { downloadFile } from "@/lib/download";
 import { buildCashUpDoc, cashUpFilename } from "@/lib/cashup-pdf";
-import { sheetTotals, emptyCashUp, type CashUp, type CashUpLine, type DayTakings } from "@/lib/cashup-types";
+import { sheetTotals, emptyCashUp, bucket, round2, type CashUp, type CashUpLine, type DayTakings } from "@/lib/cashup-types";
 import { loadBusiness, BUSINESS } from "@/lib/business";
 
 const gbp = (n: number) => `£${(Number(n) || 0).toFixed(2)}`;
@@ -66,9 +67,59 @@ export default function CashUpPage() {
     : [];
   const anyDrift = diffs.some((d) => Math.abs(d.sheet - d.sys) >= 0.01);
 
+  // A method total that's £120 out tells you nothing about WHICH payment it is.
+  // This lines the two sides up name by name and method by method, and keeps
+  // only the rows that disagree — so the odd one out is the row on screen.
+  const COUNTER = "Counter / other";
+  const driftLines = useMemo(() => {
+    if (!takings) return [];
+    const rows = new Map<string, { name: string; method: string; sheet: number; portal: number }>();
+    const put = (name: string, method: string, side: "sheet" | "portal", amount: number) => {
+      const clean = (name || "—").trim();
+      if (!clean && !amount) return;
+      const key = `${clean.toLowerCase()}||${bucket(method)}`;
+      const row = rows.get(key) ?? { name: clean, method: bucket(method), sheet: 0, portal: 0 };
+      row[side] = round2(row[side] + (Number(amount) || 0));
+      // Keep whichever spelling has capitals the staff would recognise.
+      if (side === "sheet" && clean) row.name = clean;
+      rows.set(key, row);
+    };
+
+    for (const l of takings.accountLines) put(l.name, l.method, "portal", l.amount);
+    for (const l of takings.creditLines) put(l.name, l.method, "portal", l.amount);
+    for (const m of Object.keys(takings.counterByMethod) as (keyof typeof takings.counterByMethod)[]) {
+      if (takings.counterByMethod[m]) put(COUNTER, m, "portal", takings.counterByMethod[m]);
+    }
+
+    for (const l of sheet.customerLines) put(l.name, l.method, "sheet", l.amount);
+    if (sheet.otherCash) put(COUNTER, "cash", "sheet", sheet.otherCash);
+    if (sheet.otherCard) put(COUNTER, "card", "sheet", sheet.otherCard);
+
+    return [...rows.values()]
+      .map((r) => ({ ...r, diff: round2(r.sheet - r.portal) }))
+      .filter((r) => Math.abs(r.diff) >= 0.01)
+      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  }, [takings, sheet]);
+
+  // The same name out by the same amount in two directions is one payment
+  // logged under the wrong method, not two missing payments.
+  const methodMixUps = new Set(
+    driftLines
+      .filter((r) => driftLines.some((o) => o !== r && o.name.toLowerCase() === r.name.toLowerCase() && Math.abs(o.diff + r.diff) < 0.01))
+      .map((r) => r.name.toLowerCase()),
+  );
+
   function set<K extends keyof CashUp>(k: K, v: CashUp[K]) { setSheet((p) => ({ ...p, [k]: v })); }
   function setLine(key: "customerLines" | "expenseLines", i: number, patch: Partial<CashUpLine>) {
     setSheet((p) => ({ ...p, [key]: p[key].map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
+    // Touching the amount by hand makes it a counted figure again.
+    if (key === "customerLines" && patch.amount !== undefined) {
+      setPrefilled((p) => {
+        const name = sheet.customerLines[i]?.name.trim().toLowerCase();
+        if (!name || !p.has(name)) return p;
+        const n = new Set(p); n.delete(name); return n;
+      });
+    }
   }
   function addLine(key: "customerLines" | "expenseLines") {
     setSheet((p) => ({ ...p, [key]: [...p[key], { name: "", amount: 0, method: "cash" }] }));
@@ -77,7 +128,51 @@ export default function CashUpPage() {
     setSheet((p) => ({ ...p, [key]: p[key].filter((_, j) => j !== i) }));
   }
 
+  // Who the portal saw paying today that isn't on the sheet yet.
+  //
+  // Tapping one copies the whole row across, amount included, because retyping
+  // figures the portal already holds is exactly the work staff wanted removed.
+  // The cost is that a copied amount can't disagree with the portal, so the
+  // sheet-vs-portal check below can't vouch for it — those lines are tracked
+  // here and called out there, rather than being quietly counted as verified.
+  // Credits count too — someone who paid onto their account with no bill open
+  // is still a customer who handed money over today.
+  const suggestions = [...(takings?.accountLines ?? []), ...(takings?.creditLines ?? [])].filter(
+    (s) => !sheet.customerLines.some((l) => l.name.trim().toLowerCase() === s.name.trim().toLowerCase()),
+  );
+
+  // Lower-cased names whose amount came from the portal rather than a count.
+  const [prefilled, setPrefilled] = useState<Set<string>>(new Set());
+  const prefilledTotal = sheet.customerLines
+    .filter((l) => prefilled.has(l.name.trim().toLowerCase()))
+    .reduce((s, l) => s + (Number(l.amount) || 0), 0);
+
+  function addSuggestion(s: CashUpLine) {
+    setSheet((p) => {
+      const blank = p.customerLines.findIndex((l) => !l.name.trim() && !l.amount);
+      const line: CashUpLine = { name: s.name, amount: s.amount, method: s.method };
+      if (blank >= 0) return { ...p, customerLines: p.customerLines.map((l, j) => (j === blank ? line : l)) };
+      return { ...p, customerLines: [...p.customerLines, line] };
+    });
+    setPrefilled((p) => new Set(p).add(s.name.trim().toLowerCase()));
+  }
+
+  function addAllSuggestions() {
+    suggestions.forEach(addSuggestion);
+  }
+
   async function save() {
+    // Last stop before the day is closed. Suggestions sitting untouched almost
+    // always mean someone was forgotten rather than deliberately left off, and
+    // once the sheet is saved nobody looks at the chips again.
+    if (suggestions.length > 0) {
+      const who = suggestions.map((s) => `  • ${s.name} — ${gbp(s.amount)} ${s.method}`).join("\n");
+      const ok = confirm(
+        `${suggestions.length} customer payment${suggestions.length > 1 ? "s" : ""} the portal recorded today ${suggestions.length > 1 ? "are" : "is"} not on your sheet:\n\n${who}\n\n` +
+        `Save the cash-up without ${suggestions.length > 1 ? "them" : "it"}?`,
+      );
+      if (!ok) return;
+    }
     setBusy("save"); setError(""); setFlash("");
     try {
       const res = await fetch("/api/cashup", {
@@ -110,7 +205,10 @@ export default function CashUpPage() {
   function downloadExcel() {
     // Server-rendered from the SAVED record, so save first or you'll export stale numbers.
     if (!savedAt) { setError("Save the cash-up first — the Excel export is built from the saved record."); return; }
-    window.location.href = `/api/cashup/export?date=${date}`;
+    setBusy("excel"); setError("");
+    downloadFile(`/api/cashup/export?date=${date}`, `cashup-${date}.xlsx`)
+      .catch((e) => setError(e instanceof Error ? e.message : "Export failed."))
+      .finally(() => setBusy(""));
   }
 
   // Share to a WhatsApp group: wa.me can't attach a file, so the message carries
@@ -127,6 +225,7 @@ export default function CashUpPage() {
         `*Totals*\nCash ${gbp(t.byMethod.cash)}\nCard ${gbp(t.byMethod.card)}\nTotal ${gbp(t.receivedTotal)}\n\n` +
         `*Expenses* ${gbp(t.expensesTotal)} (${gbp(t.cashExpenses)} from till)\n\n` +
         `*Left in drawer*\nExpected ${gbp(expectedCash)}\nCounted ${gbp(sheet.countedCash)}\n` +
+        `*In hand now (cash + card)* ${gbp(sheet.countedCash + t.byMethod.card)}\n` +
         (balanced ? "✅ Balances" : `⚠️ ${variance > 0 ? "Over" : "Short"} ${gbp(Math.abs(variance))}`) +
         (sheet.note ? `\n\nNote: ${sheet.note}` : "");
       await downloadPdf();
@@ -167,7 +266,7 @@ export default function CashUpPage() {
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             {/* Wholesale customers — typed by hand */}
-            <Panel title="Wholesale customers paid" hint="Type these from your own record — leaving them blank is what makes the check below meaningful.">
+            <Panel title="Wholesale customers paid" hint="Type the amounts from your own record — entering them independently is what makes the check below meaningful. Names the portal saw are suggested underneath so nobody gets missed.">
               <div className="space-y-2">
                 {sheet.customerLines.map((l, i) => (
                   <div key={i} className="flex gap-2">
@@ -183,6 +282,36 @@ export default function CashUpPage() {
               <button onClick={() => addLine("customerLines")} className="mt-2 rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-muted hover:border-accent hover:text-accent">
                 + Add customer payment
               </button>
+
+              {suggestions.length > 0 && (
+                <div className="mt-4 rounded-xl border border-line bg-subtle p-3">
+                  <p className="text-xs font-medium text-ink">
+                    The portal also has {suggestions.length} customer payment{suggestions.length > 1 ? "s" : ""} today that {suggestions.length > 1 ? "aren't" : "isn't"} on your sheet
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">Tap to copy the row in. Change the amount if your own record says different — a copied figure can&apos;t disagree with the portal, so the check below can&apos;t vouch for it.</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onClick={() => addSuggestion(s)}
+                        title={`Add ${s.name} — ${gbp(s.amount)} ${s.method}`}
+                        className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent dark:bg-neutral-900"
+                      >
+                        + {s.name} <span className="text-muted">· {gbp(s.amount)} · {s.method}</span>
+                      </button>
+                    ))}
+                    {suggestions.length > 1 && (
+                      <button
+                        onClick={addAllSuggestions}
+                        className="rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition hover:bg-accent/10"
+                      >
+                        Add all {suggestions.length}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <Total label="From customers" value={t.fromCustomers} />
             </Panel>
 
@@ -256,8 +385,59 @@ export default function CashUpPage() {
               <p className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium ${anyDrift ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-700"}`}>
                 {anyDrift
                   ? "⚠ Your sheet and the portal disagree. Check today's invoices before closing — one side has a payment the other doesn't."
-                  : "✓ Your sheet matches the portal exactly."}
+                  : prefilled.size > 0
+                    ? "✓ Your sheet matches the portal — but see below, some of it was copied from it."
+                    : "✓ Your sheet matches the portal exactly."}
               </p>
+              {/* Name-by-name, so the odd one out is a row you can point at
+                  rather than a total you have to hunt through. */}
+              {driftLines.length > 0 && (
+                <div className="mt-3 overflow-hidden rounded-xl border border-line">
+                  <div className="border-b border-line bg-subtle px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Where the difference is</p>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] uppercase tracking-wide text-muted">
+                        <th className="px-3 py-1.5 text-left font-medium">Who</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Sheet</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Portal</th>
+                        <th className="px-3 py-1.5 text-right font-medium">Difference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {driftLines.map((r, i) => (
+                        <tr key={i} className="border-t border-line">
+                          <td className="px-3 py-2">
+                            <span className="text-ink">{r.name}</span> <span className="text-xs text-muted">· {r.method}</span>
+                            <span className="ml-2 text-[11px] text-muted">
+                              {methodMixUps.has(r.name.toLowerCase())
+                                ? "method may be wrong"
+                                : r.diff < 0 ? "missing from your sheet" : "portal has no record of this"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted">{gbp(r.sheet)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted">{gbp(r.portal)}</td>
+                          <td className={`px-3 py-2 text-right font-semibold tabular-nums ${r.diff < 0 ? "text-red-600" : "text-amber-600"}`}>
+                            {r.diff > 0 ? "+" : "−"}{gbp(Math.abs(r.diff))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="border-t border-line bg-subtle px-3 py-2 text-[11px] text-muted">
+                    Negative = the portal has it and your sheet doesn&apos;t. Positive = you counted it but no invoice or payment backs it up.
+                  </p>
+                </div>
+              )}
+
+              {/* A copied figure agrees with the portal by construction. Saying so
+                  keeps a green tick from being read as more assurance than it is. */}
+              {prefilled.size > 0 && (
+                <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+                  {gbp(prefilledTotal)} across {prefilled.size} line{prefilled.size > 1 ? "s" : ""} was copied from the portal, not counted. This check only vouches for the {gbp(t.fromCustomers - prefilledTotal)} you typed. Overwrite an amount to make it count.
+                </p>
+              )}
               {takings.accountLines.length > 0 && (
                 <details className="mt-3">
                   <summary className="cursor-pointer text-xs font-medium text-muted hover:text-ink">Portal says these customers paid ({takings.accountLines.length})</summary>
@@ -310,7 +490,10 @@ export default function CashUpPage() {
               </div>
               <div className="mt-3 border-t border-line pt-3">
                 <Row label="Card today" value={t.byMethod.card} />
-                <Total label="Cash + card today" value={t.receivedTotal} />
+                <Row label="Takings today — cash + card" value={t.receivedTotal} />
+                {/* Takings exclude the float; this is what's physically in hand
+                    at close — the counted drawer plus the day's card. */}
+                <Total label="In hand now — counted cash + card" value={sheet.countedCash + t.byMethod.card} />
               </div>
             </Panel>
           </div>

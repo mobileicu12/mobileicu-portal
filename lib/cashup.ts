@@ -90,17 +90,21 @@ export async function saveCashUp(entry: CashUp): Promise<CashUp> {
 // Sum on-account (ledger) credits dated within the window, across all customers.
 // This pages through every customer, so it is deliberately NOT used anywhere on
 // the hot path — the cash-up screen is opened once a day and can afford it.
-async function ledgerReceived(fromMs: number, toMs: number): Promise<MethodSplit> {
+// Names come back with it: a customer who paid onto their account is one of the
+// people staff have to account for at closing, and "which payment is the £120?"
+// can't be answered by a total.
+async function ledgerReceived(fromMs: number, toMs: number): Promise<{ split: MethodSplit; lines: CashUpLine[] }> {
   const split = zeroSplit();
+  const perCustomer = new Map<string, number>();
   let after: string | null = null;
   for (let page = 0; page < 20; page++) {
     const d: {
-      customers: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; edges: { node: { ledger: { value: string } | null } }[] };
+      customers: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; edges: { node: { displayName: string | null; ledger: { value: string } | null } }[] };
     } = await adminGraphQL(
       `query($after: String) {
         customers(first: 100, after: $after) {
           pageInfo { hasNextPage endCursor }
-          edges { node { ledger: metafield(namespace: "portal", key: "ledger") { value } } }
+          edges { node { displayName ledger: metafield(namespace: "portal", key: "ledger") { value } } }
         }
       }`,
       { after },
@@ -112,14 +116,25 @@ async function ledgerReceived(fromMs: number, toMs: number): Promise<MethodSplit
         const payments: { date: string; amount: number; method?: string }[] = Array.isArray(parsed?.payments) ? parsed.payments : [];
         for (const p of payments) {
           const t = +new Date(p.date);
-          if (t >= fromMs && t < toMs) split[bucket(p.method)] += Number(p.amount) || 0;
+          if (t < fromMs || t >= toMs) continue;
+          const m = bucket(p.method);
+          const amt = Number(p.amount) || 0;
+          split[m] += amt;
+          const key = `${e.node.displayName || "Customer"}||${m}`;
+          perCustomer.set(key, (perCustomer.get(key) ?? 0) + amt);
         }
       } catch { /* ignore a malformed ledger */ }
     }
     if (!d.customers.pageInfo.hasNextPage) break;
     after = d.customers.pageInfo.endCursor;
   }
-  return split;
+  const lines: CashUpLine[] = [...perCustomer.entries()]
+    .map(([key, amount]) => {
+      const [name, method] = key.split("||");
+      return { name, method, amount: round2(amount) };
+    })
+    .sort((a, b) => b.amount - a.amount);
+  return { split, lines };
 }
 
 // Everything the portal knows about a given day's money.
@@ -132,10 +147,11 @@ export async function takingsFor(date: string): Promise<DayTakings> {
   const [invoices, expenses, ledger] = await Promise.all([
     listInvoices(),
     listExpenses().catch(() => []),
-    ledgerReceived(fromMs, toMs).catch(() => zeroSplit()),
+    ledgerReceived(fromMs, toMs).catch(() => ({ split: zeroSplit(), lines: [] as CashUpLine[] })),
   ]);
 
   const receivedByMethod = zeroSplit();
+  const counterByMethod = zeroSplit();
   let fromAccounts = 0, fromCounter = 0;
   // Roll several bills for the same customer into one line, split by method —
   // the sheet says "Haji Mahmood paid cash 100", not one row per invoice.
@@ -153,6 +169,7 @@ export async function takingsFor(date: string): Promise<DayTakings> {
         perCustomer.set(key, (perCustomer.get(key) ?? 0) + amt);
       } else {
         fromCounter += amt;
+        counterByMethod[m] += amt;
       }
     }
   }
@@ -165,9 +182,10 @@ export async function takingsFor(date: string): Promise<DayTakings> {
     .sort((a, b) => b.amount - a.amount);
 
   // On-account credit is money in the till too, just not against a bill yet.
-  const onAccountCredit = round2(Object.values(ledger).reduce((a, b) => a + b, 0));
+  const onAccountCredit = round2(Object.values(ledger.split).reduce((a, b) => a + b, 0));
   for (const k of Object.keys(receivedByMethod) as (keyof MethodSplit)[]) {
-    receivedByMethod[k] = round2(receivedByMethod[k] + ledger[k]);
+    receivedByMethod[k] = round2(receivedByMethod[k] + ledger.split[k]);
+    counterByMethod[k] = round2(counterByMethod[k]);
   }
 
   const expensesByMethod = zeroSplit();
@@ -199,6 +217,8 @@ export async function takingsFor(date: string): Promise<DayTakings> {
     // Float comparison, not equality — these are sums of rounded currency.
     balanced: Math.abs(sourcesTotal - receivedTotal) < 0.01,
     accountLines,
+    creditLines: ledger.lines,
+    counterByMethod,
     expenseLines,
   };
 }

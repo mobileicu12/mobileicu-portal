@@ -557,7 +557,9 @@ async function applyToOpenBills(
     if (remaining <= 0.001) break;
     const bal = Number(inv.balance);
     if (bal <= remaining + 0.001) {
-      await completeInvoice(inv.id); // fully covered → mark paid
+      // Pass the method: this money arrived today by opts.method, whatever the
+      // bill was originally expected to be settled with.
+      await completeInvoice(inv.id, false, opts.method); // fully covered → mark paid
       remaining -= bal;
       settled.push({ id: inv.id, name: inv.name, amount: bal });
       await onApplied?.({ kind: "settled", id: inv.id, name: inv.name, amount: bal });

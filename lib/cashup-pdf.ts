@@ -158,11 +158,16 @@ export function buildCashUpDoc(
   const variance = sheet.countedCash - expectedCash;
   const ok = Math.abs(variance) < 0.01;
 
-  if (y > H - 190) { doc.addPage(); y = 60; }
+  // What's actually in hand at the end of the day: the counted drawer plus the
+  // day's card takings. The sheet is signed off on that number, so it belongs
+  // in the box rather than as a footnote under it.
+  const totalInHand = sheet.countedCash + t.byMethod.card;
+
+  if (y > H - 250) { doc.addPage(); y = 60; }
 
   doc.setFillColor(LIGHT);
   doc.setDrawColor(LINE);
-  doc.roundedRect(M, y, W - M * 2, 118, 6, 6, "FD");
+  doc.roundedRect(M, y, W - M * 2, 182, 6, 6, "FD");
   let ry = y + 22;
   const label = M + 16;
   const right = W - M - 16;
@@ -190,14 +195,21 @@ export function buildCashUpDoc(
     ok ? GREEN : RED,
   );
 
-  y += 134;
+  doc.setDrawColor(GOLD);
+  doc.setLineWidth(0.8);
+  doc.line(label, ry - 4, right, ry - 4);
+  ry += 6;
+  line(
+    sheet.countedCard > 0 ? `Card taken today (terminal ${money(sheet.countedCard)})` : "Card taken today",
+    money(t.byMethod.card),
+  );
+  line("TOTAL IN HAND — cash + card", money(totalInHand), true, GOLD);
+
+  y += 198;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(MUTED);
-  doc.text(`Card taken today: ${money(t.byMethod.card)}`, M, y);
-  if (sheet.countedCard > 0) doc.text(`Terminal: ${money(sheet.countedCard)}`, M + 180, y);
   if (sheet.note) {
-    y += 15;
     doc.text(`Note: ${sheet.note}`.slice(0, 140), M, y);
   }
 
