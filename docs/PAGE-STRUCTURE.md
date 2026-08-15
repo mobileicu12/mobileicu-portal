@@ -50,6 +50,9 @@ Companion docs: [`SITE-BLUEPRINT.md`](./SITE-BLUEPRINT.md) ·
         ├── collections              Collection list        [collections]
         │   └── [id]                 Collection detail      [collections]
         ├── import-export            Excel in/out           [inventory]
+        ├── cashup                   Daily cash-up          [billing]
+        ├── expenses                 Shop expenses          [expenses]
+        ├── settlements              Buying / net earnings  [owner]
         ├── till                     In-shop till items     [inventory]
         ├── channels                 Marketplace board      [any]  ← PLACEHOLDER
         ├── logs                     Activity log & undo    [logs]
@@ -68,7 +71,7 @@ Companion docs: [`SITE-BLUEPRINT.md`](./SITE-BLUEPRINT.md) ·
 
 ```
 Overview  →  Dashboard
-Sell      →  Billing · Invoices · Customers · Orders
+Sell      →  Billing · Cash-up · Invoices · Customers · Orders · Expenses · Settlement
 Catalog   →  Inventory · Add Product · Collections · Import/Export · Channels
 Admin     →  Settings · Team · Activity log
 ```

@@ -427,8 +427,9 @@ Eight sections:
    preview thumbnail.
 2. **Contact & legal** — email, phone, website, VAT number.
 3. **Invoice footer** — bank/payment details, footer note.
-4. **Defaults** — invoice prefix (with a live "MICU-2026-0001" preview), **VAT rate
-   (DEAD, §6.1)**, **low-stock threshold (DEAD, §6.2)**.
+4. **Defaults** — invoice prefix (with a live "MICU-2026-0001" preview), VAT rate
+   (drives the billing screen; Shopify still applies the actual tax — §6.1),
+   low-stock threshold (drives the dashboard count and Inventory's Low filter).
 5. **Automatic WhatsApp** — access token (password field, shows `••••` when saved and
    blank means keep-existing), phone number ID, template name, Save button and a
    ● Connected / ○ Not connected indicator.
@@ -673,11 +674,13 @@ Connection state is `localStorage` only. No eBay or Amazon integration exists.
 `Ledger.creditLimit` is in the type and preserved on read/write, but there is no UI to
 set it and nothing enforces it. Billing will happily take a customer past any limit.
 
-## 6.7 Backup restore — **export only**
+## 6.7 Backup & restore — **LIVE** (was export-only)
 
-`/api/backup` writes a complete JSON snapshot; there is no import counterpart.
-Restoring means re-importing products via Excel and re-entering ledgers by hand.
-Customer detail is also capped at the first **500** customers per snapshot.
+`/api/backup` writes a complete JSON snapshot, a daily job pushes it to Google
+Drive (14 kept), and `lib/restore.ts` provides a **scoped** restore —
+`restoreFromSnapshot` puts settings and customer ledgers back. Products and
+collections are still re-imported via Excel rather than restored automatically.
+Customer detail remains capped at the first **500** customers per snapshot.
 
 ## 6.8 Contact form — **absent**
 
