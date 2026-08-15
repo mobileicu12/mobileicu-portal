@@ -160,6 +160,29 @@ cleared an older invoice was reported as having paid £0 that day. The two label
 were renamed at the same time, because "Paid today" / "Today's outstanding" read as
 if they had to net off against each other, which is what hid the bug.
 
+## 1.6b How a payment's method is recorded — and corrected
+
+Three separate metafields, because they answer three different questions:
+
+| Metafield | Written when | Means |
+|---|---|---|
+| `portal.pay_method` | the bill is raised | how it was *expected* to be paid |
+| `portal.paid_method` | "Mark paid" settles it | how the settlement was *actually* taken |
+| `method` inside `portal.payments[]` | each part-payment is recorded | how that specific payment came in |
+
+`listInvoicesRaw` reads the settlement method as
+`paid_method || pay_method || "cash"`. Keeping `paid_method` separate is what
+stops a FIFO settlement of an old cash-labelled bill from reporting a card
+payment as cash.
+
+**Correcting a method** (`action: "setMethod"`, `setInvoicePaymentMethod` /
+`setSettlementMethod`): with `index`, it rewrites that payment's method in
+place; without one, it rewrites `paid_method`. In place, deliberately — deleting
+and re-entering the payment would move its date and its position in the FIFO
+order. It doesn't change what is owed, but it does move money between the cash
+and card columns of a day that may already have been cashed up, so it is logged
+as `invoice.payment.method` and marked critical in the activity log.
+
 ## 1.7 Staff performance (`summarizeByStaff`)
 
 Grouped by the `staff:<email>` tag on each invoice, unattributed if absent:

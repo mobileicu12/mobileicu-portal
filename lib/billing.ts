@@ -487,6 +487,8 @@ export type InvoiceDetail = {
   balance: number;
   voided: boolean;
   invoiceUrl: string | null;
+  payMethod: string | null;  // how the bill expected to be paid, set when raised
+  paidMethod: string | null; // how the settlement was actually taken
 };
 
 function addrLines(a: {
@@ -512,6 +514,8 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
       customer: { displayName: string | null; email: string | null; phone: string | null } | null;
       email: string | null;
       payments: { value: string } | null;
+      payMethod: { value: string } | null;
+      paidMethod: { value: string } | null;
       invoiceNo: { value: string } | null;
       custName: { value: string } | null;
       custPhone: { value: string } | null;
@@ -541,6 +545,8 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
         customer { displayName email phone }
         email
         payments: metafield(namespace: "portal", key: "payments") { value }
+        payMethod: metafield(namespace: "portal", key: "pay_method") { value }
+        paidMethod: metafield(namespace: "portal", key: "paid_method") { value }
         invoiceNo: metafield(namespace: "portal", key: "invoice_no") { value }
         custName: metafield(namespace: "portal", key: "cust_name") { value }
         custPhone: metafield(namespace: "portal", key: "cust_phone") { value }
@@ -607,6 +613,8 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     balance,
     voided: (d.tags ?? []).includes("voided"),
     invoiceUrl: d.invoiceUrl ?? null,
+    payMethod: d.payMethod?.value ?? null,
+    paidMethod: d.paidMethod?.value ?? null,
   };
 }
 
@@ -634,6 +642,42 @@ export async function removeInvoicePayment(id: string, index: number): Promise<I
   if (index < 0 || index >= payments.length) throw new ShopifyError("Payment not found.");
   payments.splice(index, 1);
   return writeInvoicePayments(id, payments);
+}
+
+// Correct how a payment was taken, after the fact.
+//
+// Picking "cash" when it went on the card doesn't change what is owed, but it
+// does put the money in the wrong column of the day's cash-up and the wrong
+// expected total in the drawer. So the method has to be fixable without
+// deleting and re-entering the payment — which would move its date and break
+// the FIFO order it was allocated in.
+export const PAY_METHODS = ["cash", "card", "bank transfer", "cheque", "other"] as const;
+
+function cleanMethod(method: string): string {
+  const m = method.trim().toLowerCase();
+  if (!m) throw new ShopifyError("A payment method is required.");
+  return m.slice(0, 40);
+}
+
+/** Change the method on one recorded part-payment. Returns the updated list. */
+export async function setInvoicePaymentMethod(id: string, index: number, method: string): Promise<InvoicePayment[]> {
+  const m = cleanMethod(method);
+  const detail = await getInvoiceDetail(id);
+  const payments = [...detail.payments];
+  if (index < 0 || index >= payments.length) throw new ShopifyError("Payment not found.");
+  payments[index] = { ...payments[index], method: m };
+  return writeInvoicePayments(id, payments);
+}
+
+/** Change how the settlement (Mark paid) was taken. */
+export async function setSettlementMethod(id: string, method: string): Promise<string> {
+  const m = cleanMethod(method);
+  const res = await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf: [{ ownerId: toGid(id), namespace: "portal", key: "paid_method", type: "single_line_text_field", value: m }] },
+  );
+  if (res.metafieldsSet.userErrors.length) throw new ShopifyError(res.metafieldsSet.userErrors.map((e) => e.message).join("; "));
+  return m;
 }
 
 function toGid(id: string) {

@@ -78,6 +78,27 @@ export default function CashUpPage() {
     setSheet((p) => ({ ...p, [key]: p[key].filter((_, j) => j !== i) }));
   }
 
+  // Who the portal saw paying today that isn't on the sheet yet.
+  //
+  // The point of typing this panel by hand is that it's an independent count —
+  // pre-fill the amounts and the sheet-vs-portal check below stops proving
+  // anything. But "did I forget anyone?" is a real risk at closing time, and
+  // nothing about the NAMES is what the check tests. So the suggestion carries
+  // the name and the method across and leaves the amount blank to be typed from
+  // the staff member's own record.
+  const suggestions = (takings?.accountLines ?? []).filter(
+    (s) => !sheet.customerLines.some((l) => l.name.trim().toLowerCase() === s.name.trim().toLowerCase()),
+  );
+
+  function addSuggestion(s: CashUpLine) {
+    setSheet((p) => {
+      const blank = p.customerLines.findIndex((l) => !l.name.trim() && !l.amount);
+      const line: CashUpLine = { name: s.name, amount: 0, method: s.method };
+      if (blank >= 0) return { ...p, customerLines: p.customerLines.map((l, j) => (j === blank ? line : l)) };
+      return { ...p, customerLines: [...p.customerLines, line] };
+    });
+  }
+
   async function save() {
     setBusy("save"); setError(""); setFlash("");
     try {
@@ -171,7 +192,7 @@ export default function CashUpPage() {
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             {/* Wholesale customers — typed by hand */}
-            <Panel title="Wholesale customers paid" hint="Type these from your own record — leaving them blank is what makes the check below meaningful.">
+            <Panel title="Wholesale customers paid" hint="Type the amounts from your own record — entering them independently is what makes the check below meaningful. Names the portal saw are suggested underneath so nobody gets missed.">
               <div className="space-y-2">
                 {sheet.customerLines.map((l, i) => (
                   <div key={i} className="flex gap-2">
@@ -187,6 +208,28 @@ export default function CashUpPage() {
               <button onClick={() => addLine("customerLines")} className="mt-2 rounded-lg border border-dashed border-line px-3 py-1.5 text-xs font-medium text-muted hover:border-accent hover:text-accent">
                 + Add customer payment
               </button>
+
+              {suggestions.length > 0 && (
+                <div className="mt-4 rounded-xl border border-line bg-subtle p-3">
+                  <p className="text-xs font-medium text-ink">
+                    The portal also has {suggestions.length} customer payment{suggestions.length > 1 ? "s" : ""} today that {suggestions.length > 1 ? "aren't" : "isn't"} on your sheet
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">Tap a name to add the row — then type the amount from your own record, not from here.</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onClick={() => addSuggestion(s)}
+                        title={`Add a line for ${s.name} (${s.method})`}
+                        className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent dark:bg-neutral-900"
+                      >
+                        + {s.name} <span className="text-muted">· {s.method}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <Total label="From customers" value={t.fromCustomers} />
             </Panel>
 

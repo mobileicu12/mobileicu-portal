@@ -597,6 +597,8 @@ function buildOutstandingInvoiceDoc(c: Detail, outstanding: number, business: im
     balance: outstanding,
     voided: false,
     invoiceUrl: null,
+    payMethod: null,
+    paidMethod: null,
   };
   return buildInvoiceDoc(inv, business);
 }

@@ -21,6 +21,7 @@ export const AUDIT_LABELS: Record<string, string> = {
   "invoice.restore": "Invoice restored",
   "invoice.payment.add": "Payment recorded on bill",
   "invoice.payment.revoke": "Payment revoked from bill",
+  "invoice.payment.method": "Payment method corrected",
   "customer.payment.add": "Payment received",
   "customer.payment.edit": "Payment edited",
   "customer.payment.revoke": "Payment revoked",
@@ -35,5 +36,6 @@ export const AUDIT_CRITICAL = new Set([
   "invoice.void",
   "customer.payment.revoke",
   "invoice.payment.revoke",
+  "invoice.payment.method",
   "customer.delete",
 ]);
