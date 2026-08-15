@@ -225,6 +225,7 @@ export default function CashUpPage() {
         `*Totals*\nCash ${gbp(t.byMethod.cash)}\nCard ${gbp(t.byMethod.card)}\nTotal ${gbp(t.receivedTotal)}\n\n` +
         `*Expenses* ${gbp(t.expensesTotal)} (${gbp(t.cashExpenses)} from till)\n\n` +
         `*Left in drawer*\nExpected ${gbp(expectedCash)}\nCounted ${gbp(sheet.countedCash)}\n` +
+        `*In hand now (cash + card)* ${gbp(sheet.countedCash + t.byMethod.card)}\n` +
         (balanced ? "✅ Balances" : `⚠️ ${variance > 0 ? "Over" : "Short"} ${gbp(Math.abs(variance))}`) +
         (sheet.note ? `\n\nNote: ${sheet.note}` : "");
       await downloadPdf();
@@ -489,7 +490,10 @@ export default function CashUpPage() {
               </div>
               <div className="mt-3 border-t border-line pt-3">
                 <Row label="Card today" value={t.byMethod.card} />
-                <Total label="Cash + card today" value={t.receivedTotal} />
+                <Row label="Takings today — cash + card" value={t.receivedTotal} />
+                {/* Takings exclude the float; this is what's physically in hand
+                    at close — the counted drawer plus the day's card. */}
+                <Total label="In hand now — counted cash + card" value={sheet.countedCash + t.byMethod.card} />
               </div>
             </Panel>
           </div>
