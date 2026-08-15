@@ -70,6 +70,14 @@ export default function CashUpPage() {
   function set<K extends keyof CashUp>(k: K, v: CashUp[K]) { setSheet((p) => ({ ...p, [k]: v })); }
   function setLine(key: "customerLines" | "expenseLines", i: number, patch: Partial<CashUpLine>) {
     setSheet((p) => ({ ...p, [key]: p[key].map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
+    // Touching the amount by hand makes it a counted figure again.
+    if (key === "customerLines" && patch.amount !== undefined) {
+      setPrefilled((p) => {
+        const name = sheet.customerLines[i]?.name.trim().toLowerCase();
+        if (!name || !p.has(name)) return p;
+        const n = new Set(p); n.delete(name); return n;
+      });
+    }
   }
   function addLine(key: "customerLines" | "expenseLines") {
     setSheet((p) => ({ ...p, [key]: [...p[key], { name: "", amount: 0, method: "cash" }] }));
@@ -80,23 +88,33 @@ export default function CashUpPage() {
 
   // Who the portal saw paying today that isn't on the sheet yet.
   //
-  // The point of typing this panel by hand is that it's an independent count —
-  // pre-fill the amounts and the sheet-vs-portal check below stops proving
-  // anything. But "did I forget anyone?" is a real risk at closing time, and
-  // nothing about the NAMES is what the check tests. So the suggestion carries
-  // the name and the method across and leaves the amount blank to be typed from
-  // the staff member's own record.
+  // Tapping one copies the whole row across, amount included, because retyping
+  // figures the portal already holds is exactly the work staff wanted removed.
+  // The cost is that a copied amount can't disagree with the portal, so the
+  // sheet-vs-portal check below can't vouch for it — those lines are tracked
+  // here and called out there, rather than being quietly counted as verified.
   const suggestions = (takings?.accountLines ?? []).filter(
     (s) => !sheet.customerLines.some((l) => l.name.trim().toLowerCase() === s.name.trim().toLowerCase()),
   );
 
+  // Lower-cased names whose amount came from the portal rather than a count.
+  const [prefilled, setPrefilled] = useState<Set<string>>(new Set());
+  const prefilledTotal = sheet.customerLines
+    .filter((l) => prefilled.has(l.name.trim().toLowerCase()))
+    .reduce((s, l) => s + (Number(l.amount) || 0), 0);
+
   function addSuggestion(s: CashUpLine) {
     setSheet((p) => {
       const blank = p.customerLines.findIndex((l) => !l.name.trim() && !l.amount);
-      const line: CashUpLine = { name: s.name, amount: 0, method: s.method };
+      const line: CashUpLine = { name: s.name, amount: s.amount, method: s.method };
       if (blank >= 0) return { ...p, customerLines: p.customerLines.map((l, j) => (j === blank ? line : l)) };
       return { ...p, customerLines: [...p.customerLines, line] };
     });
+    setPrefilled((p) => new Set(p).add(s.name.trim().toLowerCase()));
+  }
+
+  function addAllSuggestions() {
+    suggestions.forEach(addSuggestion);
   }
 
   async function save() {
@@ -214,18 +232,26 @@ export default function CashUpPage() {
                   <p className="text-xs font-medium text-ink">
                     The portal also has {suggestions.length} customer payment{suggestions.length > 1 ? "s" : ""} today that {suggestions.length > 1 ? "aren't" : "isn't"} on your sheet
                   </p>
-                  <p className="mt-0.5 text-[11px] text-muted">Tap a name to add the row — then type the amount from your own record, not from here.</p>
+                  <p className="mt-0.5 text-[11px] text-muted">Tap to copy the row in. Change the amount if your own record says different — a copied figure can&apos;t disagree with the portal, so the check below can&apos;t vouch for it.</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {suggestions.map((s, i) => (
                       <button
                         key={i}
                         onClick={() => addSuggestion(s)}
-                        title={`Add a line for ${s.name} (${s.method})`}
+                        title={`Add ${s.name} — ${gbp(s.amount)} ${s.method}`}
                         className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent dark:bg-neutral-900"
                       >
-                        + {s.name} <span className="text-muted">· {s.method}</span>
+                        + {s.name} <span className="text-muted">· {gbp(s.amount)} · {s.method}</span>
                       </button>
                     ))}
+                    {suggestions.length > 1 && (
+                      <button
+                        onClick={addAllSuggestions}
+                        className="rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition hover:bg-accent/10"
+                      >
+                        Add all {suggestions.length}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -303,8 +329,17 @@ export default function CashUpPage() {
               <p className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium ${anyDrift ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-700"}`}>
                 {anyDrift
                   ? "⚠ Your sheet and the portal disagree. Check today's invoices before closing — one side has a payment the other doesn't."
-                  : "✓ Your sheet matches the portal exactly."}
+                  : prefilled.size > 0
+                    ? "✓ Your sheet matches the portal — but see below, some of it was copied from it."
+                    : "✓ Your sheet matches the portal exactly."}
               </p>
+              {/* A copied figure agrees with the portal by construction. Saying so
+                  keeps a green tick from being read as more assurance than it is. */}
+              {prefilled.size > 0 && (
+                <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+                  {gbp(prefilledTotal)} across {prefilled.size} line{prefilled.size > 1 ? "s" : ""} was copied from the portal, not counted. This check only vouches for the {gbp(t.fromCustomers - prefilledTotal)} you typed. Overwrite an amount to make it count.
+                </p>
+              )}
               {takings.accountLines.length > 0 && (
                 <details className="mt-3">
                   <summary className="cursor-pointer text-xs font-medium text-muted hover:text-ink">Portal says these customers paid ({takings.accountLines.length})</summary>
