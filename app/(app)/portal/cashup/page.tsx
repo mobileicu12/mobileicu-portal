@@ -109,16 +109,23 @@ export default function CashUpPage() {
       .map((r) => r.name.toLowerCase()),
   );
 
-  function set<K extends keyof CashUp>(k: K, v: CashUp[K]) { setSheet((p) => ({ ...p, [k]: v })); }
+  // Anything typed over by hand stops being a copied figure and starts counting
+  // towards what the sheet-vs-portal check can actually vouch for.
+  function unmarkPrefilled(key: string) {
+    setPrefilled((p) => {
+      if (!key || !p.has(key)) return p;
+      const n = new Set(p); n.delete(key); return n;
+    });
+  }
+
+  function set<K extends keyof CashUp>(k: K, v: CashUp[K]) {
+    setSheet((p) => ({ ...p, [k]: v }));
+    if (k === "otherCash" || k === "otherCard") unmarkPrefilled(`__${k}`);
+  }
   function setLine(key: "customerLines" | "expenseLines", i: number, patch: Partial<CashUpLine>) {
     setSheet((p) => ({ ...p, [key]: p[key].map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
-    // Touching the amount by hand makes it a counted figure again.
     if (key === "customerLines" && patch.amount !== undefined) {
-      setPrefilled((p) => {
-        const name = sheet.customerLines[i]?.name.trim().toLowerCase();
-        if (!name || !p.has(name)) return p;
-        const n = new Set(p); n.delete(name); return n;
-      });
+      unmarkPrefilled(sheet.customerLines[i]?.name.trim().toLowerCase() ?? "");
     }
   }
   function addLine(key: "customerLines" | "expenseLines") {
@@ -141,11 +148,15 @@ export default function CashUpPage() {
     (s) => !sheet.customerLines.some((l) => l.name.trim().toLowerCase() === s.name.trim().toLowerCase()),
   );
 
-  // Lower-cased names whose amount came from the portal rather than a count.
+  // Lower-cased customer names, plus __otherCash / __otherCard, whose amount
+  // came from the portal rather than a count.
   const [prefilled, setPrefilled] = useState<Set<string>>(new Set());
-  const prefilledTotal = sheet.customerLines
-    .filter((l) => prefilled.has(l.name.trim().toLowerCase()))
-    .reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  const prefilledTotal =
+    sheet.customerLines
+      .filter((l) => prefilled.has(l.name.trim().toLowerCase()))
+      .reduce((s, l) => s + (Number(l.amount) || 0), 0) +
+    (prefilled.has("__otherCash") ? Number(sheet.otherCash) || 0 : 0) +
+    (prefilled.has("__otherCard") ? Number(sheet.otherCard) || 0 : 0);
 
   function addSuggestion(s: CashUpLine) {
     setSheet((p) => {
@@ -161,15 +172,37 @@ export default function CashUpPage() {
     suggestions.forEach(addSuggestion);
   }
 
+  // Counter / walk-in takings, same idea as the customer chips: the portal has
+  // the figure from bills with no customer attached, so offer it rather than
+  // making staff add it up. Only offered while the box disagrees — once it
+  // matches there is nothing to suggest.
+  const counterCash = round2(takings?.counterByMethod.cash ?? 0);
+  const counterCard = round2(takings?.counterByMethod.card ?? 0);
+  const otherSuggestions = ([
+    ["otherCash", "Cash", counterCash, Number(sheet.otherCash) || 0],
+    ["otherCard", "Card", counterCard, Number(sheet.otherCard) || 0],
+  ] as const).filter(([, , portal, typed]) => portal > 0 && Math.abs(portal - typed) >= 0.01);
+
+  function applyCounter(field: "otherCash" | "otherCard", amount: number) {
+    setSheet((p) => ({ ...p, [field]: amount }));
+    setPrefilled((p) => new Set(p).add(`__${field}`));
+  }
+
   async function save() {
     // Last stop before the day is closed. Suggestions sitting untouched almost
-    // always mean someone was forgotten rather than deliberately left off, and
-    // once the sheet is saved nobody looks at the chips again.
-    if (suggestions.length > 0) {
-      const who = suggestions.map((s) => `  • ${s.name} — ${gbp(s.amount)} ${s.method}`).join("\n");
+    // always mean something was forgotten rather than deliberately left off, and
+    // once the sheet is saved nobody looks at the chips again. A counter box
+    // left at zero counts as forgotten; a box that merely differs does not —
+    // that's a staff member's own count, which is allowed to disagree.
+    const missed = [
+      ...suggestions.map((s) => `  • ${s.name} — ${gbp(s.amount)} ${s.method}`),
+      ...(counterCash > 0 && !(Number(sheet.otherCash) || 0) ? [`  • Counter / other — ${gbp(counterCash)} cash`] : []),
+      ...(counterCard > 0 && !(Number(sheet.otherCard) || 0) ? [`  • Counter / other — ${gbp(counterCard)} card`] : []),
+    ];
+    if (missed.length > 0) {
       const ok = confirm(
-        `${suggestions.length} customer payment${suggestions.length > 1 ? "s" : ""} the portal recorded today ${suggestions.length > 1 ? "are" : "is"} not on your sheet:\n\n${who}\n\n` +
-        `Save the cash-up without ${suggestions.length > 1 ? "them" : "it"}?`,
+        `${missed.length} payment${missed.length > 1 ? "s" : ""} the portal recorded today ${missed.length > 1 ? "are" : "is"} not on your sheet:\n\n${missed.join("\n")}\n\n` +
+        `Save the cash-up without ${missed.length > 1 ? "them" : "it"}?`,
       );
       if (!ok) return;
     }
@@ -325,6 +358,26 @@ export default function CashUpPage() {
                 <span className="mb-1 block text-sm font-medium text-ink">Card</span>
                 <input type="number" step="0.01" min="0" inputMode="decimal" className={inp} placeholder="0.00" value={sheet.otherCard || ""} onChange={(e) => set("otherCard", Number(e.target.value) || 0)} />
               </label>
+              {otherSuggestions.length > 0 && (
+                <div className="mt-4 rounded-xl border border-line bg-subtle p-3">
+                  <p className="text-xs font-medium text-ink">
+                    Portal counter takings today {otherSuggestions.map(([, label, portal]) => `${label.toLowerCase()} ${gbp(portal)}`).join(" · ")}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">From bills with no customer attached. Tap to fill, or leave your own count if it differs.</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {otherSuggestions.map(([field, label, portal]) => (
+                      <button
+                        key={field}
+                        onClick={() => applyCounter(field, portal)}
+                        className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent dark:bg-neutral-900"
+                      >
+                        Use {label.toLowerCase()} <span className="text-muted">{gbp(portal)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <Total label="From other" value={t.fromOther} />
               <div className="mt-4 border-t border-line pt-3">
                 <Row label="All takings — cash" value={t.byMethod.cash} />
@@ -413,7 +466,9 @@ export default function CashUpPage() {
                             <span className="ml-2 text-[11px] text-muted">
                               {methodMixUps.has(r.name.toLowerCase())
                                 ? "method may be wrong"
-                                : r.diff < 0 ? "missing from your sheet" : "portal has no record of this"}
+                                : r.portal === 0 ? "portal has no record of this"
+                                : r.sheet === 0 ? "missing from your sheet"
+                                : `you counted ${gbp(Math.abs(r.diff))} ${r.diff > 0 ? "more" : "less"}`}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums text-muted">{gbp(r.sheet)}</td>
@@ -435,7 +490,7 @@ export default function CashUpPage() {
                   keeps a green tick from being read as more assurance than it is. */}
               {prefilled.size > 0 && (
                 <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-                  {gbp(prefilledTotal)} across {prefilled.size} line{prefilled.size > 1 ? "s" : ""} was copied from the portal, not counted. This check only vouches for the {gbp(t.fromCustomers - prefilledTotal)} you typed. Overwrite an amount to make it count.
+                  {gbp(prefilledTotal)} across {prefilled.size} line{prefilled.size > 1 ? "s" : ""} was copied from the portal, not counted. This check only vouches for the {gbp(round2(t.receivedTotal - prefilledTotal))} you typed. Overwrite an amount to make it count.
                 </p>
               )}
               {takings.accountLines.length > 0 && (
