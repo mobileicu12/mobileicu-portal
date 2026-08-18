@@ -7,7 +7,10 @@ import { sheetTotals, emptyCashUp, bucket, round2, type CashUp, type CashUpLine,
 import { loadBusiness, BUSINESS } from "@/lib/business";
 
 const gbp = (n: number) => `£${(Number(n) || 0).toFixed(2)}`;
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// Local, not UTC. toISOString() would hand back yesterday for the first hour of
+// every BST morning, so a cash-up opened just after midnight would quietly be
+// counting the wrong day. en-CA formats as YYYY-MM-DD, same as the invoices page.
+const todayStr = () => new Date().toLocaleDateString("en-CA");
 const dayLabel = (d: string) =>
   new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
 const METHODS = ["cash", "card", "bank transfer", "other"];
@@ -25,7 +28,23 @@ export default function CashUpPage() {
   // The sheet staff fill in.
   const [sheet, setSheet] = useState<CashUp>(() => emptyCashUp(todayStr()));
 
+  // Today, resolved on the client after mount.
+  //
+  // Computed during render it gets frozen into the prerendered HTML: React
+  // patches the input's `value` property on hydration but leaves the `max`
+  // ATTRIBUTE at whatever the build date was. A page built on the 16th then
+  // greys out the 17th onwards in the picker and marks today's own date
+  // out-of-range, which is what made this field look broken.
+  const [maxDate, setMaxDate] = useState("");
+  useEffect(() => {
+    // Deferred a tick — setting state in the effect body cascades a render.
+    let alive = true;
+    void Promise.resolve().then(() => { if (alive) setMaxDate(todayStr()); });
+    return () => { alive = false; };
+  }, []);
+
   const load = useCallback(() => {
+    if (!date) return Promise.resolve();
     return fetch(`/api/cashup?date=${date}`)
       .then((r) => r.json())
       .then((d) => {
@@ -277,7 +296,15 @@ export default function CashUpPage() {
           <p className="text-sm text-muted">Enter the day by hand, then check it against the portal.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={date} max={todayStr()} onChange={(e) => { setDate(e.target.value); setLoading(true); }} className={num} />
+          {/* Clearing the field (the picker has a Clear button) would otherwise
+              fetch ?date= and sit there showing the previous day's figures. */}
+          <input
+            type="date"
+            value={date}
+            max={maxDate || undefined}
+            onChange={(e) => { if (!e.target.value) return; setDate(e.target.value); setLoading(true); }}
+            className={num}
+          />
           <button onClick={() => { setLoading(true); void load(); }} className="rounded-lg border border-line px-3 py-2 text-sm text-muted hover:text-ink">↻</button>
           <button onClick={save} disabled={!!busy} className="rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-bg transition hover:bg-accent hover:text-accentfg disabled:opacity-50">
             {busy === "save" ? "Saving…" : savedAt ? "Update" : "Save"}
