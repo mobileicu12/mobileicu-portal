@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BRAND_SLUG } from "@/lib/brand";
+import { downloadFile } from "@/lib/download";
+import { runLabel, type ImportRunSummary } from "@/lib/import-types";
 
 type ImportResult = {
   total: number;
@@ -9,7 +11,11 @@ type ImportResult = {
   updated: number;
   failed: number;
   results: { title: string; ok: boolean; action: string; error?: string }[];
+  run?: ImportRunSummary | null;
 };
+
+const when = (iso: string) =>
+  new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default function ImportExportPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -17,6 +23,41 @@ export default function ImportExportPage() {
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState("");
+  const [runs, setRuns] = useState<ImportRunSummary[]>([]);
+  const [undoing, setUndoing] = useState("");
+  const [flash, setFlash] = useState("");
+
+  const loadRuns = useCallback(() => {
+    return fetch("/api/import/runs")
+      .then((r) => r.json())
+      .then((d) => { if (!d.error) setRuns(d.runs ?? []); })
+      .catch(() => { /* history is a nicety; never block the page on it */ });
+  }, []);
+  useEffect(() => { void loadRuns(); }, [loadRuns]);
+
+  async function undoRun(run: ImportRunSummary) {
+    const typed = window.prompt(
+      `Undo the import of "${run.filename}"?\n\n` +
+      `This deletes the ${run.created} product(s) it created and puts the ${run.updated} it changed back to how they were on ${when(run.at)}. ` +
+      `Anything edited since then will be lost.\n\n` +
+      `Type UNDO to confirm.`,
+    );
+    if (typed?.trim().toUpperCase() !== "UNDO") return;
+    setUndoing(run.id); setError(""); setFlash("");
+    try {
+      const res = await fetch(`/api/import/runs/${run.id}/undo`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Undo failed");
+      const u = d.undone as { restored: number; deleted: number; failed: number; errors: string[] };
+      setFlash(`Undone: ${u.restored} restored, ${u.deleted} deleted${u.failed ? `, ${u.failed} failed` : ""}.`);
+      if (u.errors?.length) setError(u.errors.join(" · "));
+      await loadRuns();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Undo failed");
+    } finally {
+      setUndoing("");
+    }
+  }
 
   async function exportCatalog() {
     setExporting(true);
@@ -36,8 +77,13 @@ export default function ImportExportPage() {
     }
   }
 
-  function downloadTemplate() {
-    window.location.href = "/api/template";
+  async function downloadTemplate() {
+    setError("");
+    try {
+      await downloadFile("/api/template", `${BRAND_SLUG}-import-template.xlsx`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed");
+    }
   }
 
   async function runImport() {
@@ -56,6 +102,7 @@ export default function ImportExportPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
       setResult(data);
+      await loadRuns();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
@@ -75,6 +122,9 @@ export default function ImportExportPage() {
 
       {error && (
         <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
+      )}
+      {flash && (
+        <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{flash}</p>
       )}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
@@ -158,6 +208,77 @@ export default function ImportExportPage() {
           )}
         </section>
       )}
+
+      {/* History. An import can rewrite hundreds of products in one click, so
+          the record of who ran what — and the way back — lives on this page. */}
+      <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-neutral-900">Import history</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Every import, with what it changed. Undo puts the products back as they were just before that import ran.
+            </p>
+          </div>
+          <button onClick={() => void loadRuns()} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:border-neutral-900">
+            Refresh
+          </button>
+        </div>
+
+        {runs.length === 0 ? (
+          <p className="mt-4 text-sm text-neutral-400">No imports recorded yet.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500">
+                <tr>
+                  <th className="px-3 py-2 font-medium">When</th>
+                  <th className="px-3 py-2 font-medium">File</th>
+                  <th className="px-3 py-2 font-medium">By</th>
+                  <th className="px-3 py-2 font-medium">Result</th>
+                  <th className="px-3 py-2 text-right font-medium">Undo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {runs.map((r) => (
+                  <tr key={r.id}>
+                    <td className="whitespace-nowrap px-3 py-3 text-neutral-500">{when(r.at)}</td>
+                    <td className="px-3 py-3">
+                      <span className="font-medium text-neutral-900">{r.filename}</span>
+                      {r.scope === "till" && <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">till</span>}
+                    </td>
+                    <td className="px-3 py-3 text-neutral-500">{r.by.split("@")[0]}</td>
+                    <td className="px-3 py-3 text-neutral-600">
+                      {runLabel(r)}
+                      {r.undoNote && <span className="mt-0.5 block text-[11px] text-amber-600">{r.undoNote}</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      {r.undone ? (
+                        <span className="text-xs text-neutral-500">
+                          Undone {when(r.undone.at)}
+                          <span className="block text-[11px] text-neutral-400">
+                            {r.undone.restored} restored · {r.undone.deleted} deleted
+                            {r.undone.failed ? ` · ${r.undone.failed} failed` : ""}
+                          </span>
+                        </span>
+                      ) : r.undoable ? (
+                        <button
+                          onClick={() => undoRun(r)}
+                          disabled={undoing === r.id}
+                          className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {undoing === r.id ? "Undoing…" : "Undo"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-neutral-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { importRows, type ImportRow } from "@/lib/products";
+import { recordRun } from "@/lib/import-runs";
+import { audit } from "@/lib/audit";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -91,10 +93,25 @@ export async function POST(req: Request) {
 
     const till = new URL(req.url).searchParams.get("scope") === "till";
     const results = await importRows(rows, till ? ["channel:till"] : []);
-    const created = results.filter((r) => r.action.startsWith("created")).length;
-    const updated = results.filter((r) => r.action.startsWith("updated")).length;
+    const created = results.filter((r) => r.ok && r.action.startsWith("created")).length;
+    const updated = results.filter((r) => r.ok && r.action.startsWith("updated")).length;
     const failed = results.filter((r) => !r.ok).length;
-    return NextResponse.json({ total: results.length, created, updated, failed, results });
+
+    // Record the run before answering, so the history and the undo option are
+    // there the moment the screen shows the result.
+    const filename = (file as File).name || "import.xlsx";
+    const run = await recordRun({ filename, scope: till ? "till" : "catalog", results });
+    await audit("import.run", {
+      ref: run?.id ?? "",
+      name: filename,
+      detail: `${created} created, ${updated} updated, ${failed} failed${run?.undoable ? "" : " — not undoable"}`,
+    });
+
+    return NextResponse.json({
+      total: results.length, created, updated, failed,
+      results: results.map((r) => ({ title: r.title, ok: r.ok, action: r.action, error: r.error })),
+      run,
+    });
   } catch (e) {
     const msg = e instanceof ShopifyError ? e.message : e instanceof Error ? e.message : "Import failed.";
     return NextResponse.json({ error: msg }, { status: 502 });
