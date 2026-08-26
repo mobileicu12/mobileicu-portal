@@ -28,6 +28,8 @@ export const AUDIT_LABELS: Record<string, string> = {
   "customer.credit.reapply": "Account credit re-applied",
   "customer.delete": "Customer deleted",
   "cashup.save": "Cash-up recorded",
+  "import.run": "Products imported from a spreadsheet",
+  "import.undo": "Spreadsheet import UNDONE",
 };
 
 // Actions that change money and should stand out in the log.
@@ -38,4 +40,5 @@ export const AUDIT_CRITICAL = new Set([
   "invoice.payment.revoke",
   "invoice.payment.method",
   "customer.delete",
+  "import.undo",
 ]);

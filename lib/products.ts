@@ -170,11 +170,119 @@ export type ImportRow = {
   image?: string;
 };
 
-export type UpsertResult = { title: string; ok: boolean; action: string; error?: string };
+export type UpsertResult = {
+  title: string;
+  ok: boolean;
+  action: string;
+  error?: string;
+  /** The product written, so a run can be undone later. */
+  productId?: string;
+  handle?: string;
+  /** What the product looked like before this row touched it. Null for creates. */
+  before?: ProductSnapshot | null;
+};
 
+// Everything needed to put a product back exactly as it was.
+export type ProductSnapshot = {
+  id: string;
+  handle: string;
+  title: string;
+  status: string;
+  vendor: string;
+  productType: string;
+  descriptionHtml: string;
+  tags: string[];
+  variantId: string | null;
+  inventoryItemId: string | null;
+  price: string;
+  compareAtPrice: string | null;
+  sku: string;
+  barcode: string;
+  /** Only the `custom` namespace — the one the importer writes to. */
+  metafields: { namespace: string; key: string; type: string; value: string }[];
+  /** Available at the primary location, or null if not tracked there. */
+  stock: number | null;
+};
+
+const SNAPSHOT_QUERY = `
+  query Snap($handle: String!, $loc: ID!) {
+    productByIdentifier(identifier: { handle: $handle }) {
+      id handle title status vendor productType descriptionHtml tags
+      metafields(namespace: "custom", first: 50) {
+        edges { node { namespace key type value } }
+      }
+      variants(first: 1) {
+        edges { node {
+          id price compareAtPrice sku barcode
+          inventoryItem { id inventoryLevel(locationId: $loc) { quantities(names: ["available"]) { name quantity } } }
+        } }
+      }
+    }
+  }
+`;
+
+/** Read a product by handle, or null if there isn't one. */
+export async function getProductSnapshot(handle: string, locationId: string): Promise<ProductSnapshot | null> {
+  const d = await adminGraphQL<{
+    productByIdentifier: {
+      id: string; handle: string; title: string; status: string; vendor: string;
+      productType: string; descriptionHtml: string; tags: string[];
+      metafields: { edges: { node: { namespace: string; key: string; type: string; value: string } }[] };
+      variants: { edges: { node: {
+        id: string; price: string; compareAtPrice: string | null; sku: string | null; barcode: string | null;
+        inventoryItem: { id: string; inventoryLevel: { quantities: { name: string; quantity: number }[] } | null } | null;
+      } }[] };
+    } | null;
+  }>(SNAPSHOT_QUERY, { handle: handle.trim(), loc: locationId });
+
+  const p = d.productByIdentifier;
+  if (!p) return null;
+  const v = p.variants.edges[0]?.node;
+  const avail = v?.inventoryItem?.inventoryLevel?.quantities.find((q) => q.name === "available");
+  return {
+    id: p.id,
+    handle: p.handle,
+    title: p.title,
+    status: p.status,
+    vendor: p.vendor ?? "",
+    productType: p.productType ?? "",
+    descriptionHtml: p.descriptionHtml ?? "",
+    tags: p.tags ?? [],
+    variantId: v?.id ?? null,
+    inventoryItemId: v?.inventoryItem?.id ?? null,
+    price: v?.price ?? "0",
+    compareAtPrice: v?.compareAtPrice ?? null,
+    sku: v?.sku ?? "",
+    barcode: v?.barcode ?? "",
+    metafields: p.metafields.edges.map((e) => e.node),
+    stock: avail ? avail.quantity : null,
+  };
+}
+
+// Metafields are written separately from productSet, NOT inside it.
+//
+// productSet treats metafields as a list field: entries not included in the
+// input are deleted. Sending only the handful of `custom` keys the spreadsheet
+// carries would therefore wipe anything else on the product — including the
+// portal's own metafields. metafieldsSet only touches the keys it's given.
+async function writeMetafields(
+  ownerId: string,
+  fields: { namespace: string; key: string; type: string; value: string }[],
+): Promise<void> {
+  if (!fields.length) return;
+  await adminGraphQL<{ metafieldsSet: { userErrors: { message: string }[] } }>(
+    `mutation($mf: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $mf) { userErrors { field message } } }`,
+    { mf: fields.map((f) => ({ ...f, ownerId })) },
+  );
+}
+
+// `identifier` is what makes this an upsert. Without it productSet always
+// creates, so a spreadsheet row carrying a Handle would make a SECOND product
+// rather than updating the one it names — which is what "Handle updates
+// existing products" on the import screen has been promising all along.
 const PRODUCT_SET = `
-  mutation Set($input: ProductSetInput!) {
-    productSet(input: $input, synchronous: true) {
+  mutation Set($input: ProductSetInput!, $identifier: ProductSetIdentifiers) {
+    productSet(input: $input, identifier: $identifier, synchronous: true) {
       product {
         id
         handle
@@ -241,14 +349,28 @@ export async function upsertProduct(
     tags,
     productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
     variants: [variant],
-    metafields,
+    // Metafields are NOT sent here — see writeMetafields for why.
   };
   if (row.shopifyType?.trim()) input.productType = row.shopifyType.trim();
   if (row.descriptionHtml?.trim()) input.descriptionHtml = row.descriptionHtml;
   if (row.handle?.trim()) input.handle = row.handle.trim();
   if (row.image?.trim()) input.files = [{ originalSource: row.image.trim(), contentType: "IMAGE" }];
 
-  const isUpdate = Boolean(row.handle?.trim());
+  // Read the product first when the row names one. This settles two things at
+  // once: whether the row is really an update (a handle that matches nothing is
+  // a create, whatever the spreadsheet intended), and what the product looked
+  // like beforehand so the run can be undone.
+  const handle = row.handle?.trim();
+  let before: ProductSnapshot | null = null;
+  if (handle) {
+    try {
+      before = await getProductSnapshot(handle, primaryLocationId);
+    } catch {
+      // A failed read shouldn't block the write; it only costs us the undo.
+      before = null;
+    }
+  }
+  const isUpdate = Boolean(before);
 
   let data;
   try {
@@ -257,7 +379,7 @@ export async function upsertProduct(
         product: { id: string; handle: string; variants: { edges: { node: { id: string; inventoryItem: { id: string } } }[] } } | null;
         userErrors: { field: string[]; message: string }[];
       };
-    }>(PRODUCT_SET, { input });
+    }>(PRODUCT_SET, { input, identifier: handle ? { handle } : undefined });
   } catch (e) {
     return { title: row.title, ok: false, action: "error", error: e instanceof Error ? e.message : "Request failed" };
   }
@@ -267,18 +389,104 @@ export async function upsertProduct(
     return { title: row.title, ok: false, action: "error", error: errs.map((e) => e.message).join("; ") };
   }
 
+  const product = data.productSet.product;
+  const base: UpsertResult = {
+    title: row.title,
+    ok: true,
+    action: isUpdate ? "updated" : "created",
+    productId: product?.id,
+    handle: product?.handle,
+    before,
+  };
+
+  if (product?.id && metafields.length) {
+    try {
+      await writeMetafields(product.id, metafields);
+    } catch {
+      return { ...base, action: `${base.action} (metafields failed)` };
+    }
+  }
+
   // Set stock at the primary location.
   const stock = Number(row.stock);
-  const invItemId = data.productSet.product?.variants.edges[0]?.node.inventoryItem?.id;
+  const invItemId = product?.variants.edges[0]?.node.inventoryItem?.id;
   if (!Number.isNaN(stock) && row.stock !== "" && row.stock !== undefined && invItemId && primaryLocationId) {
     try {
       await setAvailable(invItemId, primaryLocationId, Math.max(0, Math.round(stock)));
     } catch {
-      return { title: row.title, ok: true, action: isUpdate ? "updated (stock failed)" : "created (stock failed)" };
+      return { ...base, action: `${base.action} (stock failed)` };
     }
   }
 
-  return { title: row.title, ok: true, action: isUpdate ? "updated" : "created" };
+  return base;
+}
+
+// ---- Putting a product back the way it was ----------------------------------
+
+/** Restore a product to a snapshot taken before an import touched it. */
+export async function restoreProduct(snap: ProductSnapshot, primaryLocationId: string): Promise<void> {
+  const variant: Record<string, unknown> = {
+    optionValues: [{ optionName: "Title", name: "Default Title" }],
+    price: snap.price,
+    // compareAtPrice must be sent as null to clear it, not omitted.
+    compareAtPrice: snap.compareAtPrice,
+    sku: snap.sku,
+    barcode: snap.barcode,
+    inventoryItem: { tracked: true },
+  };
+  if (snap.variantId) variant.id = snap.variantId;
+
+  const res = await adminGraphQL<{
+    productSet: { product: { id: string } | null; userErrors: { field: string[]; message: string }[] };
+  }>(PRODUCT_SET, {
+    input: {
+      title: snap.title,
+      handle: snap.handle,
+      vendor: snap.vendor,
+      productType: snap.productType,
+      descriptionHtml: snap.descriptionHtml,
+      status: snap.status,
+      tags: snap.tags,
+      productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
+      variants: [variant],
+    },
+    identifier: { id: snap.id },
+  });
+  if (res.productSet.userErrors.length) {
+    throw new ShopifyError(res.productSet.userErrors.map((e) => e.message).join("; "));
+  }
+
+  // Metafields: put back what was there, and remove any the import added that
+  // weren't. metafieldsSet can't delete, so the two halves are done separately.
+  if (snap.metafields.length) await writeMetafields(snap.id, snap.metafields);
+  const current = await getProductSnapshot(snap.handle, primaryLocationId).catch(() => null);
+  const had = new Set(snap.metafields.map((m) => `${m.namespace}.${m.key}`));
+  const added = (current?.metafields ?? []).filter((m) => !had.has(`${m.namespace}.${m.key}`));
+  if (added.length) {
+    await adminGraphQL<{ metafieldsDelete: { userErrors: { message: string }[] } }>(
+      `mutation Del($mf: [MetafieldIdentifierInput!]!) {
+        metafieldsDelete(metafields: $mf) { userErrors { field message } }
+      }`,
+      { mf: added.map((m) => ({ ownerId: snap.id, namespace: m.namespace, key: m.key })) },
+    ).catch(() => { /* a leftover metafield is not worth failing the restore */ });
+  }
+
+  if (snap.stock !== null && snap.inventoryItemId && primaryLocationId) {
+    await setAvailable(snap.inventoryItemId, primaryLocationId, snap.stock);
+  }
+}
+
+/** Delete one product. Used to undo the rows an import created. */
+export async function deleteProduct(id: string): Promise<void> {
+  const d = await adminGraphQL<{
+    productDelete: { deletedProductId: string | null; userErrors: { message: string }[] };
+  }>(
+    `mutation($id: ID!) { productDelete(input: { id: $id }) { deletedProductId userErrors { field message } } }`,
+    { id },
+  );
+  if (d.productDelete.userErrors.length) {
+    throw new ShopifyError(d.productDelete.userErrors.map((e) => e.message).join("; "));
+  }
 }
 
 export async function importRows(rows: ImportRow[], extraTags: string[] = []): Promise<UpsertResult[]> {

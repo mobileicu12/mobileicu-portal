@@ -431,8 +431,60 @@ add/remove products, and smart-collection rules shown read-only.
 
 Three actions: **Export catalog** (.xlsx, filename dated), **Download template**
 (blank, same columns), **Import** (file picker → upload). Results render as a table
-with created / updated / failed counts and a per-row error message. Rows with a handle
-update; rows without create.
+with created / updated / failed counts and a per-row error message.
+
+### How a row is matched
+
+A row's **Handle** is looked up before anything is written:
+
+| Handle column | Product with that handle | Outcome |
+|---|---|---|
+| present | exists | **update** it, snapshot taken first |
+| present | doesn't exist | **create**, using that handle |
+| blank | — | **create**, Shopify derives the handle |
+
+The write is `productSet` with `identifier: { handle }`. That argument is what makes
+it an upsert; without it `productSet` always creates, so before this was fixed a row
+carrying a Handle made a *second* product rather than updating the one it named — the
+opposite of what the screen promised. The reported action is now decided by the
+pre-read, not by whether the column happened to be filled in.
+
+Metafields are written with `metafieldsSet` **after** the `productSet`, never inside
+it. `productSet` treats metafields as a list field and deletes entries not included in
+the input, so sending only the handful of `custom` keys a spreadsheet carries would
+strip everything else off the product — including the portal's own metafields.
+
+### Runs, history and undo
+
+Every import is recorded as a **run**:
+
+```
+portal.import_runs       index — id, when, who, filename, scope, counts, undo state
+portal.import_run_<id>   that run's rows + a before-snapshot per changed product
+```
+
+Split in two because the snapshots are the bulky part; keeping them out of the index
+means the history list loads without them, and keeps one metafield off its size
+ceiling. Past ~900KB of detail the snapshots are dropped, the run is marked
+un-undoable and says so — an import is never half-recorded silently.
+
+A snapshot holds everything needed to put the product back: title, handle, status,
+vendor, type, description, tags, the variant's price / compare-at / SKU / barcode,
+the `custom` metafields, and the stock at the primary location.
+
+**Undo** (owner only, typed `UNDO` confirmation, logged as `import.undo` and flagged
+critical):
+
+- rows the run **created** → the product is deleted
+- rows the run **updated** → `productSet` with `identifier: { id }` restores the
+  snapshot, `metafieldsSet` puts the old metafields back, `metafieldsDelete` removes
+  ones the import added, and the stock is set back
+- rows that **failed** → nothing to undo
+
+The snapshot is from import time, not from now, so anything edited in between is
+overwritten — the confirmation says so in as many words. A run is marked undone even
+if some rows failed, because a second pass would try to delete products that are
+already gone; the failures are listed instead.
 
 ## 3.11 `/portal/channels` — **PLACEHOLDER**
 
