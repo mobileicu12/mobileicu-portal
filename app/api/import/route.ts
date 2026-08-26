@@ -11,6 +11,7 @@ function headerToKey(headerRaw: string): keyof ImportRow | "stock" | null {
   const h = headerRaw.toLowerCase().trim();
   if (h.includes("handle")) return "handle";
   if (h.includes("title")) return "title";
+  if (h.includes("description")) return "descriptionHtml";
   if (h.includes("brand")) return "brand";
   if (h.includes("model")) return "model";
   if (h.includes("shopify product type")) return "shopifyType";
