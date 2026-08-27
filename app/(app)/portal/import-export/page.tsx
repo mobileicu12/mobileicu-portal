@@ -27,8 +27,30 @@ type Summary = {
   run?: ImportRunSummary | null;
 };
 
+type Progress = {
+  done: number;
+  total: number;
+  /** The slice currently being written, 1-based and inclusive. */
+  from: number;
+  to: number;
+  startedAt: number;
+  /** Counted as chunks land. Kept here rather than read off the summary, which
+   *  still holds the preview's figures until the first chunk comes back — it
+   *  would otherwise open by claiming every row was already created. */
+  created: number;
+  updated: number;
+  failed: number;
+};
+
 const when = (iso: string) =>
   new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+
+function duration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
 
 export default function ImportExportPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -37,7 +59,7 @@ export default function ImportExportPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
   const [runs, setRuns] = useState<ImportRunSummary[]>([]);
   const [undoing, setUndoing] = useState("");
@@ -55,6 +77,17 @@ export default function ImportExportPage() {
       .catch(() => { /* history is a nicety; never block the page on it */ });
   }, []);
   useEffect(() => { void loadRuns(); }, [loadRuns]);
+
+  // A clock, ticking once a second while an import runs, so elapsed time and
+  // the estimate keep moving between chunks — without it the panel sits still
+  // for the length of a chunk and reads as frozen all over again. Held in state
+  // rather than read during render, which would be an impure render.
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    if (!progress) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [progress]);
 
   useEffect(() => {
     fetch("/api/collections", { cache: "no-store" })
@@ -143,16 +176,28 @@ export default function ImportExportPage() {
 
   // Apply the sheet in chunks that share one runId, so any size stays under the
   // timeout and the whole import is recorded as a single undoable run.
+  //
+  // Chunk size is a visibility decision as much as a safety one. Each row costs
+  // several Shopify round trips, so a 200-row chunk can run for minutes with
+  // nothing to show for it — which is exactly what made a 900-row sheet look
+  // frozen. Smaller chunks report back often enough to prove it's still moving.
   async function applyChunked(file: File) {
-    const CHUNK = 200;
+    const CHUNK = 40;
     const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const startedAt = Date.now();
+    setNow(startedAt);
     setUploading(true);
     setError("");
-    const agg: Summary = { dryRun: false, total: summary?.total ?? 0, created: 0, updated: 0, failed: 0, skipped: 0, results: [], runId };
+    const knownTotal = summary?.total ?? 0;
+    const agg: Summary = { dryRun: false, total: knownTotal, created: 0, updated: 0, failed: 0, skipped: 0, results: [], runId };
+    // Show the bar before the first request, not after the first chunk lands.
+    setProgress({ done: 0, total: knownTotal, from: 1, to: Math.min(CHUNK, knownTotal || CHUNK), startedAt, created: 0, updated: 0, failed: 0 });
+    let done = 0;
     try {
       let from = 0;
       let total = summary?.total ?? Number.MAX_SAFE_INTEGER;
       while (from < total) {
+        setProgress({ done, total: agg.total, from: from + 1, to: Math.min(from + CHUNK, agg.total || from + CHUNK), startedAt, created: agg.created, updated: agg.updated, failed: agg.failed });
         const fd = new FormData();
         fd.append("file", file);
         fd.append("from", String(from));
@@ -171,13 +216,20 @@ export default function ImportExportPage() {
         agg.run = d.run ?? agg.run;
         setSummary({ ...agg });
         from += CHUNK;
-        setProgress({ done: Math.min(from, total), total });
+        done = Math.min(from, total);
+        setProgress({ done, total, from: done, to: done, startedAt, created: agg.created, updated: agg.updated, failed: agg.failed });
       }
       setPendingFile(null);
       setFlash(`Imported: ${agg.created} created, ${agg.updated} updated${agg.failed ? `, ${agg.failed} failed` : ""}.`);
       await loadRuns();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
+      const why = e instanceof Error ? e.message : "Import failed";
+      // Say how far it got. Earlier chunks are already written, and the run is
+      // in the history — leaving that unsaid invites a second full import.
+      setError(done > 0
+        ? `${why}. Stopped after ${done} of ${agg.total} rows — those are already imported and the run is in the history below, so undo it rather than re-importing the whole sheet.`
+        : why);
+      await loadRuns();
     } finally {
       setUploading(false);
       setProgress(null);
@@ -309,7 +361,44 @@ export default function ImportExportPage() {
             )}
           </div>
 
-          {summary.dryRun && (
+          {/* While it runs, this is the only thing that proves it's still
+              working. Each row is several Shopify calls, so a big sheet takes
+              minutes — without the bar the screen just looks hung. */}
+          {progress && (
+            <div className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-semibold text-neutral-900">
+                  Importing {progress.done.toLocaleString()} of {progress.total.toLocaleString()} rows
+                </p>
+                <p className="text-sm font-semibold tabular-nums text-neutral-900">
+                  {progress.total ? Math.floor((progress.done / progress.total) * 100) : 0}%
+                </p>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-200">
+                <div
+                  className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                  style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+                <span>{progress.created} created · {progress.updated} updated{progress.failed ? ` · ${progress.failed} failed` : ""}</span>
+                <span>{duration(Math.max(now, progress.startedAt) - progress.startedAt)} elapsed</span>
+                {progress.done > 0 && progress.done < progress.total && (
+                  <span>
+                    about {duration(((Math.max(now, progress.startedAt) - progress.startedAt) / progress.done) * (progress.total - progress.done))} left
+                  </span>
+                )}
+                {progress.to > progress.done && (
+                  <span>writing rows {progress.from.toLocaleString()}–{progress.to.toLocaleString()}</span>
+                )}
+              </div>
+              <p className="mt-2 text-[11px] text-neutral-400">
+                Leave this tab open — the import runs from here. Rows already written stay written, and the whole run can be undone from the history below.
+              </p>
+            </div>
+          )}
+
+          {summary.dryRun && !progress && (
             <p className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
               Nothing has been written yet. Check the rows below, then press <strong>Apply import</strong>.
             </p>
