@@ -167,6 +167,81 @@ export async function recordRun(opts: {
   }
 }
 
+/** Build stored rows (with undoable flags) from a chunk's results. */
+function toStoredRows(results: UpsertResult[]): StoredRow[] {
+  return results.map((r) => {
+    const created = r.ok && r.action.startsWith("created");
+    const updated = r.ok && r.action.startsWith("updated");
+    return {
+      title: r.title,
+      handle: r.handle,
+      productId: r.productId,
+      action: r.action,
+      ok: r.ok,
+      error: r.error,
+      undoable: Boolean(r.productId) && (created || (updated && Boolean(r.before))),
+      before: r.before ?? null,
+    };
+  });
+}
+
+/**
+ * Append a chunk of an import to a run, creating the run on the first chunk.
+ * A large sheet is applied in several requests that all carry the same run id,
+ * so the whole import is recorded — and undoable — as one. Never throws; a run
+ * that outgrows the metafield ceiling keeps its record but loses undo.
+ */
+export async function appendRun(
+  id: string,
+  opts: { filename: string; scope: string; results: UpsertResult[] },
+): Promise<ImportRunSummary | null> {
+  try {
+    const by = await currentActor().catch(() => "unknown");
+    const prior = (await listRuns()).find((r) => r.id === id);
+    const existingRows = prior ? await readJson<StoredRow[]>(detailKey(id), []) : [];
+    const rows = [...existingRows, ...toStoredRows(opts.results)];
+
+    const created = rows.filter((r) => r.ok && r.action.startsWith("created")).length;
+    const updated = rows.filter((r) => r.ok && r.action.startsWith("updated")).length;
+    const failed = rows.filter((r) => !r.ok).length;
+    const undoableRows = rows.filter((r) => r.undoable).length;
+
+    let undoable = undoableRows > 0;
+    let undoNote: string | undefined;
+    if (!undoable) undoNote = "Nothing in this run can be reversed automatically.";
+    else if (undoableRows < created + updated) {
+      undoNote = `${created + updated - undoableRows} of ${created + updated} changed products can't be reversed — the portal couldn't read them before the import.`;
+    }
+
+    let stored = rows;
+    if (JSON.stringify(rows).length > MAX_DETAIL_BYTES) {
+      stored = rows.map((r) => ({ ...stripSnapshot(r), undoable: false }));
+      undoable = false;
+      undoNote = "This import grew too large to store the before-state, so it can't be undone. Import in smaller files to keep undo available.";
+    }
+
+    const summary: ImportRunSummary = {
+      id,
+      at: prior?.at ?? new Date().toISOString(),
+      by: prior?.by ?? by,
+      filename: opts.filename,
+      scope: opts.scope,
+      total: rows.length,
+      created,
+      updated,
+      failed,
+      undoable,
+      undoNote,
+    };
+
+    await writeJson(detailKey(id), stored);
+    await putSummary(summary);
+    return summary;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Put an import back.
  *

@@ -8,6 +8,7 @@ import type { TierPrices } from "@/lib/pricing";
 import { printBarcodeLabels, LABEL_PRESETS, type LabelPresetKey } from "@/lib/barcode-labels";
 import ColumnChooser, { useColumns, type ColumnDef } from "@/components/ColumnChooser";
 import { loadPortalSettings } from "@/lib/settings-client";
+import { DuplicatesModal, MergeModal } from "@/components/MergeTools";
 
 const LOW_STOCK_DEFAULT = 5;
 
@@ -96,6 +97,8 @@ export default function InventoryPage() {
   const [notConfigured, setNotConfigured] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [flash, setFlash] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [channelDraft, setChannelDraft] = useState<string[]>([]);
@@ -224,6 +227,10 @@ export default function InventoryPage() {
   function clearSelection() { setSelected(new Set()); setEditMode(false); setChannelDraft([]); }
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.key)), [rows, selected]);
+  const selectedProductIds = useMemo(
+    () => Array.from(new Set(selectedRows.map((r) => r.productId))),
+    [selectedRows],
+  );
 
   async function runBulk(action: string, extra: Record<string, unknown> = {}) {
     const productIds = Array.from(new Set(selectedRows.map((r) => r.productId)));
@@ -299,6 +306,7 @@ export default function InventoryPage() {
               <input type="number" value={lowStock} min={0} onChange={(e) => setLowStock(Number(e.target.value))} className={`${inputCls} w-16`} />
             </label>
             <input value={query} onChange={(e) => onSearch(e.target.value)} placeholder="Search product or SKU…" className={`${inputCls} w-64`} />
+            <button onClick={() => setDupOpen(true)} className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink transition hover:border-accent">Find duplicates</button>
           </div>
         </div>
         {/* Filter ribbon */}
@@ -466,12 +474,31 @@ export default function InventoryPage() {
             <button disabled={bulkBusy} onClick={() => setEditMode((v) => !v)} className={`rounded-full px-3 py-1 hover:bg-bg/10 ${editMode ? "text-accent" : ""}`}>Edit values</button>
             <button disabled={bulkBusy} onClick={() => setLabelOpen(true)} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50">🏷 Labels</button>
             <button disabled={bulkBusy} onClick={() => runBulk("assignBarcodes")} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50" title="Fill the barcode field from SKU (or generate) for products missing one">Barcodes</button>
+            {selectedProductIds.length >= 2 && (
+              <button disabled={bulkBusy} onClick={() => setMergeOpen(true)} className="rounded-full px-3 py-1 hover:bg-bg/10 disabled:opacity-50">Merge…</button>
+            )}
             <button disabled={bulkBusy} onClick={() => runBulk("delete")} className="rounded-full px-3 py-1 text-red-400 hover:bg-red-500/20 disabled:opacity-50">Delete</button>
             <span className="h-4 w-px bg-bg/20" />
             <button onClick={clearSelection} className="rounded-full px-2 py-1 text-bg/50 hover:text-bg">✕</button>
           </div>
         </div>
       )}
+
+      <MergeModal
+        open={mergeOpen}
+        productIds={selectedProductIds}
+        onClose={() => setMergeOpen(false)}
+        onMerged={() => {
+          setMergeOpen(false);
+          clearSelection();
+          reload(activeQueryRef.current);
+        }}
+      />
+      <DuplicatesModal
+        open={dupOpen}
+        onClose={() => setDupOpen(false)}
+        onMerged={() => reload(activeQueryRef.current)}
+      />
     </div>
   );
 }
