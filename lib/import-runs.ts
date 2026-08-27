@@ -7,12 +7,21 @@
 // which is what makes undo possible.
 //
 // Storage: shop metafields.
-//   portal.import_runs        — the index, summaries only, newest first
-//   portal.import_run_<id>    — one run's rows, including the before-snapshots
+//   portal.import_runs             — the index, summaries only, newest first
+//   portal.import_run_<id>_<from>  — the rows written by ONE chunk, with their
+//                                    before-snapshots
 //
-// Kept apart on purpose. The snapshots are the bulky part; putting them in the
-// index would mean the history list couldn't be read without dragging every
-// snapshot along, and would push a single metafield towards its size ceiling.
+// One metafield per chunk, not one per run. A big sheet is applied in many
+// requests, and the first version read the run's whole row list back, appended
+// to it and wrote it out again on every chunk. Three ways that lost data:
+// the blob grew until it tripped the size ceiling and the snapshots were
+// dropped; a failed write was swallowed and that chunk's rows vanished; and if
+// the index write failed, the NEXT chunk saw no prior run and overwrote the
+// detail with only its own rows. A 906-row import that stopped at 440 was left
+// recording 200, so undo deleted 200 and left 240 products orphaned.
+//
+// Chunk keys are derived from the row offset, so a retried chunk overwrites its
+// own key and nothing else, and no chunk ever reads or rewrites another's.
 import { adminGraphQL, getLocations, ShopifyError } from "./shopify";
 import { restoreProduct, deleteProduct, type ProductSnapshot, type UpsertResult } from "./products";
 import { currentActor } from "./audit";
@@ -25,9 +34,10 @@ const INDEX_KEY = "import_runs";
 /** Runs kept in the index. Older ones drop off; their detail is left behind
  *  harmlessly rather than chasing metafield deletes on every import. */
 const MAX_RUNS = 40;
-/** A run's detail is refused past this, and the run is marked un-undoable
- *  rather than half-written. Comfortably inside the metafield ceiling. */
-const MAX_DETAIL_BYTES = 900_000;
+/** A single chunk's ceiling. At the 40 rows the screen sends this is nowhere
+ *  near it; the check is here so an oversized chunk fails loudly and asks for
+ *  smaller ones, rather than silently losing the snapshots undo depends on. */
+const MAX_CHUNK_BYTES = 900_000;
 
 /** A stored row keeps the snapshot; the client-facing type doesn't. */
 type StoredRow = ImportRunRow & { before?: ProductSnapshot | null };
@@ -62,7 +72,7 @@ async function writeJson(key: string, value: unknown): Promise<void> {
   }
 }
 
-const detailKey = (id: string) => `import_run_${id}`;
+const chunkKey = (id: string, from: number) => `import_run_${id}_${from}`;
 
 /** Drop the before-snapshot. Snapshots are for undo, not for the screen. */
 const stripSnapshot = (r: StoredRow): ImportRunRow => ({
@@ -82,7 +92,11 @@ export async function listRuns(): Promise<ImportRunSummary[]> {
 export async function getRun(id: string): Promise<StoredRun | null> {
   const summary = (await listRuns()).find((r) => r.id === id);
   if (!summary) return null;
-  const rows = await readJson<StoredRow[]>(detailKey(id), []);
+  // Chunks are read in the order they were written, so rows stay in sheet order.
+  const rows: StoredRow[] = [];
+  for (const from of [...(summary.chunks ?? [])].sort((a, b) => a - b)) {
+    rows.push(...(await readJson<StoredRow[]>(chunkKey(id, from), [])));
+  }
   return { ...summary, rows };
 }
 
@@ -97,74 +111,6 @@ async function putSummary(summary: ImportRunSummary): Promise<void> {
   const list = await listRuns();
   const next = [summary, ...list.filter((r) => r.id !== summary.id)].slice(0, MAX_RUNS);
   await writeJson(INDEX_KEY, next);
-}
-
-/**
- * Record a finished import.
- *
- * Never throws: an import that succeeded must not be reported as failed because
- * the history write didn't land. A run that couldn't be stored simply can't be
- * undone, and says so.
- */
-export async function recordRun(opts: {
-  filename: string;
-  scope: string;
-  results: UpsertResult[];
-}): Promise<ImportRunSummary | null> {
-  try {
-    const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    const by = await currentActor().catch(() => "unknown");
-
-    const rows: StoredRow[] = opts.results.map((r) => {
-      const created = r.ok && r.action.startsWith("created");
-      const updated = r.ok && r.action.startsWith("updated");
-      return {
-        title: r.title,
-        handle: r.handle,
-        productId: r.productId,
-        action: r.action,
-        ok: r.ok,
-        error: r.error,
-        // A create is undone by deleting; an update needs its snapshot back.
-        undoable: Boolean(r.productId) && (created || (updated && Boolean(r.before))),
-        before: r.before ?? null,
-      };
-    });
-
-    const created = rows.filter((r) => r.ok && r.action.startsWith("created")).length;
-    const updated = rows.filter((r) => r.ok && r.action.startsWith("updated")).length;
-    const failed = rows.filter((r) => !r.ok).length;
-    const undoableRows = rows.filter((r) => r.undoable).length;
-
-    let undoable = undoableRows > 0;
-    let undoNote: string | undefined;
-    if (!undoable) undoNote = "Nothing in this run can be reversed automatically.";
-    else if (undoableRows < created + updated) {
-      undoNote = `${created + updated - undoableRows} of ${created + updated} changed products can't be reversed — the portal couldn't read them before the import.`;
-    }
-
-    let stored = rows;
-    if (JSON.stringify(rows).length > MAX_DETAIL_BYTES) {
-      // Too big to keep the snapshots. Keep the record of what happened —
-      // that's still worth having — but be honest that undo is off.
-      stored = rows.map((r) => ({ ...stripSnapshot(r), undoable: false }));
-      undoable = false;
-      undoNote = "This run was too large to store the before-state, so it can't be undone. Import in smaller batches to keep undo available.";
-    }
-
-    const summary: ImportRunSummary = {
-      id, at: new Date().toISOString(), by,
-      filename: opts.filename, scope: opts.scope,
-      total: rows.length, created, updated, failed,
-      undoable, undoNote,
-    };
-
-    await writeJson(detailKey(id), stored);
-    await putSummary(summary);
-    return summary;
-  } catch {
-    return null;
-  }
 }
 
 /** Build stored rows (with undoable flags) from a chunk's results. */
@@ -186,60 +132,92 @@ function toStoredRows(results: UpsertResult[]): StoredRow[] {
 }
 
 /**
- * Append a chunk of an import to a run, creating the run on the first chunk.
- * A large sheet is applied in several requests that all carry the same run id,
- * so the whole import is recorded — and undoable — as one. Never throws; a run
- * that outgrows the metafield ceiling keeps its record but loses undo.
+ * Record one chunk of an import.
+ *
+ * Throws if the chunk can't be stored. It used to swallow the error and return
+ * null, so an import that wrote 440 products could quietly end up with 200 on
+ * record — and undo would then delete 200 and leave the rest orphaned. A run
+ * that can't be recorded has to be loud, because the alternative is products
+ * nobody can account for.
  */
 export async function appendRun(
   id: string,
-  opts: { filename: string; scope: string; results: UpsertResult[] },
-): Promise<ImportRunSummary | null> {
-  try {
-    const by = await currentActor().catch(() => "unknown");
-    const prior = (await listRuns()).find((r) => r.id === id);
-    const existingRows = prior ? await readJson<StoredRow[]>(detailKey(id), []) : [];
-    const rows = [...existingRows, ...toStoredRows(opts.results)];
+  opts: { filename: string; scope: string; results: UpsertResult[]; from: number },
+): Promise<ImportRunSummary> {
+  const rows = toStoredRows(opts.results);
 
-    const created = rows.filter((r) => r.ok && r.action.startsWith("created")).length;
-    const updated = rows.filter((r) => r.ok && r.action.startsWith("updated")).length;
-    const failed = rows.filter((r) => !r.ok).length;
-    const undoableRows = rows.filter((r) => r.undoable).length;
-
-    let undoable = undoableRows > 0;
-    let undoNote: string | undefined;
-    if (!undoable) undoNote = "Nothing in this run can be reversed automatically.";
-    else if (undoableRows < created + updated) {
-      undoNote = `${created + updated - undoableRows} of ${created + updated} changed products can't be reversed — the portal couldn't read them before the import.`;
-    }
-
-    let stored = rows;
-    if (JSON.stringify(rows).length > MAX_DETAIL_BYTES) {
-      stored = rows.map((r) => ({ ...stripSnapshot(r), undoable: false }));
-      undoable = false;
-      undoNote = "This import grew too large to store the before-state, so it can't be undone. Import in smaller files to keep undo available.";
-    }
-
-    const summary: ImportRunSummary = {
-      id,
-      at: prior?.at ?? new Date().toISOString(),
-      by: prior?.by ?? by,
-      filename: opts.filename,
-      scope: opts.scope,
-      total: rows.length,
-      created,
-      updated,
-      failed,
-      undoable,
-      undoNote,
-    };
-
-    await writeJson(detailKey(id), stored);
-    await putSummary(summary);
-    return summary;
-  } catch {
-    return null;
+  const size = JSON.stringify(rows).length;
+  if (size > MAX_CHUNK_BYTES) {
+    throw new ShopifyError(
+      `This batch is too large to record (${Math.round(size / 1000)}KB). Import in smaller batches so the run stays undoable.`,
+    );
   }
+
+  // This chunk's rows, under a key derived from its offset. Retrying a chunk
+  // rewrites its own key; no other chunk is read or touched.
+  await writeJson(chunkKey(id, opts.from), rows);
+
+  const prior = (await listRuns()).find((r) => r.id === id);
+  const chunks = [...new Set([...(prior?.chunks ?? []), opts.from])].sort((a, b) => a - b);
+
+  const add = (n: number | undefined, m: number) => (n ?? 0) + m;
+  // Counts accumulate from the previous summary rather than being recomputed
+  // from every row, so recording a chunk never depends on reading the others.
+  const replacing = prior?.chunks?.includes(opts.from) ?? false;
+  const base = replacing
+    ? { created: 0, updated: 0, failed: 0, total: 0, undoableRows: 0 }
+    : {
+        created: prior?.created ?? 0,
+        updated: prior?.updated ?? 0,
+        failed: prior?.failed ?? 0,
+        total: prior?.total ?? 0,
+        undoableRows: prior?.undoableRows ?? 0,
+      };
+  // A retried chunk means the totals have to be rebuilt from the stored chunks,
+  // otherwise its rows would be counted twice.
+  let created = base.created, updated = base.updated, failed = base.failed;
+  let total = base.total, undoableRows = base.undoableRows;
+  if (replacing) {
+    for (const from of chunks) {
+      const stored = from === opts.from ? rows : await readJson<StoredRow[]>(chunkKey(id, from), []);
+      created += stored.filter((r) => r.ok && r.action.startsWith("created")).length;
+      updated += stored.filter((r) => r.ok && r.action.startsWith("updated")).length;
+      failed += stored.filter((r) => !r.ok).length;
+      undoableRows += stored.filter((r) => r.undoable).length;
+      total += stored.length;
+    }
+  } else {
+    created = add(created, rows.filter((r) => r.ok && r.action.startsWith("created")).length);
+    updated = add(updated, rows.filter((r) => r.ok && r.action.startsWith("updated")).length);
+    failed = add(failed, rows.filter((r) => !r.ok).length);
+    undoableRows = add(undoableRows, rows.filter((r) => r.undoable).length);
+    total = add(total, rows.length);
+  }
+
+  const changed = created + updated;
+  const summary: ImportRunSummary = {
+    id,
+    at: prior?.at ?? new Date().toISOString(),
+    by: prior?.by ?? (await currentActor().catch(() => "unknown")),
+    filename: opts.filename,
+    scope: opts.scope,
+    chunks,
+    total,
+    created,
+    updated,
+    failed,
+    undoableRows,
+    undoable: undoableRows > 0,
+    undoNote:
+      undoableRows === 0
+        ? "Nothing in this run can be reversed automatically."
+        : undoableRows < changed
+          ? `${changed - undoableRows} of ${changed} changed products can't be reversed — the portal couldn't read them before the import.`
+          : undefined,
+  };
+
+  await putSummary(summary);
+  return summary;
 }
 
 /**

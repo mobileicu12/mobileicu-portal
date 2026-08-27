@@ -61,6 +61,9 @@ export default function ImportExportPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
   const [progress, setProgress] = useState<Progress | null>(null);
+  // Where an interrupted import got to, so it can be carried on instead of
+  // started again. Re-importing a sheet that half-landed doubles the catalogue.
+  const [resume, setResume] = useState<{ file: File; from: number; runId: string; total: number } | null>(null);
   const [error, setError] = useState("");
   const [runs, setRuns] = useState<ImportRunSummary[]>([]);
   const [undoing, setUndoing] = useState("");
@@ -186,32 +189,73 @@ export default function ImportExportPage() {
   // several Shopify round trips, so a 200-row chunk can run for minutes with
   // nothing to show for it — which is exactly what made a 900-row sheet look
   // frozen. Smaller chunks report back often enough to prove it's still moving.
-  async function applyChunked(file: File) {
+  //
+  // A chunk that fails is retried rather than ending the import. "Failed to
+  // fetch" is a dropped connection, not a rejected import, and abandoning 900
+  // rows at row 440 because one request blipped is not a real answer to "import
+  // any size in one go". Only when a chunk fails repeatedly does it stop — and
+  // then it stops resumably, from exactly where it got to.
+  async function applyChunked(file: File, resumeFrom = 0, existingRunId = "") {
     const CHUNK = 40;
-    const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const CHUNK_ATTEMPTS = 4;
+    const runId = existingRunId || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const startedAt = Date.now();
     setNow(startedAt);
     setUploading(true);
     setError("");
+    setResume(null);
     const knownTotal = summary?.total ?? 0;
-    const agg: Summary = { dryRun: false, total: knownTotal, created: 0, updated: 0, failed: 0, skipped: 0, results: [], runId };
-    // Show the bar before the first request, not after the first chunk lands.
-    setProgress({ done: 0, total: knownTotal, from: 1, to: Math.min(CHUNK, knownTotal || CHUNK), startedAt, created: 0, updated: 0, failed: 0 });
-    let done = 0;
+    const agg: Summary = {
+      dryRun: false,
+      total: knownTotal,
+      created: resumeFrom ? (summary?.created ?? 0) : 0,
+      updated: resumeFrom ? (summary?.updated ?? 0) : 0,
+      failed: resumeFrom ? (summary?.failed ?? 0) : 0,
+      skipped: 0,
+      results: resumeFrom ? (summary?.results ?? []) : [],
+      runId,
+    };
+    setProgress({ done: resumeFrom, total: knownTotal, from: resumeFrom + 1, to: Math.min(resumeFrom + CHUNK, knownTotal || CHUNK), startedAt, created: agg.created, updated: agg.updated, failed: agg.failed });
+    let done = resumeFrom;
+    let from = resumeFrom;
     try {
-      let from = 0;
       let total = summary?.total ?? Number.MAX_SAFE_INTEGER;
       while (from < total) {
         setProgress({ done, total: agg.total, from: from + 1, to: Math.min(from + CHUNK, agg.total || from + CHUNK), startedAt, created: agg.created, updated: agg.updated, failed: agg.failed });
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("from", String(from));
-        fd.append("to", String(from + CHUNK));
-        fd.append("runId", runId);
-        if (assignCollection) fd.append("assignCollection", assignCollection);
-        const res = await fetch("/api/import", { method: "POST", body: fd });
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error || "Import failed");
+
+        let d: (Partial<Summary> & { error?: string; recordError?: string }) | null = null;
+        let lastWhy = "";
+        for (let attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
+          try {
+            const fd = new FormData();
+            fd.append("file", file);
+            fd.append("from", String(from));
+            fd.append("to", String(from + CHUNK));
+            fd.append("runId", runId);
+            if (assignCollection) fd.append("assignCollection", assignCollection);
+            const res = await fetch("/api/import", { method: "POST", body: fd });
+            const body = await res.json();
+            if (!res.ok) throw new Error(body.error || "Import failed");
+            d = body;
+            break;
+          } catch (e) {
+            lastWhy = e instanceof Error ? e.message : "Import failed";
+            if (attempt === CHUNK_ATTEMPTS) throw new Error(lastWhy);
+            // The chunk is keyed by its row offset, so retrying rewrites its own
+            // record rather than adding a second copy.
+            setError(`Hiccup at row ${from + 1} (${lastWhy}). Retrying — attempt ${attempt + 1} of ${CHUNK_ATTEMPTS}…`);
+            await new Promise((r) => setTimeout(r, 1500 * attempt));
+          }
+        }
+        if (!d) throw new Error(lastWhy || "Import failed");
+        setError("");
+
+        // Products were written but the portal could not file them under the
+        // run. Undo would then miss them, so this stops rather than carries on.
+        if (d.recordError) {
+          throw new Error(`${d.recordError} — rows ${from + 1}–${from + CHUNK} were imported but could not be recorded for undo.`);
+        }
+
         total = typeof d.total === "number" ? d.total : total;
         agg.total = total;
         agg.created += d.created ?? 0;
@@ -229,11 +273,13 @@ export default function ImportExportPage() {
       await loadRuns();
     } catch (e) {
       const why = e instanceof Error ? e.message : "Import failed";
-      // Say how far it got. Earlier chunks are already written, and the run is
-      // in the history — leaving that unsaid invites a second full import.
-      setError(done > 0
-        ? `${why}. Stopped after ${done} of ${agg.total} rows — those are already imported and the run is in the history below, so undo it rather than re-importing the whole sheet.`
-        : why);
+      setError(
+        done > 0
+          ? `${why}. Stopped after ${done} of ${agg.total} rows — those are imported and recorded, so carry on from row ${done + 1} rather than re-importing the sheet.`
+          : why,
+      );
+      // Everything needed to pick up exactly where it stopped.
+      if (done > 0 && done < agg.total) setResume({ file, from: done, runId, total: agg.total });
       await loadRuns();
     } finally {
       setUploading(false);
@@ -259,6 +305,31 @@ export default function ImportExportPage() {
 
       {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
       {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{flash}</p>}
+
+      {/* Carry on from where it stopped. The alternative people reach for —
+          running the sheet again — imports the first half a second time. */}
+      {resume && !uploading && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-800">
+            <strong>{resume.from.toLocaleString()} of {resume.total.toLocaleString()} rows</strong> are in. The rest
+            ({(resume.total - resume.from).toLocaleString()} rows, from row {(resume.from + 1).toLocaleString()}) still need importing.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setResume(null)}
+              className="rounded-lg border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100"
+            >
+              Leave it
+            </button>
+            <button
+              onClick={() => void applyChunked(resume.file, resume.from, resume.runId)}
+              className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-500"
+            >
+              Carry on from row {(resume.from + 1).toLocaleString()}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         {/* Export */}
