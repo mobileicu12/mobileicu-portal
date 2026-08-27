@@ -434,9 +434,12 @@ export default function InvoicesPage() {
         {selected.size > 0 && <button onClick={clearSel} className="ml-auto text-xs font-medium text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">Clear</button>}
       </div>
 
-      <div className="mt-2 max-h-[70vh] overflow-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      {/* Scrolls sideways on narrow screens, but not vertically: with paging below,
+          an inner 70vh scrollbar meant two scrollbars over one list and a pager
+          stranded past the bottom of the box. */}
+      <div className="mt-2 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <table className="w-full min-w-[820px] text-left text-sm">
-          <thead className="sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+          <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
               <th className="px-4 py-3"><button onClick={() => sort.onSort("invoice")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Invoice{sort.arrow("invoice")}</button></th>

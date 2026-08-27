@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 type Collection = {
   id: string;
@@ -152,7 +153,21 @@ export default function CollectionsPage() {
     [collections, q],
   );
 
-  const topLevel = childrenOf.get("__root__") ?? [];
+  const topLevel = useMemo(() => childrenOf.get("__root__") ?? [], [childrenOf]);
+
+  // Searching a tree: a branch stays if it matches, or if anything beneath it
+  // does — otherwise finding a nested collection would mean knowing its parent.
+  const shownTopLevel = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return topLevel;
+    const hit = (c: Collection): boolean =>
+      c.title.toLowerCase().includes(needle) || (childrenOf.get(c.id) ?? []).some(hit);
+    return topLevel.filter(hit);
+  }, [topLevel, childrenOf, q]);
+
+  // Paged on top-level rows; a branch travels with its parent rather than being
+  // split across pages, which is the only division that makes sense in a tree.
+  const treePaging = usePaging(shownTopLevel, 20);
 
   function toggle(id: string) {
     setCollapsed((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -215,7 +230,7 @@ export default function CollectionsPage() {
               <button key={f} onClick={() => setView(f)} className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize ${view === f ? "bg-ink text-bg" : "text-muted hover:text-ink"}`}>{f}</button>
             ))}
           </div>
-          {view === "grid" && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="w-48 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent" />}
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search collections…" className="w-48 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
           <button onClick={autoOrganize} disabled={bulkBusy} className="rounded-lg border border-accent/50 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50">✨ Auto-organize</button>
           <button onClick={() => setCreating(true)} className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent hover:text-accentfg">+ New</button>
         </div>
@@ -235,8 +250,11 @@ export default function CollectionsPage() {
       {loading ? <p className="text-sm text-muted">Loading…</p> : view === "tree" ? (
         <div className="rounded-2xl border border-line bg-surface p-3">
           <p className="mb-2 px-2 text-xs text-muted">Use the dropdown on each row to nest it under a parent (e.g. put <em>iPhone Cases</em> under <em>Cases</em>). Nest as deep as you like.</p>
-          {topLevel.map((c) => renderNode(c, 0))}
-          {topLevel.length === 0 && <p className="px-2 py-4 text-sm text-muted">No collections yet.</p>}
+          {treePaging.rows.map((c) => renderNode(c, 0))}
+          {shownTopLevel.length === 0 && (
+            <p className="px-2 py-4 text-sm text-muted">{q.trim() ? `Nothing matching “${q.trim()}”.` : "No collections yet."}</p>
+          )}
+          <Pagination paging={treePaging} noun="top-level collections" className="px-2" />
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
