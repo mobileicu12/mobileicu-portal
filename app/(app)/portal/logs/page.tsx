@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AUDIT_LABELS, AUDIT_CRITICAL, type AuditEntry } from "@/lib/audit-labels";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 type DeletedInvoice = { id: string; invoiceNo: string; customer: string; total: string; createdAt: string };
 
@@ -60,6 +61,7 @@ export default function LogsPage() {
     const hay = `${e.who} ${e.action} ${AUDIT_LABELS[e.action] ?? ""} ${e.name ?? ""} ${e.detail ?? ""}`.toLowerCase();
     return hay.includes(q.trim().toLowerCase());
   });
+  const paging = usePaging(shown, 50);
 
   return (
     <div className="px-8 py-7 pb-16">
@@ -142,6 +144,7 @@ export default function LogsPage() {
           Nothing logged for this period.
         </p>
       ) : (
+        <>
         <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="border-b border-line bg-subtle text-xs uppercase text-muted">
@@ -154,7 +157,7 @@ export default function LogsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {shown.map((e, i) => {
+              {paging.rows.map((e, i) => {
                 const critical = AUDIT_CRITICAL.has(e.action);
                 return (
                   <tr key={`${e.at}-${i}`} className={critical ? "bg-red-500/5" : undefined}>
@@ -173,6 +176,8 @@ export default function LogsPage() {
             </tbody>
           </table>
         </div>
+        <Pagination paging={paging} noun="entries" />
+        </>
       )}
 
       <p className="mt-4 text-xs text-muted">

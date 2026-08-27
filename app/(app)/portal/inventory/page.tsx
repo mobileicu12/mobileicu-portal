@@ -9,6 +9,7 @@ import { printBarcodeLabels, LABEL_PRESETS, type LabelPresetKey } from "@/lib/ba
 import ColumnChooser, { useColumns, type ColumnDef } from "@/components/ColumnChooser";
 import { loadPortalSettings } from "@/lib/settings-client";
 import { DuplicatesModal, MergeModal } from "@/components/MergeTools";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 const LOW_STOCK_DEFAULT = 5;
 
@@ -219,6 +220,10 @@ export default function InventoryPage() {
     return { total: rows.length, low, out };
   }, [rows, lowStock, availableAt]);
 
+  // Paged over what's been loaded so far; "Load more" keeps pulling the next
+  // slice from Shopify and the page count grows with it.
+  const paging = usePaging(rows, 50);
+
   const allSelected = rows.length > 0 && selected.size === rows.length;
   function toggleRow(key: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
@@ -377,7 +382,7 @@ export default function InventoryPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {rows.map((row) => (
+            {paging.rows.map((row) => (
               <StockRow
                 key={row.key}
                 row={row}
@@ -398,6 +403,8 @@ export default function InventoryPage() {
           </tbody>
         </table>
       </div>
+
+      <Pagination paging={paging} noun="products" />
 
       <div className="mt-5 flex justify-center">
         {hasNext ? (

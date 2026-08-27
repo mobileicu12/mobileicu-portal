@@ -8,6 +8,7 @@ import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components
 import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf";
 import { loadBusiness } from "@/lib/business";
 import { BUSINESS } from "@/lib/business";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[] };
 
@@ -221,6 +222,7 @@ export default function CustomersPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customers, sort.key, sort.dir, invCounts]);
+  const paging = usePaging(shown, 50);
 
   return (
     <div className="px-8 py-7 pb-28">
@@ -298,7 +300,7 @@ export default function CustomersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {shown.map((c) => (
+            {paging.rows.map((c) => (
               <tr key={c.id} className={selected.has(c.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}>
                 <td className="px-4 py-3"><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleRow(c.id)} className="h-4 w-4 accent-amber-500" /></td>
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">
@@ -333,6 +335,7 @@ export default function CustomersPage() {
           </tbody>
         </table>
       </div>
+      <Pagination paging={paging} noun="customers" />
 
       {/* Bulk action bar — sticky so it never hides or covers rows */}
       {selected.size > 0 && (

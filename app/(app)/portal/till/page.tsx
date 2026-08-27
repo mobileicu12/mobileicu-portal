@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductRow } from "@/lib/shopify";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import { Menu, MenuItem } from "@/components/Menu";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 const COLUMNS: ColumnDef[] = [
   { key: "product", label: "Item", locked: true },
@@ -61,6 +62,7 @@ export default function TillPage() {
     const val = (r: Row): string | number => sort.key === "price" ? Number(r.price) || 0 : sort.key === "sku" ? r.sku.toLowerCase() : r.title.toLowerCase();
     return [...rows].sort((a, b) => { const av = val(a), bv = val(b); return typeof av === "number" && typeof bv === "number" ? (av - bv) * dir : String(av).localeCompare(String(bv)) * dir; });
   }, [rows, sort.key, sort.dir]);
+  const paging = usePaging(shown, 50);
 
   const allSelected = rows.length > 0 && selected.size === rows.length;
   function toggleRow(k: string) { setSelected((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; }); }
@@ -173,7 +175,7 @@ export default function TillPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {shown.map((r) => <TillRow key={r.key} row={r} show={cols.isVisible} checked={selected.has(r.key)} onToggle={() => toggleRow(r.key)} onPriceSaved={(p) => setRows((prev) => prev.map((x) => x.key === r.key ? { ...x, price: p } : x))} />)}
+            {paging.rows.map((r) => <TillRow key={r.key} row={r} show={cols.isVisible} checked={selected.has(r.key)} onToggle={() => toggleRow(r.key)} onPriceSaved={(p) => setRows((prev) => prev.map((x) => x.key === r.key ? { ...x, price: p } : x))} />)}
             {shown.length === 0 && !loading && (
               <tr><td colSpan={2 + ["sku", "barcode", "price", "stock"].filter((k) => cols.isVisible(k)).length} className="px-4 py-12 text-center text-neutral-400">
                 No till items yet. Click <strong>+ Till item</strong> to add one, or tag products in Inventory → Channels → Till.
@@ -182,6 +184,7 @@ export default function TillPage() {
           </tbody>
         </table>
       </div>
+      <Pagination paging={paging} noun="items" />
       {loading && <p className="mt-4 text-center text-sm text-neutral-400">Loading…</p>}
     </div>
   );

@@ -17,6 +17,7 @@ import { invoiceStatus, STATUS_BADGE } from "@/lib/invoice-status";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import { BRAND_SLUG } from "@/lib/brand";
 import { downloadFile } from "@/lib/download";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 // Shopify hands back a GID ("gid://shopify/DraftOrder/123"); the route takes the
 // plain number. Keeping the slashes out of the path also keeps the URL readable
@@ -126,14 +127,7 @@ export default function InvoicesPage() {
   }, [filtered, sort.key, sort.dir]);
 
   // --- Paging. Filters/sort apply across the whole set; only the rows shown are paged.
-  const [pageSize, setPageSize] = useState(20);
-  const [page, setPage] = useState(1);
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const pageRows = useMemo(
-    () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
-    [sorted, safePage, pageSize],
-  );
+  const paging = usePaging(sorted, 20);
 
   // Live summary of whatever range/filters are currently applied. Counts money
   // actually settled vs still due, so a part-paid bill splits correctly.
@@ -457,7 +451,7 @@ export default function InvoicesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {pageRows.map((inv) => (
+            {paging.rows.map((inv) => (
               <tr key={inv.id} onClick={() => router.push(invoiceHref(inv.id))} onMouseEnter={() => router.prefetch(invoiceHref(inv.id))} className={`cursor-pointer ${selected.has(inv.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggleRow(inv.id)} className="h-4 w-4 accent-amber-500" /></td>
                 {/* A real Link, not just the row's onClick: Link prefetches the
@@ -514,31 +508,7 @@ export default function InvoicesPage() {
         </table>
       </div>
 
-      {/* Pager */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-        <div className="flex items-center gap-2 text-neutral-500">
-          <span>Show</span>
-          <select
-            value={pageSize}
-            onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-            className="rounded-lg border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-          >
-            {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <span>
-            per page · {sorted.length === 0 ? "no invoices" : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, sorted.length)} of ${sorted.length}`}
-          </span>
-        </div>
-        {pageCount > 1 && (
-          <div className="flex items-center gap-1">
-            <button onClick={() => setPage(1)} disabled={safePage === 1} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">« First</button>
-            <button onClick={() => setPage(safePage - 1)} disabled={safePage === 1} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">‹ Prev</button>
-            <span className="px-3 text-xs text-neutral-500">Page {safePage} of {pageCount}</span>
-            <button onClick={() => setPage(safePage + 1)} disabled={safePage === pageCount} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">Next ›</button>
-            <button onClick={() => setPage(pageCount)} disabled={safePage === pageCount} className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-neutral-700">Last »</button>
-          </div>
-        )}
-      </div>
+      <Pagination paging={paging} noun="invoices" />
 
       {preview && <InvoicePreviewModal invoice={preview.invoice} business={preview.business} onClose={() => setPreview(null)} />}
       {report && <PdfPreviewModal doc={report.doc} filename={report.filename} title="Sales report" subtitle={report.subtitle} onClose={() => setReport(null)} />}

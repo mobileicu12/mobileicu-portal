@@ -7,6 +7,7 @@ import { SEGMENTS, type SegmentKey } from "@/lib/segments";
 import { useCanSeeFinance } from "@/lib/use-me";
 import { FinanceLockBar } from "@/components/Finance";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 const ORDER_COLUMNS: ColumnDef[] = [
   { key: "order", label: "Order", locked: true },
@@ -112,6 +113,7 @@ export default function OrdersPage() {
       return String(av).localeCompare(String(bv)) * dir;
     });
   }, [filtered, sort.key, sort.dir]);
+  const paging = usePaging(sorted, 50);
 
   const allSelected = filtered.length > 0 && filtered.every((o) => selected.has(o.id));
   function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
@@ -208,7 +210,7 @@ export default function OrdersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {sorted.map((o) => {
+            {paging.rows.map((o) => {
               const seg = SEGMENTS.find((x) => x.key === o.segment);
               return (
                 <tr key={o.id} onClick={() => router.push(`/portal/orders/${encodeURIComponent(o.id)}`)} className={`cursor-pointer ${selected.has(o.id) ? "bg-amber-50 dark:bg-amber-500/10" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"}`}>
@@ -229,6 +231,7 @@ export default function OrdersPage() {
           </tbody>
         </table>
       </div>
+      <Pagination paging={paging} noun="orders" />
 
       {/* Bulk action bar — sticky so it never hides or covers rows */}
       {selected.size > 0 && (

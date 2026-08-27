@@ -454,6 +454,39 @@ it. `productSet` treats metafields as a list field and deletes entries not inclu
 the input, so sending only the handful of `custom` keys a spreadsheet carries would
 strip everything else off the product — including the portal's own metafields.
 
+### Finding duplicate products (`lib/merge.ts`)
+
+The rule that matters: **identifiers cut both ways.** A shared barcode or SKU
+proves two records are the same product; a *differing* one proves they are not,
+however alike they otherwise look.
+
+Three passes, strongest evidence first, each product landing in at most one group:
+
+| Pass | Match | Confidence | Notes |
+|---|---|---|---|
+| 1 | same barcode | certain | a GTIN identifies a product globally |
+| 2 | same SKU | certain | split out if barcodes inside the group disagree |
+| 3 | same name | likely | only when no identifier contradicts it |
+
+Names are compared with case, punctuation and spacing flattened, and unicode
+dashes folded, so `iPhone 13 Pro (OEM)`, `iPhone 13 Pro - OEM` and
+`iPhone 13 Pro – OEM` are one bucket.
+
+Anything that shares a name but is told apart by a barcode or SKU is reported as
+a **name clash**, not a duplicate — two suppliers' "iPhone 13 Screen" is two
+products, and merging them would delete real stock. A SKU appearing on two
+different barcodes is reported the same way: a data-entry slip to look at, not a
+duplicate to merge.
+
+**Merge all** only touches `certain` groups. Name-only matches are left for a
+human, and the result reports how many were skipped. Individual merges are
+always available from the group card.
+
+The scan pages until Shopify says there is no more, with a hard stop at 50,000
+products; if it ever hits that ceiling the result is flagged `truncated`, because
+a duplicate finder that stops early reports "no duplicates" for everything past
+the cut.
+
 ### Runs, history and undo
 
 Every import is recorded as a **run**:

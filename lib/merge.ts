@@ -28,12 +28,46 @@ export type MergeMember = {
 };
 
 export type DuplicateGroup = {
-  reason: "sku" | "title";
+  /** What tied them together. Barcode is the strongest, name the weakest. */
+  reason: "barcode" | "sku" | "title";
+  key: string;
+  members: MergeMember[];
+  /** How much the match is worth trusting. Only "certain" is safe to merge
+   *  without looking; "likely" means the name matched and nothing contradicted
+   *  it, which is a prompt to check rather than an instruction to merge. */
+  confidence: "certain" | "likely";
+};
+
+/**
+ * Products sharing a name whose SKUs or barcodes say they are NOT the same
+ * thing. Reported separately so they can be eyeballed without inflating the
+ * duplicate count — "iPhone 13 Screen" from two suppliers is two products.
+ */
+export type NameClash = {
   key: string;
   members: MergeMember[];
 };
 
-const normTitle = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+export type DuplicateScan = {
+  groups: DuplicateGroup[];
+  nameClashes: NameClash[];
+  /** Products examined, and whether the scan hit its ceiling before the end.
+   *  A truncated scan can only ever under-report, so it has to be visible. */
+  scanned: number;
+  truncated: boolean;
+};
+
+// Names are compared with punctuation and spacing flattened, so "iPhone 13 Pro
+// (OEM)" and "iPhone 13 Pro - OEM" land in the same bucket. Unicode dashes are
+// folded first: a copy-pasted en-dash otherwise reads as a different product.
+const normTitle = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[‐-―−]/g, "-")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const ident = (s: string) => s.trim().toLowerCase();
 
 function parseList(value: string | null | undefined): string {
   if (!value) return "";
@@ -90,10 +124,18 @@ function scanToMember(n: ScanNode): MergeMember {
   };
 }
 
-async function scanAll(): Promise<MergeMember[]> {
+// Hard stop, not a working limit: 500 pages is 50,000 products. The old ceiling
+// of 40 pages quietly stopped at 4,000, and a duplicate scan that stops early
+// reports "no duplicates" for everything past the cut — the one failure mode a
+// duplicate finder must never have silently.
+const MAX_SCAN_PAGES = 500;
+
+async function scanAll(): Promise<{ members: MergeMember[]; truncated: boolean }> {
   const out: MergeMember[] = [];
   let after: string | null = null;
-  for (let page = 0; page < 40; page++) {
+  let truncated = false;
+  for (let page = 0; ; page++) {
+    if (page >= MAX_SCAN_PAGES) { truncated = true; break; }
     const data: {
       products: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; edges: { node: ScanNode }[] };
     } = await adminGraphQL(SCAN_QUERY, { first: 100, after });
@@ -101,43 +143,96 @@ async function scanAll(): Promise<MergeMember[]> {
     if (!data.products.pageInfo.hasNextPage) break;
     after = data.products.pageInfo.endCursor;
   }
-  return out;
+  return { members: out, truncated };
 }
 
-/** Groups of products that share a non-empty SKU or an identical name. */
-export async function findDuplicateGroups(): Promise<DuplicateGroup[]> {
-  const all = await scanAll();
-  const bySku = new Map<string, MergeMember[]>();
-  const byTitle = new Map<string, MergeMember[]>();
-  const push = (m: Map<string, MergeMember[]>, k: string, v: MergeMember) => {
-    const a = m.get(k);
-    if (a) a.push(v);
-    else m.set(k, [v]);
+/**
+ * Find products that are the same thing entered more than once.
+ *
+ * The rule that matters is that identifiers cut BOTH ways. A shared barcode or
+ * SKU proves two records are the same product; a *differing* one proves they
+ * are not, however alike they otherwise look. The previous version only used
+ * identifiers as positive evidence and grouped on name alone, so two suppliers'
+ * "iPhone 13 Screen" — different SKUs, different barcodes — were reported as
+ * duplicates, and merging them would have destroyed a real product.
+ *
+ * Three passes, strongest evidence first, each product landing in one group:
+ *
+ *   1. barcode — a GTIN identifies a product globally. Certain.
+ *   2. SKU     — the shop's own identifier. Certain, but a group is split
+ *                where barcodes inside it disagree; a reused SKU on two
+ *                different parts is a data-entry slip, not a duplicate.
+ *   3. name    — only when nothing contradicts it. Same name with different
+ *                identifiers is reported as a name clash instead.
+ */
+export async function findDuplicates(): Promise<DuplicateScan> {
+  const { members: all, truncated } = await scanAll();
+
+  const groups: DuplicateGroup[] = [];
+  const nameClashes: NameClash[] = [];
+  // A product belongs to at most one group, claimed by the strongest match.
+  const claimed = new Set<string>();
+
+  const bucket = (list: MergeMember[], key: (m: MergeMember) => string) => {
+    const m = new Map<string, MergeMember[]>();
+    for (const item of list) {
+      const k = key(item);
+      if (!k) continue;
+      const arr = m.get(k);
+      if (arr) arr.push(item);
+      else m.set(k, [item]);
+    }
+    return m;
   };
-  for (const p of all) {
-    const sku = p.sku.trim().toLowerCase();
-    if (sku) push(bySku, sku, p);
-    const t = normTitle(p.title);
-    if (t) push(byTitle, t, p);
+
+  // ---- 1. Same barcode -> certainly the same product.
+  for (const [key, list] of bucket(all, (m) => ident(m.barcode))) {
+    if (list.length < 2) continue;
+    groups.push({ reason: "barcode", key, members: list, confidence: "certain" });
+    for (const m of list) claimed.add(m.id);
   }
 
-  const sig = (list: MergeMember[]) => list.map((m) => m.id).sort().join(",");
-  const seen = new Set<string>();
-  const groups: DuplicateGroup[] = [];
-  for (const [key, list] of bySku) {
+  // ---- 2. Same SKU -> the same product, unless barcodes disagree.
+  for (const [key, list] of bucket(all.filter((m) => !claimed.has(m.id)), (m) => ident(m.sku))) {
     if (list.length < 2) continue;
-    seen.add(sig(list));
-    groups.push({ reason: "sku", key, members: list });
+    const barcodes = new Set(list.map((m) => ident(m.barcode)).filter(Boolean));
+    if (barcodes.size > 1) {
+      // One SKU on two different barcodes: these are different parts sharing a
+      // code. Flagging them for a look is right; calling them duplicates isn't.
+      nameClashes.push({ key: `SKU ${key}`, members: list });
+      continue;
+    }
+    groups.push({ reason: "sku", key, members: list, confidence: "certain" });
+    for (const m of list) claimed.add(m.id);
   }
-  for (const [key, list] of byTitle) {
+
+  // ---- 3. Same name, and nothing says otherwise.
+  for (const [key, list] of bucket(all.filter((m) => !claimed.has(m.id)), (m) => normTitle(m.title))) {
     if (list.length < 2) continue;
-    if (seen.has(sig(list))) continue;
-    groups.push({ reason: "title", key, members: list });
+    // Distinct non-empty identifiers within one name = distinct products.
+    const ids = new Set(
+      list.map((m) => ident(m.barcode) || ident(m.sku)).filter(Boolean),
+    );
+    if (ids.size > 1) {
+      nameClashes.push({ key, members: list });
+      continue;
+    }
+    groups.push({ reason: "title", key, members: list, confidence: "likely" });
+    for (const m of list) claimed.add(m.id);
   }
+
+  const rank = { barcode: 0, sku: 1, title: 2 } as const;
   groups.sort((a, b) =>
-    a.reason === b.reason ? b.members.length - a.members.length : a.reason === "sku" ? -1 : 1,
+    rank[a.reason] !== rank[b.reason] ? rank[a.reason] - rank[b.reason] : b.members.length - a.members.length,
   );
-  return groups;
+  nameClashes.sort((a, b) => b.members.length - a.members.length);
+
+  return { groups, nameClashes, scanned: all.length, truncated };
+}
+
+/** Back-compat wrapper for callers that only want the groups. */
+export async function findDuplicateGroups(): Promise<DuplicateGroup[]> {
+  return (await findDuplicates()).groups;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -375,14 +470,26 @@ export async function mergeProducts(
   };
 }
 
-export type BatchMergeResult = { groupsMerged: number; productsRemoved: number };
+export type BatchMergeResult = {
+  groupsMerged: number;
+  productsRemoved: number;
+  /** Name-only matches left alone because nothing confirmed them. */
+  skippedUnconfirmed: number;
+};
 
 /** Resolve every duplicate group at once, keeping the newest or oldest of each. */
 export async function mergeDuplicatesAuto(
   strategy: "newest" | "oldest",
-  opts: { addStock?: boolean; who?: string } = {},
+  opts: { addStock?: boolean; who?: string; include?: "certain" | "all" } = {},
 ): Promise<BatchMergeResult> {
-  const groups = await findDuplicateGroups();
+  // Merging deletes products, so unattended merging is limited to groups an
+  // identifier proves are the same thing. A name-only match is a prompt to
+  // look, not grounds to delete one of them — including those needs an
+  // explicit ask, and even then it is the operator's judgement, not ours.
+  const include = opts.include ?? "certain";
+  const all = await findDuplicateGroups();
+  const groups = include === "all" ? all : all.filter((g) => g.confidence === "certain");
+  const skipped = all.length - groups.length;
   const gone = new Set<string>();
   let groupsMerged = 0;
   let productsRemoved = 0;
@@ -406,5 +513,5 @@ export async function mergeDuplicatesAuto(
     productsRemoved += mergedIds.length;
     for (const id of mergedIds) gone.add(id);
   }
-  return { groupsMerged, productsRemoved };
+  return { groupsMerged, productsRemoved, skippedUnconfirmed: skipped };
 }
