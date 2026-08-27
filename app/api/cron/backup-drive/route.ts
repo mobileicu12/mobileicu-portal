@@ -49,7 +49,7 @@ async function handle(req: Request) {
       filename: backupFilename(biz.name),
       content: JSON.stringify(snapshot),
       mimeType: "application/json",
-      keep: 7, // last 7 daily backups: always covers the last 3 days + a ~week-old one
+      keep: 14, // last 14 daily: yesterday + a weekly + a ~14-day-old
     });
     return NextResponse.json({ ok: true, file: file.name, link: file.link });
   } catch (err) {
