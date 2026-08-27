@@ -15,7 +15,14 @@ function loadMe(): Promise<Me> {
     meInflight = fetch("/api/me")
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null)
-      .then((d: Me) => { meCache = d; return d; });
+      // Normalised on the way in. Every component treats `permissions` as an
+      // array, and a response without one — a proxy error page, a stale cached
+      // body, a partial deploy — used to throw inside a component that sits in
+      // the shared layout, blanking every page in the portal at once.
+      .then((d: Me) => {
+        meCache = d ? { ...d, permissions: Array.isArray(d.permissions) ? d.permissions : [] } : null;
+        return meCache;
+      });
   }
   return meInflight;
 }

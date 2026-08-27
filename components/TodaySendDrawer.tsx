@@ -18,7 +18,7 @@ function markDone(cid: string) { try { localStorage.setItem(doneKey(cid), "1"); 
 
 export default function TodaySendDrawer() {
   const me = useMe();
-  const canUse = !!me && (me.role === "owner" || me.permissions.includes("customers"));
+  const canUse = !!me && (me.role === "owner" || !!me.permissions?.includes("customers"));
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [custs, setCusts] = useState<TodayCustomer[] | null>(null);

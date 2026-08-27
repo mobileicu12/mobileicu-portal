@@ -110,12 +110,12 @@ export default function UsersPage() {
                 <p className="mt-2 text-xs text-neutral-400">Full access to everything.</p>
               ) : (
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {u.permissions.length === ALL_PERMS.length ? (
+                  {(u.permissions ?? []).length === ALL_PERMS.length ? (
                     <span className="text-xs text-neutral-400">Full access</span>
-                  ) : u.permissions.length === 0 ? (
+                  ) : (u.permissions ?? []).length === 0 ? (
                     <span className="text-xs text-red-400">No access — can sign in but see nothing</span>
                   ) : (
-                    PERMISSIONS.filter((p) => u.permissions.includes(p.key)).map((p) => (
+                    PERMISSIONS.filter((p) => (u.permissions ?? []).includes(p.key)).map((p) => (
                       <span key={p.key} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{p.label}</span>
                     ))
                   )}

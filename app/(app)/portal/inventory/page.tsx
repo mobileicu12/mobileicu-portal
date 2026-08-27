@@ -399,9 +399,12 @@ export default function InventoryPage() {
       {error && <p className="mb-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-500">{error}</p>}
       {flash && <p className="mb-4 rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600">{flash}</p>}
 
-      <div className="max-h-[70vh] overflow-auto rounded-2xl border border-line bg-surface">
+      {/* Scrolls sideways for narrow screens, but not vertically: with paging below,
+          a 70vh inner scrollbar meant two scrollbars fighting over the same list
+          and the pager sitting somewhere off past the bottom of the box. */}
+      <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
         <table className="w-full min-w-[820px] text-left text-sm">
-          <thead className="sticky top-0 z-10 border-b border-line bg-subtle text-xs uppercase tracking-wide text-muted shadow-sm">
+          <thead className="border-b border-line bg-subtle text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
               <th className="px-4 py-3 font-medium">Product</th>

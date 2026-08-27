@@ -469,7 +469,12 @@ export default function BillingPage() {
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         {/* Left: search + lines */}
-        <div className="lg:col-span-2">
+        {/* min-w-0: a grid item defaults to min-width:auto, so this column sized
+            itself to its widest content instead of to the track — 642px inside a
+            290px grid on a 390px phone, putting the scan box, the camera button
+            and the product search off the side of the screen with nothing to
+            scroll across. */}
+        <div className="min-w-0 lg:col-span-2">
           {/* Barcode scan bar (USB/Bluetooth scanner types here + Enter; or use camera) */}
           <div className="mb-2 flex items-center gap-2">
             <div className="relative flex-1">
