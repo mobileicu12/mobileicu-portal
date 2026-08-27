@@ -33,6 +33,12 @@ export type ImportRun = {
   at: string;
   by: string;
   filename: string;
+  /** Row offsets of the chunks this run was written in. Each is a separate
+   *  metafield, so one chunk can never overwrite another's rows. */
+  chunks?: number[];
+  /** Rows that can actually be reversed — carried on the summary so recording
+   *  a chunk never has to read back every other chunk to work it out. */
+  undoableRows?: number;
   /** "catalog" or "till" — which importer was used. */
   scope: string;
   total: number;

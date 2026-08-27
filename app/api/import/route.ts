@@ -129,7 +129,17 @@ export async function POST(req: Request) {
       }
     }
 
-    const run = await appendRun(runId, { filename, scope: till ? "till" : "catalog", results });
+    // The products are already written by this point, so a failure to record
+    // them is reported alongside the result rather than thrown. Throwing would
+    // return an error for a chunk that succeeded, and the caller would have no
+    // way of knowing those products exist — the orphans this is meant to stop.
+    let run: Awaited<ReturnType<typeof appendRun>> | null = null;
+    let recordError = "";
+    try {
+      run = await appendRun(runId, { filename, scope: till ? "till" : "catalog", results, from });
+    } catch (e) {
+      recordError = e instanceof Error ? e.message : "Could not record this part of the import.";
+    }
 
     // Audit the import once — on the first chunk.
     if (from === 0) {
@@ -154,6 +164,7 @@ export async function POST(req: Request) {
       skipped: 0,
       runId,
       run,
+      recordError: recordError || undefined,
       results: results.map((r, i) => ({
         row: slice[i]?.row ?? 0,
         title: r.title,
