@@ -30,6 +30,7 @@ export const AUDIT_LABELS: Record<string, string> = {
   "cashup.save": "Cash-up recorded",
   "import.run": "Products imported from a spreadsheet",
   "import.undo": "Spreadsheet import UNDONE",
+  "product.merge": "Products merged",
 };
 
 // Actions that change money and should stand out in the log.
