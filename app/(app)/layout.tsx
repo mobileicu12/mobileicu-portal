@@ -39,9 +39,10 @@ export default async function AppLayout({
         <AppHeader />
         {/* pb clears the floating mobile nav; removed on md+ where the sidebar is shown.
             pr keeps content clear of the "Today's sending" tab, which is fixed to the
-            right edge — without it, whatever sits at the edge of a wide page (a table's
-            last column, a collection's parent dropdown) ends up underneath it. */}
-        <div className="flex-1 overflow-y-auto pb-24 md:pb-0 md:pr-9">{children}</div>
+            right edge at every width — without it, whatever sits at the edge of a page
+            (a table's last column, a collection's parent dropdown, a search box on a
+            phone) ends up underneath it with no way to scroll out. */}
+        <div className="flex-1 overflow-y-auto pb-24 pr-9 md:pb-0">{children}</div>
         <AppFooter />
       </main>
       <MobileNav />
