@@ -5,12 +5,25 @@ import { BRAND_SLUG } from "@/lib/brand";
 import { downloadFile } from "@/lib/download";
 import { runLabel, type ImportRunSummary } from "@/lib/import-types";
 
-type ImportResult = {
+type ResultRow = {
+  row: number;
+  title: string;
+  ok: boolean;
+  action: string;
+  error?: string;
+  changes?: string[];
+  collections?: string[];
+  duplicateOf?: string;
+};
+type Summary = {
+  dryRun: boolean;
   total: number;
   created: number;
   updated: number;
   failed: number;
-  results: { title: string; ok: boolean; action: string; error?: string }[];
+  skipped: number;
+  results: ResultRow[];
+  runId?: string;
   run?: ImportRunSummary | null;
 };
 
@@ -19,13 +32,21 @@ const when = (iso: string) =>
 
 export default function ImportExportPage() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [result, setResult] = useState<ImportResult | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState("");
   const [runs, setRuns] = useState<ImportRunSummary[]>([]);
   const [undoing, setUndoing] = useState("");
   const [flash, setFlash] = useState("");
+
+  const [collectionChoice, setCollectionChoice] = useState("");
+  const [newCollection, setNewCollection] = useState("");
+  const [collectionNames, setCollectionNames] = useState<string[]>([]);
+  const assignCollection = collectionChoice === "__new__" ? newCollection.trim() : collectionChoice;
 
   const loadRuns = useCallback(() => {
     return fetch("/api/import/runs")
@@ -34,6 +55,15 @@ export default function ImportExportPage() {
       .catch(() => { /* history is a nicety; never block the page on it */ });
   }, []);
   useEffect(() => { void loadRuns(); }, [loadRuns]);
+
+  useEffect(() => {
+    fetch("/api/collections", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { collections?: { title: string; smart?: boolean }[] } | null) => {
+        if (d?.collections) setCollectionNames(d.collections.filter((c) => !c.smart).map((c) => c.title).filter(Boolean));
+      })
+      .catch(() => {});
+  }, []);
 
   async function undoRun(run: ImportRunSummary) {
     const typed = window.prompt(
@@ -86,28 +116,78 @@ export default function ImportExportPage() {
     }
   }
 
-  async function runImport() {
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      setError("Choose an Excel file first.");
-      return;
-    }
-    setImporting(true);
+  // Choosing a file previews it first (dryRun) — nothing is written until Apply.
+  async function preview(file: File) {
+    setUploading(true);
     setError("");
-    setResult(null);
+    setFlash("");
+    setSummary(null);
+    setFileName(file.name);
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("dryRun", "1");
+      if (assignCollection) fd.append("assignCollection", assignCollection);
       const res = await fetch("/api/import", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Import failed");
-      setResult(data);
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Import failed");
+      setSummary(d as Summary);
+      setPendingFile(file);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  // Apply the sheet in chunks that share one runId, so any size stays under the
+  // timeout and the whole import is recorded as a single undoable run.
+  async function applyChunked(file: File) {
+    const CHUNK = 200;
+    const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    setUploading(true);
+    setError("");
+    const agg: Summary = { dryRun: false, total: summary?.total ?? 0, created: 0, updated: 0, failed: 0, skipped: 0, results: [], runId };
+    try {
+      let from = 0;
+      let total = summary?.total ?? Number.MAX_SAFE_INTEGER;
+      while (from < total) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("from", String(from));
+        fd.append("to", String(from + CHUNK));
+        fd.append("runId", runId);
+        if (assignCollection) fd.append("assignCollection", assignCollection);
+        const res = await fetch("/api/import", { method: "POST", body: fd });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || "Import failed");
+        total = typeof d.total === "number" ? d.total : total;
+        agg.total = total;
+        agg.created += d.created ?? 0;
+        agg.updated += d.updated ?? 0;
+        agg.failed += d.failed ?? 0;
+        agg.results.push(...(d.results ?? []));
+        agg.run = d.run ?? agg.run;
+        setSummary({ ...agg });
+        from += CHUNK;
+        setProgress({ done: Math.min(from, total), total });
+      }
+      setPendingFile(null);
+      setFlash(`Imported: ${agg.created} created, ${agg.updated} updated${agg.failed ? `, ${agg.failed} failed` : ""}.`);
       await loadRuns();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
-      setImporting(false);
+      setUploading(false);
+      setProgress(null);
     }
+  }
+
+  function cancelPreview() {
+    setPendingFile(null);
+    setSummary(null);
+    setFileName("");
   }
 
   return (
@@ -115,17 +195,13 @@ export default function ImportExportPage() {
       <div className="sticky top-0 z-20 -mx-8 mb-5 border-b border-neutral-200 bg-white/95 px-8 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Import / Export</h1>
         <p className="text-sm text-neutral-500">
-          Bulk-manage products with Excel. Export your catalog, edit, and re-import — or add new
-          products with the template.
+          Bulk-manage products with Excel. Preview before it writes, add products straight into a
+          collection, and undo a whole import from the history below.
         </p>
       </div>
 
-      {error && (
-        <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
-      )}
-      {flash && (
-        <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{flash}</p>
-      )}
+      {error && <p className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+      {flash && <p className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{flash}</p>}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         {/* Export */}
@@ -156,56 +232,159 @@ export default function ImportExportPage() {
         <section className="rounded-2xl border border-neutral-200 bg-white p-6">
           <h2 className="text-lg font-semibold text-neutral-900">Import</h2>
           <p className="mt-1 text-sm text-neutral-500">
-            Upload a filled-in Excel file. Rows with a <strong>Handle</strong> update existing
-            products; rows without create new ones. Up to 500 rows at a time.
+            Upload a filled-in Excel file. You&apos;ll see a preview of exactly what would change
+            first — nothing is written until you press Apply. Any size; big sheets apply in batches.
           </p>
+
+          <div className="mt-3">
+            <label className="mb-1 block text-xs font-medium text-neutral-700">
+              Add all these products to a collection <span className="font-normal text-neutral-400">(optional)</span>
+            </label>
+            <select
+              value={collectionChoice}
+              onChange={(e) => setCollectionChoice(e.target.value)}
+              className="h-9 w-full rounded-lg border border-neutral-300 bg-white px-2 text-sm text-neutral-800"
+            >
+              <option value="">— Don&apos;t add to a collection —</option>
+              {collectionNames.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+              <option value="__new__">➕ Create a new collection…</option>
+            </select>
+            {collectionChoice === "__new__" && (
+              <input
+                value={newCollection}
+                onChange={(e) => setNewCollection(e.target.value)}
+                placeholder="New collection name"
+                autoFocus
+                className="mt-2 h-9 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+              />
+            )}
+          </div>
+
           <input
             ref={fileRef}
             type="file"
             accept=".xlsx"
-            className="mt-4 block w-full text-sm text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-neutral-700 hover:file:bg-neutral-200"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void preview(f);
+            }}
           />
           <button
-            onClick={runImport}
-            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
             className="mt-4 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60"
           >
-            {importing ? "Importing…" : "Upload & import"}
+            {uploading && !summary ? "Reading…" : "Choose a file"}
           </button>
         </section>
       </div>
 
-      {result && (
+      {summary && (
         <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
-          <h2 className="text-lg font-semibold text-neutral-900">Import results</h2>
-          <div className="mt-3 flex flex-wrap gap-4 text-sm">
-            <span className="rounded-full bg-neutral-100 px-3 py-1">Total: {result.total}</span>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">Created: {result.created}</span>
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">Updated: {result.updated}</span>
-            <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">Failed: {result.failed}</span>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-neutral-900">
+              {summary.dryRun ? "Preview" : "Import result"}
+              {fileName && <span className="text-neutral-400"> — {fileName}</span>}
+            </h2>
+            {summary.dryRun && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={cancelPreview}
+                  disabled={uploading}
+                  className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:border-neutral-900 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => pendingFile && applyChunked(pendingFile)}
+                  disabled={uploading || !pendingFile || summary.created + summary.updated === 0}
+                  className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50"
+                >
+                  {uploading ? (progress ? `Applying ${progress.done}/${progress.total}…` : "Applying…") : "Apply import"}
+                </button>
+              </div>
+            )}
           </div>
-          {result.failed > 0 && (
-            <div className="mt-4 max-h-64 overflow-y-auto rounded-lg border border-neutral-200">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
-                  <tr>
-                    <th className="px-3 py-2">Product</th>
-                    <th className="px-3 py-2">Error</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {result.results
-                    .filter((r) => !r.ok)
-                    .map((r, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-2 text-neutral-700">{r.title}</td>
-                        <td className="px-3 py-2 text-red-600">{r.error}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+
+          {summary.dryRun && (
+            <p className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              Nothing has been written yet. Check the rows below, then press <strong>Apply import</strong>.
+            </p>
           )}
+
+          <div className="mb-4 flex flex-wrap gap-3 text-sm">
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">{summary.dryRun ? "Will create" : "Created"}: {summary.created}</span>
+            <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-700">{summary.dryRun ? "Will change" : "Updated"}: {summary.updated}</span>
+            {summary.skipped > 0 && <span className="rounded-full bg-neutral-100 px-3 py-1 text-neutral-600">No change: {summary.skipped}</span>}
+            <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">{summary.dryRun ? "Will fail" : "Failed"}: {summary.failed}</span>
+            <span className="rounded-full bg-neutral-100 px-3 py-1 text-neutral-600">Rows: {summary.total}</span>
+          </div>
+
+          <div className="max-h-96 overflow-y-auto rounded-lg border border-neutral-200">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-neutral-50 text-xs uppercase text-neutral-500">
+                <tr>
+                  <th className="px-3 py-2">Row</th>
+                  <th className="px-3 py-2">Product</th>
+                  <th className="px-3 py-2">Result</th>
+                  <th className="px-3 py-2">Detail</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {summary.results.map((r, i) => (
+                  <tr key={`${r.row}-${i}`} className={!r.ok ? "bg-red-50/50" : undefined}>
+                    <td className="px-3 py-2 text-neutral-400">{r.row}</td>
+                    <td className="px-3 py-2 text-neutral-800"><span className="block max-w-xs truncate">{r.title}</span></td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={
+                          "rounded-full px-2 py-0.5 text-xs font-medium " +
+                          (r.action === "created" ? "bg-emerald-100 text-emerald-700"
+                            : r.action === "updated" ? "bg-sky-100 text-sky-700"
+                            : r.action === "failed" ? "bg-red-100 text-red-700"
+                            : "bg-neutral-100 text-neutral-600")
+                        }
+                      >
+                        {r.action}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-neutral-500">
+                      {r.changes && r.changes.length ? (
+                        <span className="flex flex-wrap gap-1">
+                          {r.changes.map((ch, j) => (
+                            <span key={j} className="rounded bg-sky-50 px-1.5 py-0.5 text-[11px] text-sky-700">{ch}</span>
+                          ))}
+                        </span>
+                      ) : (
+                        r.error ?? (r.collections?.length ? "" : "—")
+                      )}
+                      {r.collections && r.collections.length > 0 && (
+                        <span className="mt-1 flex flex-wrap items-center gap-1">
+                          <span className="text-[11px] text-neutral-400">→</span>
+                          {r.collections.map((c, j) => (
+                            <span key={j} className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">{c}</span>
+                          ))}
+                        </span>
+                      )}
+                      {r.duplicateOf && (
+                        <span className="mt-1 block">
+                          <span
+                            className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800"
+                            title="A product with this SKU or name already exists. This row still creates a new product — merge them afterwards from Inventory if it's the same item."
+                          >
+                            ⚠ Possible duplicate of “{r.duplicateOf}”
+                          </span>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
