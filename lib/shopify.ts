@@ -55,39 +55,86 @@ async function getAccessToken(): Promise<string> {
   return cachedToken;
 }
 
+// Shopify's GraphQL API is rate-limited on a leaky bucket of query cost. Ask
+// for too much too fast and it answers HTTP 200 with an errors[] entry whose
+// code is THROTTLED — not an HTTP error, and not a permanent one. Treated as a
+// failure it would abandon a bulk job part-way through, which on an import
+// means half a catalogue written and the operator none the wiser.
+//
+// So: wait and try again. Bulk work is allowed to be slow; it is not allowed to
+// stop halfway.
+const MAX_ATTEMPTS = 6;
+const BASE_DELAY_MS = 600;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+type GraphQLError = {
+  message: string;
+  extensions?: { code?: string };
+};
+
+function isThrottled(errors: GraphQLError[]): boolean {
+  return errors.some(
+    (e) => e.extensions?.code === "THROTTLED" || /throttl/i.test(e.message),
+  );
+}
+
+/** Transient HTTP: rate limit, and the 5xx family Shopify emits under load. */
+const retriableStatus = (s: number) => s === 429 || s === 502 || s === 503 || s === 504;
+
 export async function adminGraphQL<T = unknown>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
   const token = await getAccessToken();
+  let lastError = "";
 
-  const res = await fetch(
-    `https://${DOMAIN}/admin/api/${VERSION}/graphql.json`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": token,
-      },
-      body: JSON.stringify({ query, variables }),
-      cache: "no-store",
-    },
-  );
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // Exponential backoff with jitter, so parallel workers that get throttled
+    // together don't all come back at the same instant and throttle again.
+    if (attempt > 1) {
+      const backoff = BASE_DELAY_MS * 2 ** (attempt - 2);
+      await sleep(backoff + Math.random() * 250);
+    }
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new ShopifyError(`Shopify HTTP ${res.status}: ${text.slice(0, 300)}`);
+    let res: Response;
+    try {
+      res = await fetch(`https://${DOMAIN}/admin/api/${VERSION}/graphql.json`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": token,
+        },
+        body: JSON.stringify({ query, variables }),
+        cache: "no-store",
+      });
+    } catch (e) {
+      // A dropped connection mid-import is worth another go.
+      lastError = e instanceof Error ? e.message : "Network error";
+      if (attempt < MAX_ATTEMPTS) continue;
+      throw new ShopifyError(`Shopify unreachable: ${lastError}`);
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      lastError = `Shopify HTTP ${res.status}: ${text.slice(0, 300)}`;
+      if (retriableStatus(res.status) && attempt < MAX_ATTEMPTS) continue;
+      throw new ShopifyError(lastError);
+    }
+
+    const json = (await res.json()) as { data?: T; errors?: GraphQLError[] };
+
+    if (json.errors?.length) {
+      lastError = json.errors.map((e) => e.message).join("; ");
+      // Only throttling is worth repeating — a bad query will fail identically
+      // every time, and retrying it just delays the error by several seconds.
+      if (isThrottled(json.errors) && attempt < MAX_ATTEMPTS) continue;
+      throw new ShopifyError(lastError);
+    }
+    return json.data as T;
   }
 
-  const json = (await res.json()) as {
-    data?: T;
-    errors?: { message: string }[];
-  };
-
-  if (json.errors?.length) {
-    throw new ShopifyError(json.errors.map((e) => e.message).join("; "));
-  }
-  return json.data as T;
+  throw new ShopifyError(lastError || "Shopify request failed.");
 }
 
 // ---------------- Types ----------------

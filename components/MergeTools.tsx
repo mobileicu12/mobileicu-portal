@@ -234,6 +234,8 @@ export function DuplicatesModal({
 }) {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
+  const [nameClashes, setNameClashes] = useState<{ key: string; members: { id: string; title: string; sku: string; barcode: string }[] }[]>([]);
+  const [scan, setScan] = useState<{ scanned: number; truncated: boolean }>({ scanned: 0, truncated: false });
   const [mergeIds, setMergeIds] = useState<string[] | null>(null);
   const [strategy, setStrategy] = useState<"newest" | "oldest">("newest");
   const [batchBusy, setBatchBusy] = useState(false);
@@ -247,6 +249,8 @@ export function DuplicatesModal({
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Could not scan for duplicates.");
       setGroups(d.groups ?? []);
+      setNameClashes(d.nameClashes ?? []);
+      setScan({ scanned: d.scanned ?? 0, truncated: !!d.truncated });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not scan for duplicates.");
     } finally {
@@ -258,10 +262,15 @@ export function DuplicatesModal({
     if (open) void load();
   }, [open, load]);
 
+  const certain = groups.filter((g) => g.confidence === "certain");
   const mergeAll = async () => {
     if (
       !window.confirm(
-        `Merge all ${groups.length} groups, keeping the ${strategy} of each and removing the rest? The kept product's details win. This cannot be undone.`,
+        `Merge ${certain.length} confirmed group${certain.length === 1 ? "" : "s"}, keeping the ${strategy} of each and removing the rest? ` +
+        `The kept product's details win. This cannot be undone.` +
+        (groups.length > certain.length
+          ? `\n\nThe ${groups.length - certain.length} name-only match${groups.length - certain.length === 1 ? "" : "es"} will be left for you to check by hand — nothing but the name says they are the same product.`
+          : ""),
       )
     )
       return;
@@ -297,15 +306,24 @@ export function DuplicatesModal({
           <div className="max-h-[60vh] overflow-y-auto p-5">
             {loading ? (
               <p className="py-6 text-center text-sm text-muted">Scanning your catalog…</p>
-            ) : groups.length === 0 ? (
+            ) : groups.length === 0 && nameClashes.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted">
-                No duplicates found — no two products share a SKU or an identical name.
+                No duplicates in {scan.scanned.toLocaleString()} products — nothing shares a barcode or SKU,
+                and no two names match without something telling them apart.
               </p>
             ) : (
               <div className="space-y-3">
+                {scan.truncated && (
+                  <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                    Only the first {scan.scanned.toLocaleString()} products were scanned, so this list is incomplete.
+                  </p>
+                )}
                 <p className="text-sm text-muted">
-                  {groups.length} group{groups.length === 1 ? "" : "s"} look alike. Merge each below, or
-                  resolve them all at once.
+                  Scanned {scan.scanned.toLocaleString()} products.{" "}
+                  {groups.length > 0
+                    ? `${certain.length} group${certain.length === 1 ? "" : "s"} confirmed by barcode or SKU` +
+                      (groups.length > certain.length ? `, ${groups.length - certain.length} matched on name alone.` : ".")
+                    : "No duplicates."}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm">
                   <span className="font-medium text-ink">Merge all — keep the</span>
@@ -323,7 +341,7 @@ export function DuplicatesModal({
                     disabled={batchBusy}
                     className="ml-auto rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accentfg disabled:opacity-50"
                   >
-                    {batchBusy ? "Merging…" : `Merge all ${groups.length} groups`}
+                    {batchBusy ? "Merging…" : `Merge ${certain.length} confirmed group${certain.length === 1 ? "" : "s"}`}
                   </button>
                 </div>
 
@@ -332,6 +350,37 @@ export function DuplicatesModal({
                 {groups.map((g, i) => (
                   <GroupCard key={i} group={g} onMerge={() => setMergeIds(g.members.map((m) => m.id))} />
                 ))}
+
+                {/* Same name, but a barcode or SKU says they are different
+                    products. Shown so they can be checked, deliberately NOT
+                    counted as duplicates — merging these would delete real stock. */}
+                {nameClashes.length > 0 && (
+                  <div className="mt-5 rounded-xl border border-line bg-subtle p-3">
+                    <p className="text-sm font-semibold text-ink">
+                      {nameClashes.length} to look at — alike, but not duplicates
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      These share a name, but their barcodes or SKUs differ, so the portal treats them as
+                      separate products. If any pair really is one product, fix the identifier and scan again.
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {nameClashes.map((c, i) => (
+                        <div key={i} className="rounded-lg border border-line bg-bg p-2 text-xs">
+                          <p className="font-medium text-ink">{c.key}</p>
+                          <ul className="mt-1 space-y-0.5 text-muted">
+                            {c.members.map((m) => (
+                              <li key={m.id}>
+                                {m.title}
+                                {m.sku ? ` · SKU ${m.sku}` : ""}
+                                {m.barcode ? ` · barcode ${m.barcode}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -367,11 +416,12 @@ function GroupCard({ group, onMerge }: { group: DuplicateGroup; onMerge: () => v
     <div className="rounded-lg border border-line bg-bg p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className={`${badge} ${group.reason === "sku" ? "bg-amber-100 text-amber-700" : "bg-neutral-200 text-neutral-600"}`}>
-            {group.reason === "sku" ? "Same SKU" : "Same name"}
+          <span className={`${badge} ${group.confidence === "certain" ? "bg-amber-100 text-amber-700" : "bg-neutral-200 text-neutral-600"}`}>
+            {group.reason === "barcode" ? "Same barcode" : group.reason === "sku" ? "Same SKU" : "Same name only"}
           </span>
           <span className="text-xs text-muted">
-            {group.reason === "sku" ? group.key.toUpperCase() : group.key} · {group.members.length} products
+            {group.reason === "title" ? group.key : group.key.toUpperCase()} · {group.members.length} products
+            {group.confidence === "likely" && <span className="ml-1 text-amber-600">· check before merging</span>}
           </span>
         </div>
         <button onClick={onMerge} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accentfg">

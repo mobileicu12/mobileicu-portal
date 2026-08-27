@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BRAND_SLUG } from "@/lib/brand";
 import { downloadFile } from "@/lib/download";
 import { runLabel, type ImportRunSummary } from "@/lib/import-types";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 type ResultRow = {
   row: number;
@@ -69,6 +70,10 @@ export default function ImportExportPage() {
   const [newCollection, setNewCollection] = useState("");
   const [collectionNames, setCollectionNames] = useState<string[]>([]);
   const assignCollection = collectionChoice === "__new__" ? newCollection.trim() : collectionChoice;
+
+  // 906 rows of results is a table nobody can read in one go.
+  const resultPaging = usePaging(summary?.results ?? [], 20);
+  const runPaging = usePaging(runs, 10);
 
   const loadRuns = useCallback(() => {
     return fetch("/api/import/runs")
@@ -423,7 +428,7 @@ export default function ImportExportPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {summary.results.map((r, i) => (
+                {resultPaging.rows.map((r, i) => (
                   <tr key={`${r.row}-${i}`} className={!r.ok ? "bg-red-50/50" : undefined}>
                     <td className="px-3 py-2 text-neutral-400">{r.row}</td>
                     <td className="px-3 py-2 text-neutral-800"><span className="block max-w-xs truncate">{r.title}</span></td>
@@ -474,6 +479,7 @@ export default function ImportExportPage() {
               </tbody>
             </table>
           </div>
+          <Pagination paging={resultPaging} noun="rows" />
         </section>
       )}
 
@@ -495,6 +501,7 @@ export default function ImportExportPage() {
         {runs.length === 0 ? (
           <p className="mt-4 text-sm text-neutral-400">No imports recorded yet.</p>
         ) : (
+          <>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500">
@@ -507,7 +514,7 @@ export default function ImportExportPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {runs.map((r) => (
+                {runPaging.rows.map((r) => (
                   <tr key={r.id}>
                     <td className="whitespace-nowrap px-3 py-3 text-neutral-500">{when(r.at)}</td>
                     <td className="px-3 py-3">
@@ -545,6 +552,8 @@ export default function ImportExportPage() {
               </tbody>
             </table>
           </div>
+          <Pagination paging={runPaging} noun="imports" />
+          </>
         )}
       </section>
     </div>
