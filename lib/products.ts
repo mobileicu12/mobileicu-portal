@@ -1,6 +1,7 @@
 // Product read/write helpers for the portal (export, import, create/edit).
 import { adminGraphQL, getLocations, setAvailable, ShopifyError } from "./shopify";
 import { tagsForChannelKeys } from "./channels";
+import { mapLimit } from "./async";
 
 export type ProductRecord = {
   handle: string;
@@ -489,15 +490,50 @@ export async function deleteProduct(id: string): Promise<void> {
   }
 }
 
+// Rows are written a few at a time rather than strictly one after another.
+//
+// Each row costs four Shopify round trips (read, write, metafields, stock), so
+// one-at-a-time made a 900-row sheet a genuinely long wait. This was sequential
+// to stay under the rate limit, which adminGraphQL now handles properly: it
+// backs off and retries on THROTTLED instead of failing. A small pool is the
+// difference between minutes and a quarter of them, and a burst that does get
+// throttled costs a short wait rather than a broken import.
+const IMPORT_CONCURRENCY = 4;
+
 export async function importRows(rows: ImportRow[], extraTags: string[] = []): Promise<UpsertResult[]> {
   const locations = await getLocations();
   const primary = locations[0]?.id ?? "";
   if (!primary) throw new ShopifyError("No active location found.");
-  const results: UpsertResult[] = [];
-  for (const row of rows) {
-    // Sequential to respect API rate limits.
-    results.push(await upsertProduct(row, primary, extraTags));
-  }
+
+  // Rows naming the same handle must keep their order: they are edits to ONE
+  // product, and run in parallel the later row's snapshot could be taken after
+  // the earlier row's write — recording a "before" state that never existed,
+  // and quietly making undo restore the wrong thing. So each handle becomes a
+  // lane processed in sheet order, and only separate lanes overlap. Rows with
+  // no handle create their own product, so each is a lane of its own.
+  const lanes: number[][] = [];
+  const laneOf = new Map<string, number>();
+  rows.forEach((row, i) => {
+    const handle = row.handle?.trim().toLowerCase();
+    if (!handle) {
+      lanes.push([i]);
+      return;
+    }
+    const existing = laneOf.get(handle);
+    if (existing === undefined) {
+      laneOf.set(handle, lanes.length);
+      lanes.push([i]);
+    } else {
+      lanes[existing].push(i);
+    }
+  });
+
+  const results = new Array<UpsertResult>(rows.length);
+  await mapLimit(lanes, IMPORT_CONCURRENCY, async (lane) => {
+    for (const i of lane) {
+      results[i] = await upsertProduct(rows[i], primary, extraTags);
+    }
+  });
   return results;
 }
 
