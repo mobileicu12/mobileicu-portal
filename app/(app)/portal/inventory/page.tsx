@@ -114,6 +114,9 @@ export default function InventoryPage() {
   const [stockFilter, setStockFilter] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
   const [collectionFilter, setCollectionFilter] = useState("");
+  // When the product was added to the catalogue.
+  const [addedFrom, setAddedFrom] = useState("");
+  const [addedTo, setAddedTo] = useState("");
   const [sortKey, setSortKey] = useState("TITLE");
   const [reverse, setReverse] = useState(false);
   const [allCols, setAllCols] = useState<{ id: string; title: string }[]>([]);
@@ -163,7 +166,15 @@ export default function InventoryPage() {
     load("", null, false);
   }, [load]);
 
-  function buildQuery(text: string, status: string, stock: string, channel: string, collection: string): string {
+  function buildQuery(
+    text: string,
+    status: string,
+    stock: string,
+    channel: string,
+    collection: string,
+    from = addedFrom,
+    to = addedTo,
+  ): string {
     const parts: string[] = [];
     if (text.trim()) parts.push(text.trim());
     if (status) parts.push(`status:${status}`);
@@ -172,6 +183,11 @@ export default function InventoryPage() {
     else if (stock === "in") parts.push(`inventory_total:>${lowStock}`);
     if (channel) parts.push(`tag:'channel:${channel}'`);
     if (collection) parts.push(`collection_id:${collection}`);
+    // When a product was added. Answers "what did that import actually put in?"
+    // — which is the only way to find products from a run whose record was lost.
+    // Local midnight either side, converted to UTC, because Shopify compares in UTC.
+    if (from) parts.push(`created_at:>='${new Date(`${from}T00:00:00`).toISOString()}'`);
+    if (to) parts.push(`created_at:<='${new Date(`${to}T23:59:59.999`).toISOString()}'`);
     return parts.join(" ");
   }
 
@@ -337,6 +353,25 @@ export default function InventoryPage() {
             <option value="">Any collection</option>
             {allCols.map((c) => <option key={c.id} value={c.id.split("/").pop()}>{c.title}</option>)}
           </select>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            Added
+            <input
+              type="date"
+              value={addedFrom}
+              max={addedTo || undefined}
+              onChange={(e) => { setAddedFrom(e.target.value); reload(buildQuery(query, statusFilter, stockFilter, channelFilter, collectionFilter, e.target.value, addedTo)); }}
+              className={inputCls}
+            />
+            to
+            <input
+              type="date"
+              value={addedTo}
+              min={addedFrom || undefined}
+              onChange={(e) => { setAddedTo(e.target.value); reload(buildQuery(query, statusFilter, stockFilter, channelFilter, collectionFilter, addedFrom, e.target.value)); }}
+              className={inputCls}
+            />
+          </label>
+
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">Sort</span>
             <select
@@ -355,8 +390,8 @@ export default function InventoryPage() {
             </select>
           </div>
           <ColumnChooser columns={STOCK_COLUMNS} isVisible={cols.isVisible} toggle={cols.toggle} />
-          {(statusFilter || stockFilter || channelFilter || collectionFilter) && (
-            <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); setCollectionFilter(""); reload(buildQuery(query, "", "", "", "")); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear filters</button>
+          {(statusFilter || stockFilter || channelFilter || collectionFilter || addedFrom || addedTo) && (
+            <button onClick={() => { setStatusFilter(""); setStockFilter(""); setChannelFilter(""); setCollectionFilter(""); setAddedFrom(""); setAddedTo(""); reload(buildQuery(query, "", "", "", "", "", "")); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear filters</button>
           )}
         </div>
       </div>
