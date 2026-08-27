@@ -454,6 +454,21 @@ it. `productSet` treats metafields as a list field and deletes entries not inclu
 the input, so sending only the handful of `custom` keys a spreadsheet carries would
 strip everything else off the product — including the portal's own metafields.
 
+### How rows are written
+
+Rows are applied a few at a time (`IMPORT_CONCURRENCY`, currently 4), not one
+after another. Each row costs four Shopify round trips — read, write,
+metafields, stock — so strictly sequential made a 900-row sheet a long wait.
+Overlapping is only safe because `adminGraphQL` backs off and retries on
+`THROTTLED` rather than failing.
+
+Rows naming the **same handle** are kept in sheet order. They are edits to one
+product, and run in parallel a later row's snapshot could be taken *after* an
+earlier row's write — recording a "before" state that never existed and quietly
+making undo restore the wrong thing. Each handle is therefore a lane processed
+in order; only separate lanes overlap. Rows with no handle create their own
+product, so each is a lane of its own.
+
 ### Finding duplicate products (`lib/merge.ts`)
 
 The rule that matters: **identifiers cut both ways.** A shared barcode or SKU
