@@ -489,6 +489,18 @@ making undo restore the wrong thing. Each handle is therefore a lane processed
 in order; only separate lanes overlap. Rows with no handle create their own
 product, so each is a lane of its own.
 
+### Finding what an import actually added
+
+Inventory has an **Added from / to** filter, which becomes
+`created_at:>='…' created_at:<='…'` on the Shopify product query. Dates are read
+as local midnight to local end-of-day and converted to UTC, because Shopify
+compares in UTC — in BST that means a day starts at `23:00Z` the evening before.
+
+It combines with the other filters, so "everything added on the 26th, in the
+Samsung Flexes collection" is one query. That is the only way to find the
+products from a run whose record was lost or predates run recording: filter to
+the window, select all, delete.
+
 ### Finding duplicate products (`lib/merge.ts`)
 
 The rule that matters: **identifiers cut both ways.** A shared barcode or SKU
