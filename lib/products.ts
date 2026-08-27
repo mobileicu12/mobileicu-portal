@@ -107,8 +107,10 @@ type ExportNode = {
 export async function getAllProductsForExport(queryFilter?: string): Promise<ProductRecord[]> {
   const out: ProductRecord[] = [];
   let after: string | null = null;
-  // Cap to keep within request limits; covers the full catalog comfortably.
-  for (let page = 0; page < 40; page++) {
+  // Pages to the end. The old ceiling of 40 pages stopped at 4,000 products
+  // without saying so, which quietly made an import preview treat everything
+  // past that as new — the same silent truncation the duplicate scan had.
+  for (let page = 0; page < 500; page++) {
     const data: {
       products: {
         pageInfo: { hasNextPage: boolean; endCursor: string | null };

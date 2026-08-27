@@ -26,6 +26,9 @@ type Summary = {
   results: ResultRow[];
   runId?: string;
   run?: ImportRunSummary | null;
+  /** Handle for the parsed sheet held server-side, so applying it needs no
+   *  further upload. */
+  stageId?: string;
 };
 
 type Progress = {
@@ -58,12 +61,15 @@ export default function ImportExportPage() {
   const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
   const [progress, setProgress] = useState<Progress | null>(null);
   // Where an interrupted import got to, so it can be carried on instead of
   // started again. Re-importing a sheet that half-landed doubles the catalogue.
-  const [resume, setResume] = useState<{ file: File; from: number; runId: string; total: number } | null>(null);
+  const [resume, setResume] = useState<{ from: number; runId: string; total: number } | null>(null);
+  // The uploaded sheet, parsed and parked server-side by the preview. Applying
+  // it sends this handle and a row range — not the workbook — so a 3,000-row
+  // import is 75 small requests instead of 75 uploads of the same file.
+  const [stageId, setStageId] = useState("");
   const [error, setError] = useState("");
   const [runs, setRuns] = useState<ImportRunSummary[]>([]);
   const [undoing, setUndoing] = useState("");
@@ -173,7 +179,7 @@ export default function ImportExportPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Import failed");
       setSummary(d as Summary);
-      setPendingFile(file);
+      setStageId(d.stageId ?? "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
@@ -195,7 +201,7 @@ export default function ImportExportPage() {
   // rows at row 440 because one request blipped is not a real answer to "import
   // any size in one go". Only when a chunk fails repeatedly does it stop — and
   // then it stops resumably, from exactly where it got to.
-  async function applyChunked(file: File, resumeFrom = 0, existingRunId = "") {
+  async function applyChunked(resumeFrom = 0, existingRunId = "") {
     const CHUNK = 40;
     const CHUNK_ATTEMPTS = 4;
     const runId = existingRunId || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -228,7 +234,8 @@ export default function ImportExportPage() {
         for (let attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
           try {
             const fd = new FormData();
-            fd.append("file", file);
+            fd.append("stageId", stageId);
+            fd.append("filename", fileName);
             fd.append("from", String(from));
             fd.append("to", String(from + CHUNK));
             fd.append("runId", runId);
@@ -268,7 +275,6 @@ export default function ImportExportPage() {
         done = Math.min(from, total);
         setProgress({ done, total, from: done, to: done, startedAt, created: agg.created, updated: agg.updated, failed: agg.failed });
       }
-      setPendingFile(null);
       setFlash(`Imported: ${agg.created} created, ${agg.updated} updated${agg.failed ? `, ${agg.failed} failed` : ""}.`);
       await loadRuns();
     } catch (e) {
@@ -279,7 +285,7 @@ export default function ImportExportPage() {
           : why,
       );
       // Everything needed to pick up exactly where it stopped.
-      if (done > 0 && done < agg.total) setResume({ file, from: done, runId, total: agg.total });
+      if (done > 0 && done < agg.total) setResume({ from: done, runId, total: agg.total });
       await loadRuns();
     } finally {
       setUploading(false);
@@ -288,9 +294,10 @@ export default function ImportExportPage() {
   }
 
   function cancelPreview() {
-    setPendingFile(null);
     setSummary(null);
     setFileName("");
+    setStageId("");
+    setResume(null);
   }
 
   return (
@@ -322,7 +329,7 @@ export default function ImportExportPage() {
               Leave it
             </button>
             <button
-              onClick={() => void applyChunked(resume.file, resume.from, resume.runId)}
+              onClick={() => void applyChunked(resume.from, resume.runId)}
               className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-500"
             >
               Carry on from row {(resume.from + 1).toLocaleString()}
@@ -427,8 +434,8 @@ export default function ImportExportPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => pendingFile && applyChunked(pendingFile)}
-                  disabled={uploading || !pendingFile || summary.created + summary.updated === 0}
+                  onClick={() => void applyChunked()}
+                  disabled={uploading || !stageId || summary.created + summary.updated === 0}
                   className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-50"
                 >
                   {uploading ? (progress ? `Applying ${progress.done}/${progress.total}…` : "Applying…") : "Apply import"}

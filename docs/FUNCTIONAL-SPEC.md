@@ -454,6 +454,26 @@ it. `productSet` treats metafields as a list field and deletes entries not inclu
 the input, so sending only the handful of `custom` keys a spreadsheet carries would
 strip everything else off the product — including the portal's own metafields.
 
+### Uploading once (`lib/import-stage.ts`)
+
+The file is uploaded and parsed **once**, on the preview. The parsed rows are
+parked in shop metafields, paged 250 at a time:
+
+```
+portal.import_stage_<id>          { total, pageSize, at }
+portal.import_stage_<id>_<page>   that page's parsed rows
+```
+
+Every apply request then names the stage and a row range and carries no file at
+all. Before this, each chunk re-uploaded and re-parsed the whole workbook — a
+3,000-row sheet meant seventy-five uploads of the same megabyte, which is both
+the slow part and the likeliest source of the dropped connections that stopped
+imports part-way. Measured on a 1.4MB sheet: one 1,368KB upload, then 75 apply
+requests totalling 40KB, where the old path would have re-sent 100MB.
+
+The stage is deleted when the last slice lands. Stages from uploads that were
+never applied are swept after a day, when the next import is staged.
+
 ### How rows are written
 
 Rows are applied a few at a time (`IMPORT_CONCURRENCY`, currently 4), not one
