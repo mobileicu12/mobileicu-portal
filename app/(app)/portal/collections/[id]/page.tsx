@@ -24,7 +24,6 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
   const router = useRouter();
   const [c, setC] = useState<Detail | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
   const [hasNext, setHasNext] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -51,24 +50,43 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
   const [locationId, setLocationId] = useState("");
   const [manualCols, setManualCols] = useState<Col[]>([]);
 
-  function load(after?: string | null, append = false) {
+  /**
+   * Pull the whole collection in, a page at a time.
+   *
+   * Shopify hands back 100 products per request, and a real collection here runs
+   * to 500+. Loading one page and offering a "Load more" button meant paging a
+   * collection was ten manual clicks, and filtering or sorting only ever saw the
+   * part that had been clicked in — a search for a product on page six found
+   * nothing. So the page keeps asking until Shopify says there is no more.
+   *
+   * Each page is appended as it lands, so the table fills in front of you rather
+   * than showing nothing until the last one arrives.
+   */
+  async function loadAll() {
     setLoading(true);
-    fetch(`/api/collections/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`)
-      .then((r) => r.json())
-      .then((d) => {
+    setError("");
+    let after: string | null = null;
+    try {
+      // 60 pages is 6,000 products — a bound so a bad cursor can't spin forever.
+      for (let page = 0; page < 60; page++) {
+        const res = await fetch(`/api/collections/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`);
+        const d = await res.json();
         if (d.error) { setError(d.error); return; }
         const col: Detail = d.collection;
-        setC(col);
-        setTitle(col.title);
-        setDesc(col.descriptionHtml);
-        setProducts((prev) => append ? [...prev, ...col.products] : col.products);
-        setCursor(col.endCursor);
+        if (page === 0) { setC(col); setTitle(col.title); setDesc(col.descriptionHtml); }
+        const first = page === 0;
+        setProducts((prev) => (first ? col.products : [...prev, ...col.products]));
         setHasNext(col.hasNextPage);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+        if (!col.hasNextPage) return;
+        after = col.endCursor;
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load the collection.");
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [id]);
   useEffect(() => {
     fetch("/api/locations").then((r) => r.json()).then((d) => { const l = d.locations ?? []; setLocations(l); if (l[0]) setLocationId(l[0].id); }).catch(() => {});
     fetch("/api/collections").then((r) => r.json()).then((d) => setManualCols((d.collections ?? []).filter((x: Col) => !x.smart && x.id !== (id.startsWith("gid") ? id : `gid://shopify/Collection/${id}`)))).catch(() => {});
@@ -106,7 +124,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed"); }
       setQ(""); setHits([]);
       setFlash(`Added “${h.title}”.`);
-      setTimeout(() => load(), 800);
+      setTimeout(() => { void loadAll(); }, 800);
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setBusy(false); }
   }
   function onSearch(v: string) {
@@ -144,7 +162,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Bulk action failed");
       setFlash(`Done: ${d.ok} updated${d.failed ? `, ${d.failed} failed` : ""}.`);
-      clearSel(); load();
+      clearSel(); void loadAll();
     } catch (e) { setError(e instanceof Error ? e.message : "Bulk action failed"); } finally { setBusy(false); }
   }
 
@@ -244,7 +262,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
 
           {/* filter ribbon */}
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <input value={fSearch} onChange={(e) => setFSearch(e.target.value)} placeholder="Filter loaded products…" className={`${inputCls} w-52`} />
+            <input value={fSearch} onChange={(e) => setFSearch(e.target.value)} placeholder="Filter products…" className={`${inputCls} w-52`} />
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={inputCls}>
               <option value="">Any status</option>
               <option value="ACTIVE">Active</option>
@@ -257,7 +275,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
               <option value="out">Out of stock</option>
             </select>
             {(fSearch || fStatus || fStock) && <button onClick={() => { setFSearch(""); setFStatus(""); setFStock(""); }} className="rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink">Clear</button>}
-            <span className="ml-auto text-xs text-muted">{shown.length} shown{hasNext ? " (of loaded)" : ""}</span>
+            <span className="ml-auto text-xs text-muted">{shown.length} match{shown.length === 1 ? "" : "es"}{hasNext ? " so far" : ""}</span>
           </div>
 
           <SelectionBar
@@ -306,9 +324,17 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
             </table>
           </div>
           <Pagination paging={paging} noun="products" />
-          {hasNext && (
+          {/* Still arriving. The rows already here are usable and pageable while
+              the rest comes in — the count just keeps climbing. */}
+          {loading && (
+            <p className="mt-2 text-center text-xs text-muted">
+              Loading the rest of this collection… {products.length}
+              {c?.productsCount ? ` of ${c.productsCount}` : ""} so far
+            </p>
+          )}
+          {!loading && hasNext && (
             <div className="mt-4 flex justify-center">
-              <button onClick={() => load(cursor, true)} disabled={loading} className="rounded-lg border border-line px-5 py-2 text-sm text-ink hover:border-accent disabled:opacity-60">{loading ? "Loading…" : "Load more"}</button>
+              <button onClick={loadAll} className="rounded-lg border border-line px-5 py-2 text-sm text-ink hover:border-accent">Load the rest</button>
             </div>
           )}
         </div>
