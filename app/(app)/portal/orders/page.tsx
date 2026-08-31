@@ -8,6 +8,7 @@ import { useCanSeeFinance } from "@/lib/use-me";
 import { FinanceLockBar } from "@/components/Finance";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import Pagination, { usePaging } from "@/components/Pagination";
+import SelectionBar from "@/components/SelectionBar";
 
 const ORDER_COLUMNS: ColumnDef[] = [
   { key: "order", label: "Order", locked: true },
@@ -115,9 +116,7 @@ export default function OrdersPage() {
   }, [filtered, sort.key, sort.dir]);
   const paging = usePaging(sorted, 50);
 
-  const allSelected = filtered.length > 0 && filtered.every((o) => selected.has(o.id));
   function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
-  function toggleAll() { setSelected(allSelected ? new Set() : new Set(filtered.map((o) => o.id))); }
   function clearSel() { setSelected(new Set()); }
   async function bulkAction(action: "archive" | "unarchive" | "delete") {
     const ids = Array.from(selected);
@@ -198,11 +197,21 @@ export default function OrdersPage() {
       {/* Scrolls sideways on narrow screens, but not vertically: with paging below,
           an inner 70vh scrollbar meant two scrollbars over one list and a pager
           stranded past the bottom of the box. */}
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <SelectionBar
+        className="mt-4"
+        pageKeys={paging.rows.map((o) => o.id)}
+        allKeys={filtered.map((o) => o.id)}
+        selected={selected}
+        onChange={setSelected}
+        noun="orders"
+      />
+
+      <div className="mt-2 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
-              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
+              {/* The tick box is in the bar above, where it can say what it takes. */}
+              <th className="px-4 py-3 w-10"></th>
               <th className="px-4 py-3"><button onClick={() => sort.onSort("order")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Order{sort.arrow("order")}</button></th>
               {cols.isVisible("customer") && <th className="px-4 py-3"><button onClick={() => sort.onSort("customer")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Customer{sort.arrow("customer")}</button></th>}
               {cols.isVisible("source") && <th className="px-4 py-3"><button onClick={() => sort.onSort("source")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Source{sort.arrow("source")}</button></th>}

@@ -9,6 +9,7 @@ import { buildCustomerDayItemisedDoc, type ItemisedBill } from "@/lib/report-pdf
 import { loadBusiness } from "@/lib/business";
 import { BUSINESS } from "@/lib/business";
 import Pagination, { usePaging } from "@/components/Pagination";
+import SelectionBar from "@/components/SelectionBar";
 
 type TodayCustomer = { id: string; name: string; email: string; phone: string; todayTotal: number; todayPaid: number; todayOutstanding: number; accountOutstanding: number; bills: ItemisedBill[] };
 
@@ -139,9 +140,7 @@ export default function CustomersPage() {
       .finally(() => setLoading(false));
   };
 
-  const allSelected = customers.length > 0 && selected.size === customers.length;
   function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
-  function toggleAll() { setSelected(allSelected ? new Set() : new Set(customers.map((c) => c.id))); }
   function clearSel() { setSelected(new Set()); setSegMode(false); setSegDraft([]); }
 
   async function runBulk(action: "addSegments" | "removeSegments" | "delete") {
@@ -288,11 +287,21 @@ export default function CustomersPage() {
       {/* Scrolls sideways on narrow screens, but not vertically: with paging below,
           an inner 70vh scrollbar meant two scrollbars over one list and a pager
           stranded past the bottom of the box. */}
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <SelectionBar
+        className="mt-4"
+        pageKeys={paging.rows.map((c) => c.id)}
+        allKeys={shown.map((c) => c.id)}
+        selected={selected}
+        onChange={setSelected}
+        noun="customers"
+      />
+
+      <div className="mt-2 overflow-x-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
-              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
+              {/* The tick box is in the bar above, where it can say what it takes. */}
+              <th className="px-4 py-3 w-10"></th>
               <th className="px-4 py-3"><button onClick={() => sort.onSort("name")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Name{sort.arrow("name")}</button></th>
               {cols.isVisible("segment") && <th className="px-4 py-3">Segment</th>}
               {cols.isVisible("company") && <th className="px-4 py-3"><button onClick={() => sort.onSort("company")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Company{sort.arrow("company")}</button></th>}

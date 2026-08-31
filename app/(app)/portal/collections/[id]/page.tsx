@@ -4,6 +4,8 @@ import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CHANNELS } from "@/lib/channels";
+import Pagination, { usePaging } from "@/components/Pagination";
+import SelectionBar from "@/components/SelectionBar";
 
 type Product = { id: string; title: string; image: string | null; status: string; sku: string; price: string; available: number; variantId: string | null; inventoryItemId: string | null };
 type Detail = {
@@ -80,9 +82,10 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
     return true;
   }), [products, fStatus, fStock, fSearch]);
 
-  const allSelected = shown.length > 0 && shown.every((p) => selected.has(p.id));
+  // A collection can hold hundreds of products; the page shows 50 at a time.
+  const paging = usePaging(shown, 50);
+
   function toggleRow(pid: string) { setSelected((prev) => { const n = new Set(prev); n.has(pid) ? n.delete(pid) : n.add(pid); return n; }); }
-  function toggleAll() { setSelected(allSelected ? new Set() : new Set(shown.map((p) => p.id))); }
   function clearSel() { setSelected(new Set()); setEditMode(false); setChannelDraft([]); }
   const selProducts = useMemo(() => products.filter((p) => selected.has(p.id)), [products, selected]);
 
@@ -257,18 +260,29 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
             <span className="ml-auto text-xs text-muted">{shown.length} shown{hasNext ? " (of loaded)" : ""}</span>
           </div>
 
+          <SelectionBar
+            className="mb-2"
+            pageKeys={paging.rows.map((p) => p.id)}
+            allKeys={shown.map((p) => p.id)}
+            selected={selected}
+            onChange={setSelected}
+            noun="products"
+          />
+
           <div className="overflow-hidden rounded-2xl border border-line bg-surface">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-24 z-10 border-b border-line bg-subtle text-xs uppercase text-muted">
                 <tr>
-                  <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
+                  {/* The tick box moved out of the header and into the bar above,
+                      where there is room to say what it selects. */}
+                  <th className="px-4 py-3 w-10"></th>
                   <th className="px-4 py-3">Product</th>
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3 text-right">Stock</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {shown.map((p) => (
+                {paging.rows.map((p) => (
                   <tr key={p.id} className={selected.has(p.id) ? "bg-accent/10" : "hover:bg-subtle"}>
                     <td className="px-4 py-3"><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleRow(p.id)} className="h-4 w-4 accent-amber-500" /></td>
                     <td className="px-4 py-3">
@@ -291,6 +305,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
               </tbody>
             </table>
           </div>
+          <Pagination paging={paging} noun="products" />
           {hasNext && (
             <div className="mt-4 flex justify-center">
               <button onClick={() => load(cursor, true)} disabled={loading} className="rounded-lg border border-line px-5 py-2 text-sm text-ink hover:border-accent disabled:opacity-60">{loading ? "Loading…" : "Load more"}</button>

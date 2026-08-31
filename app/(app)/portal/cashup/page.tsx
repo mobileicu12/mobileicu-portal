@@ -5,6 +5,7 @@ import { downloadFile } from "@/lib/download";
 import { buildCashUpDoc, cashUpFilename } from "@/lib/cashup-pdf";
 import { sheetTotals, emptyCashUp, bucket, round2, type CashUp, type CashUpLine, type DayTakings } from "@/lib/cashup-types";
 import { loadBusiness, BUSINESS } from "@/lib/business";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 const gbp = (n: number) => `£${(Number(n) || 0).toFixed(2)}`;
 // Local, not UTC. toISOString() would hand back yesterday for the first hour of
@@ -19,6 +20,7 @@ export default function CashUpPage() {
   const [date, setDate] = useState(todayStr());
   const [takings, setTakings] = useState<DayTakings | null>(null);
   const [history, setHistory] = useState<CashUp[]>([]);
+  const historyPaging = usePaging(history, 20);
   const [savedAt, setSavedAt] = useState<{ by: string; at: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -606,7 +608,7 @@ export default function CashUpPage() {
                     <tr><th className="px-4 py-3">Day</th><th className="px-4 py-3">Opening</th><th className="px-4 py-3">Counted</th><th className="px-4 py-3">By</th><th className="px-4 py-3">Note</th></tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {history.slice(0, 30).map((c) => (
+                    {historyPaging.rows.map((c) => (
                       <tr key={c.date} className="cursor-pointer hover:bg-subtle" onClick={() => { setDate(c.date); setLoading(true); }}>
                         <td className="whitespace-nowrap px-4 py-3 font-medium text-ink">{dayLabel(c.date)}</td>
                         <td className="px-4 py-3 text-muted">{gbp(c.openingFloat)}</td>
@@ -618,6 +620,9 @@ export default function CashUpPage() {
                   </tbody>
                 </table>
               </div>
+              {/* Was cut off at 30 days: everything older was in the record and
+                  simply not reachable from the screen. */}
+              <Pagination paging={historyPaging} noun="days" />
             </div>
           )}
         </>

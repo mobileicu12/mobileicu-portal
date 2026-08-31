@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { EXPENSE_CATEGORIES, type Expense } from "@/lib/expenses";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 const PERIODS: { key: string; label: string }[] = [
   { key: "today", label: "Today" },
@@ -55,6 +56,8 @@ export default function ExpensesPage() {
       return true;
     });
   }, [rows, period, cat, q]);
+
+  const paging = usePaging(shown, 20);
 
   const total = shown.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const byCat = useMemo(() => {
@@ -138,7 +141,7 @@ export default function ExpensesPage() {
           <p className="px-4 py-8 text-center text-sm text-neutral-400">No expenses{rows.length ? " match these filters" : " yet — add your first above"}.</p>
         ) : (
           <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {shown.map((r) => (
+            {paging.rows.map((r) => (
               <div key={r.id} className="group flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <div className="min-w-0">
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">
@@ -157,6 +160,9 @@ export default function ExpensesPage() {
           </div>
         )}
       </div>
+      {/* The totals and the CSV export above still run over every row the filters
+          match — only the list on screen is sliced. */}
+      <Pagination paging={paging} noun="expenses" />
     </div>
   );
 }
