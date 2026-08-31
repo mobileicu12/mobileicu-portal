@@ -247,6 +247,105 @@ export async function listCustomers(q?: string, segment?: SegmentKey): Promise<C
   }));
 }
 
+// ---- Backup -------------------------------------------------------------
+
+export type CustomerBackupRow = CustomerSummary & {
+  firstName: string;
+  lastName: string;
+  note: string;
+  tags: string[];
+  tradeCode: string;
+  openingBalance: number;
+  address: string[];
+  ledger: Ledger;
+};
+
+/**
+ * Every customer, with the parts of them that exist ONLY in metafields — the
+ * payment ledger, opening balance, trade code, company.
+ *
+ * `listCustomers` takes the first 100 by last-updated, which is right for a
+ * screen and wrong for a backup: past 100 customers the rest simply weren't in
+ * the file, so their ledgers had no copy anywhere. This pages the whole book.
+ *
+ * It also reads the ledgers in the same query as the customer instead of calling
+ * getCustomer once per row, which is what made the old backup 500 round-trips
+ * (and is why it had to stop at 500 in the first place).
+ */
+export async function listAllCustomersWithFinancials(cap = 20_000): Promise<CustomerBackupRow[]> {
+  const rows: CustomerBackupRow[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < 250 && rows.length < cap; page++) {
+    const d: {
+      customers: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: {
+          id: string; displayName: string; firstName: string | null; lastName: string | null;
+          email: string | null; phone: string | null; note: string | null; numberOfOrders: string;
+          tags: string[]; updatedAt: string;
+          amountSpent: { amount: string } | null;
+          company: { value: string } | null;
+          tradeCode: { value: string } | null;
+          opening: { value: string } | null;
+          ledger: { value: string } | null;
+          defaultAddress: { address1: string | null; address2: string | null; city: string | null; zip: string | null; province: string | null; country: string | null } | null;
+          lastOrder: { createdAt: string } | null;
+        }[];
+      };
+    } = await adminGraphQL(
+      `query($after: String) {
+        customers(first: 100, after: $after, sortKey: ID) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id displayName firstName lastName email phone note numberOfOrders tags updatedAt
+            lastOrder { createdAt }
+            amountSpent { amount }
+            company: metafield(namespace: "${LEDGER_NS}", key: "company") { value }
+            tradeCode: metafield(namespace: "${LEDGER_NS}", key: "trade_code") { value }
+            opening: metafield(namespace: "${LEDGER_NS}", key: "opening_balance") { value }
+            ledger: metafield(namespace: "${LEDGER_NS}", key: "${LEDGER_KEY}") { value }
+            defaultAddress { address1 address2 city zip province country }
+          }
+        }
+      }`,
+      { after },
+    );
+    for (const c of d.customers.nodes) {
+      let ledger: Ledger = { payments: [] };
+      if (c.ledger?.value) {
+        try {
+          const parsed = JSON.parse(c.ledger.value);
+          ledger = { payments: Array.isArray(parsed.payments) ? parsed.payments : [], creditLimit: parsed.creditLimit };
+        } catch { /* a corrupt ledger backs up as empty rather than failing the whole run */ }
+      }
+      const a = c.defaultAddress;
+      rows.push({
+        id: c.id,
+        name: c.displayName,
+        company: c.company?.value ?? "",
+        email: c.email ?? "",
+        phone: c.phone ?? "",
+        orders: Number(c.numberOfOrders ?? 0),
+        totalSpent: c.amountSpent?.amount ?? "0",
+        segments: segmentsFromTags(c.tags ?? []),
+        updatedAt: c.updatedAt,
+        lastOrderAt: c.lastOrder?.createdAt ?? null,
+        firstName: c.firstName ?? "",
+        lastName: c.lastName ?? "",
+        note: c.note ?? "",
+        tags: c.tags ?? [],
+        tradeCode: c.tradeCode?.value ?? "",
+        openingBalance: Number(c.opening?.value ?? 0) || 0,
+        address: a ? [a.address1, a.address2, a.city, a.province, a.zip, a.country].filter((x): x is string => !!x) : [],
+        ledger,
+      });
+    }
+    if (!d.customers.pageInfo.hasNextPage) break;
+    after = d.customers.pageInfo.endCursor;
+  }
+  return rows;
+}
+
 // Replace a customer's segment tags (keeps all non-segment tags intact).
 export async function setCustomerSegments(id: string, segments: SegmentKey[]): Promise<SegmentKey[]> {
   const cur = await adminGraphQL<{ customer: { tags: string[] } | null }>(

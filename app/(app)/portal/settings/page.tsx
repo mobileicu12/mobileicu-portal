@@ -29,6 +29,21 @@ type Settings = {
 
 type Shift = { email: string; name?: string; tapIn: string; tapOut?: string; open: boolean; autoOut?: boolean; minutes: number };
 
+type BackupDestination = { name: string; ok: boolean; detail: string };
+type BackupStatus = {
+  destinations: { name: string; configured: boolean; target?: string }[];
+  lastRun: { at: string; ok: boolean; bytes: number; destinations: BackupDestination[] } | null;
+  ageHours: number | null;
+  stale: boolean;
+  critical: boolean;
+};
+
+function hoursAgo(h: number): string {
+  if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
+  if (h < 48) return `${Math.round(h)} hr`;
+  return `${Math.round(h / 24)} days`;
+}
+
 export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,19 +59,33 @@ export default function SettingsPage() {
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
 
-  // Google Drive off-site backup: connection status + manual "back up now".
-  const [drive, setDrive] = useState<{ configured: boolean } | null>(null);
+  // Off-site backup. "Configured" was never the useful question — credentials
+  // stay present for weeks after they stop being accepted — so this shows when a
+  // file last actually landed, and where.
+  const [backup, setBackup] = useState<BackupStatus | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveMsg, setDriveMsg] = useState("");
 
-  async function backupToDriveNow() {
+  const loadBackup = () =>
+    fetch("/api/backup/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: BackupStatus | null) => d && setBackup(d))
+      .catch(() => {});
+
+  async function backupNow() {
     setDriveBusy(true); setDriveMsg("");
     try {
       const res = await fetch("/api/cron/backup-drive", { method: "POST" });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || "Backup failed.");
-      setDriveMsg(`✓ Backed up to Drive${d.file ? ` (${d.file})` : ""}.`);
-      setDrive({ configured: true });
+      const dests: { name: string; ok: boolean; detail: string }[] = d.destinations ?? [];
+      if (!res.ok && !dests.length) throw new Error(d.error || "Backup failed.");
+      const good = dests.filter((x) => x.ok);
+      const bad = dests.filter((x) => !x.ok);
+      setDriveMsg(
+        (good.length ? `✓ Saved to ${good.map((x) => x.name).join(" and ")}. ` : "Backup did not save anywhere. ") +
+          bad.map((x) => `${x.name}: ${x.detail}`).join("  ·  "),
+      );
+      await loadBackup();
     } catch (e) {
       setDriveMsg(e instanceof Error ? e.message : "Backup failed.");
     } finally { setDriveBusy(false); }
@@ -74,7 +103,11 @@ export default function SettingsPage() {
       return;
     }
     const typed = window.prompt(
-      "Restore will overwrite settings and every customer's ledger / opening balance from this backup. Products, customers and orders in Shopify are NOT changed. The current state is copied to Drive first.\n\nType RESTORE to confirm:",
+      "Restore will overwrite, from this backup file:\n" +
+        "  • settings\n" +
+        "  • every customer's ledger / opening balance\n" +
+        "  • cash-ups, expenses, settlements, till counts, staff accounts, attendance and the audit log\n\n" +
+        "Products, customers and orders stay in Shopify and are NOT changed. Anything recorded since this backup was taken will be lost.\n\nType RESTORE to confirm:",
     );
     if (typed !== "RESTORE") {
       if (typed !== null) setError("Restore cancelled — you didn't type RESTORE.");
@@ -93,7 +126,7 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(d.error || "Restore failed.");
       const r = d.restored;
       setMsg(
-        `Restored: ${r.customersRestored} customer ledger${r.customersRestored === 1 ? "" : "s"}${r.customersFailed ? `, ${r.customersFailed} skipped (no longer in Shopify)` : ""}${r.settings ? ", settings" : ""}.`,
+        `Restored: ${r.customersRestored} customer ledger${r.customersRestored === 1 ? "" : "s"}${r.customersFailed ? `, ${r.customersFailed} skipped (no longer in Shopify)` : ""}${r.settings ? ", settings" : ""}${r.shopFieldsRestored ? `, ${r.shopFieldsRestored} shop record${r.shopFieldsRestored === 1 ? "" : "s"} (cash-ups, expenses, staff…)` : ""}${r.shopFieldsFailed ? `, ${r.shopFieldsFailed} shop record(s) refused` : ""}.`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Restore failed.");
@@ -111,7 +144,7 @@ export default function SettingsPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     fetch("/api/settings/whatsapp").then((r) => (r.ok ? r.json() : null)).then((d) => d && setWa({ configured: !!d.configured, phoneId: d.phoneId || "", template: d.template || "" })).catch(() => {});
-    fetch("/api/backup/drive-status").then((r) => (r.ok ? r.json() : null)).then((d) => d && setDrive({ configured: !!d.configured })).catch(() => {});
+    loadBackup();
     loadShifts();
   }, []);
 
@@ -262,32 +295,57 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Backup & restore">
-          <p className="text-xs text-neutral-500">Download a full snapshot of everything — products, collections, customers (with balances &amp; ledgers), invoices and settings — as one JSON file. Keep it safe; if anything goes wrong you can restore from it.</p>
+          <p className="text-xs text-neutral-500">Download a full snapshot of everything — products, collections, every customer (with balances &amp; ledgers), invoices, orders, and the shop&apos;s own records: cash-ups, expenses, settlements, till counts, staff accounts, attendance, audit log and import history — as one JSON file. Keep it safe; if anything goes wrong you can restore from it.</p>
           <a href="/api/backup" className="inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-500 hover:text-neutral-900">⬇ Download full backup (.json)</a>
           <p className="text-xs text-neutral-400">Products &amp; collections can be re-imported from Excel. Customer balances and invoice history are preserved in the file for assisted restore.</p>
           <div className="mt-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">☁ Google Drive backup:</span>
-              {drive === null ? (
+              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Automatic nightly backup:</span>
+              {backup === null ? (
                 <span className="text-xs text-neutral-400">checking…</span>
-              ) : drive.configured ? (
-                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15">Connected — nightly at ~22:00</span>
+              ) : backup.ageHours === null ? (
+                <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-500/15">Never run</span>
+              ) : backup.stale ? (
+                <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-500/15">
+                  Last good backup {hoursAgo(backup.ageHours)} ago — overdue
+                </span>
               ) : (
-                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-500/15">Not configured</span>
+                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15">
+                  Backed up {hoursAgo(backup.ageHours)} ago
+                </span>
               )}
-              <button onClick={backupToDriveNow} disabled={driveBusy} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200">
-                {driveBusy ? "Backing up…" : "Back up to Drive now"}
+              <button onClick={backupNow} disabled={driveBusy} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:border-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200">
+                {driveBusy ? "Backing up…" : "Back up now"}
               </button>
             </div>
             {driveMsg && <p className="mt-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-300">{driveMsg}</p>}
-            <p className="mt-1 text-xs text-neutral-400">Keeps the last 7 daily snapshots in a &ldquo;{s.bizName || "Business"} Backups&rdquo; folder in your Google Drive.</p>
+
+            {/* Where last night's file went, destination by destination. One
+                being broken doesn't stop the backup — but it must be visible,
+                because the whole failure mode here is nobody noticing. */}
+            {backup?.lastRun && (
+              <ul className="mt-2 space-y-1">
+                {backup.lastRun.destinations.map((d) => (
+                  <li key={d.name} className="text-xs">
+                    <span className={d.ok ? "text-emerald-600" : "text-red-600"}>{d.ok ? "✓" : "✗"}</span>{" "}
+                    <strong className="text-neutral-700 dark:text-neutral-300">{d.name}</strong>{" "}
+                    <span className="text-neutral-500">{d.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-1.5 text-xs text-neutral-400">
+              Runs by itself every night at ~22:00 and goes to every destination that is set up — a dated file in
+              your &ldquo;{s.bizName || "Business"} Backups&rdquo; Drive folder (last 14 kept), and a compressed copy
+              emailed to the owner. If a run saves nowhere, you get an email about it that evening.
+            </p>
           </div>
 
           <div className="mt-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-            <p className="text-xs text-neutral-500">Restore from a backup: overwrites <strong>settings and every customer&apos;s ledger / opening balance</strong> from the file. Products, customers and orders stay in Shopify and are not touched. Current state is copied to Drive first.</p>
+            <p className="text-xs text-neutral-500">Restore from a backup: overwrites <strong>settings, every customer&apos;s ledger / opening balance, and the shop&apos;s own records</strong> — cash-ups, expenses, settlements, till counts, staff accounts and permissions, attendance, audit log — from the file. Products, customers and orders stay in Shopify and are not touched.</p>
             <label className="mt-2 inline-block">
               <input type="file" accept="application/json,.json" className="hidden" onChange={restoreBackup} disabled={restoreBusy} />
-              <span className="inline-block cursor-pointer rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100">{restoreBusy ? "Restoring…" : "⟲ Restore ledgers & settings…"}</span>
+              <span className="inline-block cursor-pointer rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100">{restoreBusy ? "Restoring…" : "⟲ Restore from backup…"}</span>
             </label>
           </div>
         </Section>
