@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useIsOwner } from "@/lib/use-me";
 import type { Buying } from "@/lib/settlements";
+import Pagination, { usePaging } from "@/components/Pagination";
 
 const PERIODS: { key: string; label: string }[] = [
   { key: "today", label: "Today" },
@@ -58,6 +59,8 @@ export default function SettlementsPage() {
     return rows.filter((r) => { const x = +new Date(r.date); return x >= f && x <= t; });
   }, [rows, from, to]);
 
+  const paging = usePaging(inPeriod, 20);
+
   const buyingIncluded = inPeriod.filter((r) => r.included).reduce((s, r) => s + r.amount, 0);
   const buyingExcluded = inPeriod.filter((r) => !r.included).reduce((s, r) => s + r.amount, 0);
   const net = Math.round((sales - buyingIncluded) * 100) / 100;
@@ -112,7 +115,7 @@ export default function SettlementsPage() {
           <p className="px-4 py-8 text-center text-sm text-neutral-400">No buying logged in this period.</p>
         ) : (
           <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {inPeriod.map((r) => (
+            {paging.rows.map((r) => (
               <div key={r.id} className={`group flex items-center justify-between gap-3 px-4 py-3 text-sm ${!r.included ? "opacity-60" : ""}`}>
                 <div className="min-w-0">
                   <p className="font-medium text-neutral-900 dark:text-neutral-100">{r.supplier || "Buying"}{r.description ? <span className="font-normal text-neutral-500"> · {r.description}</span> : ""}</p>
@@ -131,6 +134,8 @@ export default function SettlementsPage() {
           </div>
         )}
       </div>
+      {/* The totals above still cover the whole period — only the list is paged. */}
+      <Pagination paging={paging} noun="entries" />
     </div>
   );
 }

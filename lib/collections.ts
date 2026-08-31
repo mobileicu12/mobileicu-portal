@@ -51,7 +51,7 @@ export async function getCollection(id: string, after?: string | null): Promise<
         image { url }
         productsCount { count }
         ruleSet { appliedDisjunctively rules { column relation condition } }
-        products(first: 50, after: $after) {
+        products(first: 100, after: $after) {
           pageInfo { hasNextPage endCursor }
           edges { node { id title status featuredImage { url } totalInventory variants(first: 1) { edges { node { id sku price inventoryItem { id } } } } } }
         }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { buildBackupSnapshot, backupFilename } from "@/lib/backup-snapshot";
-import { uploadTextToDrive, driveConfigured } from "@/lib/google-drive";
-import { loadBusiness } from "@/lib/business";
+import { runBackup } from "@/lib/backup-run";
+import { driveConfigured } from "@/lib/google-drive";
+import { emailConfigured } from "@/lib/email";
 import { isOwnerRequest } from "@/lib/guard";
 import { shopifyConfigured } from "@/lib/shopify";
 
@@ -9,12 +9,15 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * Daily off-site backup to Google Drive.
+ * The nightly backup (vercel.json fires this at 22:00 UTC).
+ *
+ * The path still says "drive" because that is what the deployed cron schedule
+ * points at; the run itself now writes to every destination that is set up, so
+ * one dead credential no longer means no backup at all.
  *
  * Authorised like the digest cron: a CRON_SECRET bearer (how Vercel Cron calls
  * it), the vercel-cron agent when no secret is set, or a signed-in owner using
- * the "Back up now" button. Each firing writes one dated JSON snapshot into a
- * "<Business> Backups" folder in the owner's Drive and prunes to the last 90.
+ * the "Back up now" button.
  */
 async function authorised(req: Request): Promise<boolean> {
   const secret = process.env.CRON_SECRET;
@@ -34,30 +37,25 @@ async function handle(req: Request) {
   if (!shopifyConfigured()) {
     return NextResponse.json({ error: "not configured" }, { status: 503 });
   }
-  if (!driveConfigured()) {
+  // Only refuse outright when there is nowhere at all to put the file. If Drive
+  // is broken but email works, the run must still happen — that is the whole
+  // point of having two.
+  if (!driveConfigured() && !emailConfigured()) {
     return NextResponse.json(
-      { error: "Google Drive backup is not configured. Set GOOGLE_DRIVE_REFRESH_TOKEN." },
+      {
+        error:
+          "Nowhere to send the backup. Connect Google Drive (GOOGLE_DRIVE_REFRESH_TOKEN) or email (RESEND_API_KEY).",
+      },
       { status: 503 },
     );
   }
-  try {
-    const biz = await loadBusiness();
-    const snapshot = await buildBackupSnapshot();
-    const file = await uploadTextToDrive({
-      // Each site backs up to its own folder, so both can share one Drive.
-      folderName: `${biz.name} Backups`,
-      filename: backupFilename(biz.name),
-      content: JSON.stringify(snapshot),
-      mimeType: "application/json",
-      keep: 7, // last 7 daily backups: always covers the last 3 days + a ~week-old one
-    });
-    return NextResponse.json({ ok: true, file: file.name, link: file.link });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Backup failed." },
-      { status: 500 },
-    );
-  }
+
+  const trigger = (await isOwnerRequest()) ? "manual" : "cron";
+  const run = await runBackup(trigger);
+  // OK means the file landed somewhere, not that everything worked — the body
+  // lists each destination with its reason, so "Back up now" can show a partial
+  // success as a partial success.
+  return NextResponse.json(run, { status: run.ok ? 200 : 500 });
 }
 
 // GET is the scheduled entry point; POST is the owner's "Back up now" button.

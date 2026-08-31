@@ -10,6 +10,7 @@ import ColumnChooser, { useColumns, type ColumnDef } from "@/components/ColumnCh
 import { loadPortalSettings } from "@/lib/settings-client";
 import { DuplicatesModal, MergeModal } from "@/components/MergeTools";
 import Pagination, { usePaging } from "@/components/Pagination";
+import SelectionBar from "@/components/SelectionBar";
 
 const LOW_STOCK_DEFAULT = 5;
 
@@ -98,6 +99,7 @@ export default function InventoryPage() {
   const [notConfigured, setNotConfigured] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [collectBusy, setCollectBusy] = useState(false);
   const [dupOpen, setDupOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [flash, setFlash] = useState("");
@@ -240,12 +242,63 @@ export default function InventoryPage() {
   // slice from Shopify and the page count grows with it.
   const paging = usePaging(rows, 50);
 
-  const allSelected = rows.length > 0 && selected.size === rows.length;
   function toggleRow(key: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
-  function toggleAll() { setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.key))); }
   function clearSelection() { setSelected(new Set()); setEditMode(false); setChannelDraft([]); }
+
+  /**
+   * Select every product in one collection.
+   *
+   * The rows on screen can't answer this on their own: a row carries no
+   * collection membership, and past the first page most of the collection isn't
+   * loaded yet. So this filters the list down to that collection, pulls it in
+   * page by page until Shopify says there is no more, and selects the lot — which
+   * is what makes a bulk price change or a channel switch across a whole category
+   * one action instead of forty.
+   */
+  async function selectWholeCollection(collectionId: string) {
+    if (!collectionId) return;
+    setCollectBusy(true);
+    setError("");
+    setFlash("");
+    try {
+      const built = buildQuery(query, statusFilter, stockFilter, channelFilter, collectionId);
+      const gathered: FlatRow[] = [];
+      let after: string | null = null;
+      // 60 pages is ~15,000 products — a bound so a bad cursor can't spin forever.
+      for (let page = 0; page < 60; page++) {
+        const url = new URL("/api/inventory", window.location.origin);
+        url.searchParams.set("query", built);
+        if (after) url.searchParams.set("after", after);
+        url.searchParams.set("sort", sortKey);
+        if (reverse) url.searchParams.set("reverse", "1");
+        const res = await fetch(url.toString());
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load the collection.");
+        gathered.push(...flatten(data.rows as ProductRow[]));
+        if (!data.hasNextPage) { after = null; break; }
+        after = data.endCursor;
+      }
+      // Show what was selected, so the count in the bar matches the table.
+      setCollectionFilter(collectionId);
+      activeQueryRef.current = built;
+      setRows(gathered);
+      setCursor(null);
+      setHasNext(false);
+      setSelected(new Set(gathered.map((r) => r.key)));
+      const name = allCols.find((c) => c.id === collectionId)?.title ?? "collection";
+      setFlash(
+        gathered.length
+          ? `Selected all ${gathered.length} product${gathered.length === 1 ? "" : "s"} in ${name}.`
+          : `${name} has no products matching the current filters.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load the collection.");
+    } finally {
+      setCollectBusy(false);
+    }
+  }
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.key)), [rows, selected]);
   const selectedProductIds = useMemo(
@@ -402,11 +455,28 @@ export default function InventoryPage() {
       {/* Scrolls sideways for narrow screens, but not vertically: with paging below,
           a 70vh inner scrollbar meant two scrollbars fighting over the same list
           and the pager sitting somewhere off past the bottom of the box. */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SelectionBar
+          pageKeys={paging.rows.map((r) => r.key)}
+          allKeys={rows.map((r) => r.key)}
+          selected={selected}
+          onChange={setSelected}
+          noun="products"
+        />
+        {/* Selecting a whole collection can't be done from the loaded rows: a
+            product doesn't carry its collections, and past the first page most of
+            them aren't here yet. So this fetches the collection out in full and
+            selects that. */}
+        <SelectByCollection collections={allCols} busy={collectBusy} onPick={selectWholeCollection} />
+      </div>
+
       <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead className="border-b border-line bg-subtle text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
+              {/* The tick box lives in the bar above, where it can say whether it
+                  takes this page or all 1,200 matching rows. */}
+              <th className="px-4 py-3 w-10"></th>
               <th className="px-4 py-3 font-medium">Product</th>
               {cols.isVisible("sku") && <th className="px-4 py-3 font-medium">SKU</th>}
               {cols.isVisible("price") && <th className="px-4 py-3 font-medium">Price (£)</th>}
@@ -699,5 +769,39 @@ function StockRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+/**
+ * "Select all products in…" — a collection picker that selects rather than
+ * filters. It resets itself after each pick so the same collection can be chosen
+ * twice, and it is deliberately not a filter dropdown: filtering shows you a
+ * collection, this hands it to the bulk actions.
+ */
+function SelectByCollection({
+  collections,
+  busy,
+  onPick,
+}: {
+  collections: { id: string; title: string }[];
+  busy: boolean;
+  onPick: (id: string) => void;
+}) {
+  if (!collections.length) return null;
+  return (
+    <label className="flex items-center gap-2 text-xs text-muted">
+      <span>Select all in</span>
+      <select
+        value=""
+        disabled={busy}
+        onChange={(e) => { const v = e.target.value; e.target.value = ""; onPick(v); }}
+        className="rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink disabled:opacity-60"
+      >
+        <option value="">{busy ? "Loading collection…" : "a collection…"}</option>
+        {collections.map((c) => (
+          <option key={c.id} value={c.id}>{c.title}</option>
+        ))}
+      </select>
+    </label>
   );
 }

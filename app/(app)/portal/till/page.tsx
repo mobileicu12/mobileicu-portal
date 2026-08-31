@@ -5,6 +5,7 @@ import type { ProductRow } from "@/lib/shopify";
 import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components/ColumnChooser";
 import { Menu, MenuItem } from "@/components/Menu";
 import Pagination, { usePaging } from "@/components/Pagination";
+import SelectionBar from "@/components/SelectionBar";
 
 const COLUMNS: ColumnDef[] = [
   { key: "product", label: "Item", locked: true },
@@ -64,9 +65,7 @@ export default function TillPage() {
   }, [rows, sort.key, sort.dir]);
   const paging = usePaging(shown, 50);
 
-  const allSelected = rows.length > 0 && selected.size === rows.length;
   function toggleRow(k: string) { setSelected((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; }); }
-  function toggleAll() { setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.key))); }
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.key)), [rows, selected]);
 
@@ -153,10 +152,13 @@ export default function TillPage() {
 
       {/* Persistent action ribbon */}
       <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
-        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-300">
-          <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" />
-          {selected.size ? `${selected.size} selected` : "Select all"}
-        </label>
+        <SelectionBar
+          pageKeys={paging.rows.map((r) => r.key)}
+          allKeys={shown.map((r) => r.key)}
+          selected={selected}
+          onChange={setSelected}
+          noun="items"
+        />
         <span className="h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
         <button disabled={!selected.size || bulkBusy} onClick={() => runBulk("channels", { addChannels: [], removeChannels: ["till"] })} className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800">Remove from till</button>
         <button disabled={!selected.size || bulkBusy} onClick={() => runBulk("delete")} className="rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-40 dark:hover:bg-red-500/10">Delete</button>
@@ -169,7 +171,9 @@ export default function TillPage() {
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
-              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
+              {/* The tick box is in the action ribbon above, where it can say
+                  whether it takes this page or every matching row. */}
+              <th className="px-4 py-3 w-10"></th>
               <th className="px-4 py-3"><button onClick={() => sort.onSort("product")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Item{sort.arrow("product")}</button></th>
               {cols.isVisible("sku") && <th className="px-4 py-3"><button onClick={() => sort.onSort("sku")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">SKU{sort.arrow("sku")}</button></th>}
               {cols.isVisible("barcode") && <th className="px-4 py-3">Barcode</th>}

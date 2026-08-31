@@ -18,6 +18,7 @@ import ColumnChooser, { useColumns, useSort, type ColumnDef } from "@/components
 import { BRAND_SLUG } from "@/lib/brand";
 import { downloadFile } from "@/lib/download";
 import Pagination, { usePaging } from "@/components/Pagination";
+import SelectionBar from "@/components/SelectionBar";
 
 // Shopify hands back a GID ("gid://shopify/DraftOrder/123"); the route takes the
 // plain number. Keeping the slashes out of the path also keeps the URL readable
@@ -257,9 +258,7 @@ export default function InvoicesPage() {
     );
   }
 
-  const allSelected = filtered.length > 0 && filtered.every((i) => selected.has(i.id));
   function toggleRow(id: string) { setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
-  function toggleAll() { setSelected(allSelected ? new Set() : new Set(filtered.map((i) => i.id))); }
   function clearSel() { setSelected(new Set()); }
 
   async function bulkMarkPaid() {
@@ -420,10 +419,13 @@ export default function InvoicesPage() {
 
       {/* Persistent action ribbon — always above the table (not a floating-on-select bar) */}
       <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
-        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-300">
-          <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" />
-          {selected.size ? `${selected.size} selected` : "Select all"}
-        </label>
+        <SelectionBar
+          pageKeys={paging.rows.map((i) => i.id)}
+          allKeys={filtered.map((i) => i.id)}
+          selected={selected}
+          onChange={setSelected}
+          noun="invoices"
+        />
         <span className="h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
         <div className="flex flex-wrap items-center gap-1">
           <button disabled={!selected.size || bulkBusy} onClick={bulkMarkPaid} className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800">✓ Mark paid</button>
@@ -431,7 +433,6 @@ export default function InvoicesPage() {
           <button disabled={!selected.size || bulkBusy} onClick={bulkExport} className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800">⬇ Excel</button>
           <button disabled={!selected.size || bulkBusy} onClick={bulkDelete} className="rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-40 dark:hover:bg-red-500/10">Delete</button>
         </div>
-        {selected.size > 0 && <button onClick={clearSel} className="ml-auto text-xs font-medium text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">Clear</button>}
       </div>
 
       {/* Scrolls sideways on narrow screens, but not vertically: with paging below,
@@ -441,7 +442,9 @@ export default function InvoicesPage() {
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950">
             <tr>
-              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-amber-500" /></th>
+              {/* The tick box is in the action ribbon above, where it can say
+                  whether it takes this page or every matching row. */}
+              <th className="px-4 py-3 w-10"></th>
               <th className="px-4 py-3"><button onClick={() => sort.onSort("invoice")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Invoice{sort.arrow("invoice")}</button></th>
               {cols.isVisible("customer") && <th className="px-4 py-3"><button onClick={() => sort.onSort("customer")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Customer{sort.arrow("customer")}</button></th>}
               {cols.isVisible("source") && <th className="px-4 py-3"><button onClick={() => sort.onSort("source")} className="uppercase hover:text-neutral-900 dark:hover:text-neutral-200">Source{sort.arrow("source")}</button></th>}
