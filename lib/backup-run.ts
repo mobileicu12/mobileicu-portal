@@ -21,6 +21,7 @@
 import { gzipSync } from "node:zlib";
 import { buildBackupSnapshot, backupFilename } from "./backup-snapshot";
 import { uploadTextToDrive, driveConfigured } from "./google-drive";
+import { uploadTextToR2, r2Configured } from "./s3-backup";
 import { loadBusiness } from "./business";
 import { getSettings } from "./settings";
 import { sendEmail, emailConfigured } from "./email";
@@ -30,6 +31,8 @@ import { recordBackupRun, readBackupLog, healthFrom, type BackupRun, type Destin
 const MAX_EMAIL_BYTES = 12 * 1024 * 1024;
 /** Keep this many dated files in Drive — a fortnight of daily snapshots. */
 const DRIVE_KEEP = 14;
+/** Keep a month of dailies in R2 — cheap, and the primary off-site copy. */
+const R2_KEEP = 30;
 
 function reason(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -49,6 +52,23 @@ function explain(detail: string): string {
     return `${detail}\n\nThis is nearly always the Google project's consent screen still being in "Testing", which makes every refresh token expire after 7 days. In the Google Cloud console → APIs & Services → OAuth consent screen, set the publishing status to "In production" and generate the token once more. The drive.file scope needs no Google review, so this takes effect immediately and the token then stops expiring.`;
   }
   return detail;
+}
+
+async function toR2(content: string, bizName: string): Promise<DestinationResult> {
+  try {
+    // Cloudflare R2 with a STATIC access key — nothing to re-authorise, ever.
+    // This is the primary off-site copy; each site uses its own bucket, so
+    // several can share one Cloudflare account without mixing backups.
+    const up = await uploadTextToR2({
+      key: `backups/${backupFilename(bizName)}`,
+      content,
+      contentType: "application/json",
+      keep: R2_KEEP,
+    });
+    return { name: "Cloudflare R2", ok: true, detail: up.key };
+  } catch (e) {
+    return { name: "Cloudflare R2", ok: false, detail: reason(e) };
+  }
 }
 
 async function toDrive(content: string, bizName: string): Promise<DestinationResult> {
@@ -150,6 +170,10 @@ export async function runBackup(trigger: BackupRun["trigger"]): Promise<BackupRu
   }
 
   const destinations: DestinationResult[] = [];
+  // R2 first — it's the primary copy (static keys that never expire).
+  if (r2Configured()) destinations.push(await toR2(content, biz.name));
+  else destinations.push({ name: "Cloudflare R2", ok: false, detail: "Not connected — no R2_* variables set." });
+
   if (driveConfigured()) destinations.push(await toDrive(content, biz.name));
   else destinations.push({ name: "Google Drive", ok: false, detail: "Not connected — no GOOGLE_DRIVE_REFRESH_TOKEN set." });
 
