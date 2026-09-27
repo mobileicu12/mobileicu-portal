@@ -3,6 +3,7 @@ import { getCustomer, addPayment, allocatePayment, reapplyAccountCredits, remove
 import type { SegmentKey } from "@/lib/segments";
 import { requirePermission } from "@/lib/guard";
 import { accountSharePath } from "@/lib/invoice-link";
+import { redistributeOverpayments } from "@/lib/payments";
 import { audit } from "@/lib/audit";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
@@ -38,6 +39,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       const { ledger, allocation } = await reapplyAccountCredits(gid(id));
       await audit("customer.credit.reapply", { ref: gid(id), detail: `Settled ${allocation.settled.length} bill(s)${allocation.partial ? `, part-paid ${allocation.partial.name} £${allocation.partial.amount.toFixed(2)}` : ""}, £${allocation.creditedToAccount.toFixed(2)} left on account` });
       return NextResponse.json({ ok: true, ledger, allocation });
+    }
+    // Repair money that was recorded against a single invoice for more than
+    // that invoice was worth. The surplus settled nothing; this hands it back to
+    // the normal oldest-first allocation.
+    if (body?.action === "redistributeOverpayments") {
+      const r = await redistributeOverpayments(gid(id));
+      await audit("customer.overpayment.reapply", {
+        ref: gid(id),
+        detail: `Recovered £${r.recovered.toFixed(2)} from ${r.repaired.length} over-paid bill(s) — settled ${r.settled.length}${r.partial ? `, part-paid ${r.partial.name} £${r.partial.amount.toFixed(2)}` : ""}${r.creditedToAccount > 0.001 ? `, £${r.creditedToAccount.toFixed(2)} on account` : ""}`,
+      });
+      return NextResponse.json({ ok: true, redistributed: r });
     }
     if (body?.action === "removePayment") {
       if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });

@@ -8,6 +8,7 @@ import InvoicePreviewModal from "@/components/InvoicePreviewModal";
 import { loadBusiness, type Business } from "@/lib/business";
 import { loadPortalSettings } from "@/lib/settings-client";
 import type { InvoiceDetail } from "@/lib/billing";
+import { accountTotals } from "@/lib/account-totals";
 
 // Fallback only — the live rate comes from Settings (see vatRate below).
 const VAT_RATE_FALLBACK = 0.2;
@@ -87,11 +88,9 @@ export default function BillingPage() {
       .then((d) => {
         const c = d.customer;
         if (!c) { setCustOutstanding(null); setCustIsOnline(false); setOpenInvoices([]); return; }
-        // Owed = opening balance + still-unpaid invoice balances − on-account payments.
-        // (A completed invoice already counts as paid, so use its balance, not total.)
-        const invoiceDue = (c.invoices ?? []).reduce((s: number, i: { balance?: number }) => s + Number(i.balance || 0), 0);
-        const ledgerPaid = (c.ledger?.payments ?? []).reduce((s: number, p: { amount: number }) => s + Number(p.amount || 0), 0);
-        setCustOutstanding((c.openingBalance || 0) + invoiceDue - ledgerPaid);
+        // Everything charged minus everything received — the same sum the
+        // statement and the customer screen use.
+        setCustOutstanding(accountTotals(c).outstanding);
         setCustIsOnline((c.segments ?? []).includes("online"));
         // Today's draft (unpaid) invoices this customer can add more items to (a running tab).
         const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);

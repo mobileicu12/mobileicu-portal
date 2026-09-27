@@ -500,6 +500,10 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  // Where the money actually landed. Worth saying out loud: a payment bigger
+  // than this bill now goes on to settle the customer's older bills, and that
+  // should not happen invisibly.
+  const [summary, setSummary] = useState("");
 
   async function record() {
     const amt = Number(amount);
@@ -515,6 +519,7 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
       setAmount(""); setNote("");
+      setSummary(d.summary || "");
       onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -570,6 +575,7 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
       </div>
 
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      {summary && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10">{summary}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/50">
         <input className="w-28 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800" type="number" step="0.01" placeholder="Amount £" value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -583,6 +589,11 @@ function PaymentsPanel({ invoiceId, meta, onChanged }: { invoiceId: string; meta
         <input className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
         <button onClick={record} disabled={saving} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 hover:text-neutral-900 disabled:opacity-60">{saving ? "…" : "Record payment"}</button>
         {balance > 0 && <button onClick={() => setAmount(balance.toFixed(2))} className="text-xs text-amber-600 hover:underline">Pay balance (£{balance.toFixed(2)})</button>}
+        {Number(amount) > balance + 0.001 && (
+          <p className="w-full text-xs text-neutral-500">
+            £{(Number(amount) - balance).toFixed(2)} of this is more than the bill owes — it will go onto this customer&apos;s oldest unpaid bills.
+          </p>
+        )}
       </div>
 
       <div className="mt-3 divide-y divide-neutral-100 dark:divide-neutral-800">

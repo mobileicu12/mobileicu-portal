@@ -6,6 +6,7 @@ import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 import { BRAND_SLUG } from "@/lib/brand";
 import { BUSINESS } from "@/lib/business";
+import { accountTotals } from "@/lib/account-totals";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,10 +26,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const c = await getCustomer(gid(id));
     const money = '"£"#,##0.00';
 
-    const invoiceOutstanding = c.invoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
     const ledgerPaid = c.ledger.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
     const invoiceTotal = c.invoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
-    const outstanding = c.openingBalance + invoiceOutstanding - ledgerPaid;
+    const { received, outstanding } = accountTotals(c);
 
     const wb = new ExcelJS.Workbook();
 
@@ -53,6 +53,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     prow("Opening balance", c.openingBalance).getCell(2).numFmt = money;
     prow("Invoiced (total)", invoiceTotal).getCell(2).numFmt = money;
     prow("Paid on account", ledgerPaid).getCell(2).numFmt = money;
+    prow("Paid (total received)", received).getCell(2).numFmt = money;
     const oRow = prow("OUTSTANDING", outstanding);
     oRow.font = { bold: true };
     oRow.getCell(2).numFmt = money;

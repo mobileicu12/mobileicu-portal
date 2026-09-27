@@ -5,6 +5,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { BUSINESS, type Business } from "./business";
+import { accountTotals } from "./account-totals";
 
 const INK = "#1a1a1a";
 const GOLD = "#a9791d";
@@ -142,9 +143,13 @@ export function buildStatementDoc(s: StatementInput, business: Business = BUSINE
     margin: { left: M, right: M },
   });
 
-  const totalCharged = opening + s.invoices.reduce((s2, i) => s2 + (parseFloat(i.total) || 0), 0);
-  const totalPaid = s.invoices.reduce((s2, i) => s2 + i.amountPaid, 0) + (s.payments || []).reduce((s2, p) => s2 + (Number(p.amount) || 0), 0);
-  const outstanding = totalCharged - totalPaid;
+  // This was the only place in the portal that got these right; it is now the
+  // shared one, so nothing can quietly go back to totalling leftovers.
+  const { billed: totalCharged, received: totalPaid, outstanding } = accountTotals({
+    openingBalance: opening,
+    invoices: s.invoices,
+    ledger: { payments: s.payments || [] },
+  });
 
   // @ts-expect-error autotable augments doc
   let ty = (doc.lastAutoTable?.finalY ?? 300) + 20;

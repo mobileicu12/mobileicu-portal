@@ -45,9 +45,14 @@ export async function GET(req: Request) {
     const num = (s: string) => parseFloat(s) || 0;
     let total = 0, paid = 0, outstanding = 0;
     for (const r of rows) {
-      const t = num(r.total);
-      total += t;
-      if (r.status === "COMPLETED") paid += t; else outstanding += t;
+      total += num(r.total);
+      // Money settled vs still due — not a completed/draft headcount. This used
+      // to count every non-completed bill as fully outstanding and nothing paid,
+      // so a £100 bill with £90 already taken reported £0 received and £100
+      // owed, disagreeing with every other screen and with the per-staff split
+      // three rows further down this same report.
+      paid += Number(r.amountPaid) || 0;
+      outstanding += Number(r.balance) || 0;
     }
     const byStaff = summarizeByStaff(rows);
     const bySeg = SEGMENTS.map((s) => {
@@ -72,8 +77,8 @@ export async function GET(req: Request) {
     sum.addRow([`Generated: ${new Date().toLocaleString("en-GB")}`]);
     sum.addRow([]);
     sum.addRow(["Total sales", total]).getCell(2).numFmt = money;
-    sum.addRow(["Paid (completed)", paid]).getCell(2).numFmt = money;
-    sum.addRow(["Outstanding (draft)", outstanding]).getCell(2).numFmt = money;
+    sum.addRow(["Paid (received)", paid]).getCell(2).numFmt = money;
+    sum.addRow(["Outstanding", outstanding]).getCell(2).numFmt = money;
     sum.addRow(["Invoices / bills", rows.length]);
     sum.getRow(5).font = { bold: true };
 

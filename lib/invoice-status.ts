@@ -8,7 +8,22 @@ export function invoiceStatus(input: { status: string; amountPaid?: number; bala
   if (input.status === "COMPLETED") return { label: "Paid", tone: "paid" };
   const paid = Number(input.amountPaid) || 0;
   const balance = input.balance !== undefined ? Number(input.balance) : undefined;
-  if (paid > 0.001 && (balance === undefined || balance > 0.001)) return { label: "Part-paid", tone: "part" };
+  const total = input.total !== undefined ? Number(input.total) : undefined;
+
+  // Money recorded against the bill covers it. The draft order may still be
+  // sitting at OPEN — a completion that failed, or a part-payment that was never
+  // followed by "Mark paid" — but the shop has been paid, and saying "Unpaid"
+  // there is simply false. It used to: the only two answers below OPEN were
+  // Part-paid (paid, and something still due) and Unpaid, so a bill settled
+  // entirely by part-payments fell through to Unpaid while the same row showed
+  // "paid" in green beside it.
+  const covered =
+    balance !== undefined
+      ? balance <= 0.001
+      : total !== undefined && total > 0 && paid >= total - 0.001;
+  if (paid > 0.001 && covered) return { label: "Paid", tone: "paid" };
+
+  if (paid > 0.001) return { label: "Part-paid", tone: "part" };
   return { label: "Unpaid", tone: "unpaid" };
 }
 
