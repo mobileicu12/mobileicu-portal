@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { canSeeFinanceRequest } from "@/lib/guard";
 import { listInvoices } from "@/lib/billing";
+import { accountTotals } from "@/lib/account-totals";
 import { adminGraphQL, shopifyConfigured, ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -38,6 +39,78 @@ async function ledgerCollectedToday(startMs: number): Promise<number> {
   return sum;
 }
 
+// Whole-book receivable, defined via the SAME accountTotals() the Customers
+// page, digest, export and storefront use — opening balance + billed − received
+// (received counts money on bills AND on account, uncapped), floored per account.
+// The dashboard used to sum per-invoice balances, which ignored opening balances
+// and account credits, so its headline disagreed with every other screen. One
+// paginated customer scan (capped) with a per-invoice fallback for the tail.
+async function accountReceivable(all: Awaited<ReturnType<typeof listInvoices>>): Promise<number> {
+  const num = (s: string) => parseFloat(s) || 0;
+  // Per-customer invoice totals from the invoices already loaded.
+  const byCust = new Map<string, { billed: number; paid: number }>();
+  let walkinOwed = 0;
+  for (const r of all) {
+    if (r.customerId) {
+      const cur = byCust.get(r.customerId) ?? { billed: 0, paid: 0 };
+      cur.billed += num(r.total);
+      cur.paid += Number(r.amountPaid) || 0;
+      byCust.set(r.customerId, cur);
+    } else {
+      walkinOwed += Math.max(0, Number(r.balance) || 0);
+    }
+  }
+
+  let after: string | null = null;
+  let accountOwed = 0;
+  const seen = new Set<string>();
+  for (let page = 0; page < 20; page++) {
+    const d: {
+      customers: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        edges: { node: { id: string; opening: { value: string } | null; ledger: { value: string } | null } }[];
+      };
+    } = await adminGraphQL(
+      `query($after: String) {
+        customers(first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          edges { node {
+            id
+            opening: metafield(namespace: "portal", key: "opening_balance") { value }
+            ledger: metafield(namespace: "portal", key: "ledger") { value }
+          } }
+        }
+      }`,
+      { after },
+    );
+    for (const e of d.customers.edges) {
+      seen.add(e.node.id);
+      const opening = Number(e.node.opening?.value ?? 0) || 0;
+      const onAccount: { amount: number }[] = [];
+      if (e.node.ledger?.value) {
+        try {
+          const parsed = JSON.parse(e.node.ledger.value);
+          if (Array.isArray(parsed?.payments)) for (const p of parsed.payments) onAccount.push({ amount: Number(p.amount) || 0 });
+        } catch { /* malformed ledger ignored */ }
+      }
+      const inv = byCust.get(e.node.id) ?? { billed: 0, paid: 0 };
+      const totals = accountTotals({
+        openingBalance: opening,
+        invoices: [{ total: inv.billed, amountPaid: inv.paid }],
+        ledger: { payments: onAccount },
+      });
+      accountOwed += totals.owed;
+    }
+    if (!d.customers.pageInfo.hasNextPage) break;
+    after = d.customers.pageInfo.endCursor;
+  }
+  // Any customer past the scan cap: fall back to their floored invoice balance
+  // rather than dropping them.
+  for (const [id, v] of byCust) if (!seen.has(id)) accountOwed += Math.max(0, v.billed - v.paid);
+
+  return Math.round((accountOwed + walkinOwed) * 100) / 100;
+}
+
 // The (user-independent) takings computation, cached for 2 minutes so repeated
 // dashboard loads don't re-scan every invoice + customer ledger (was causing lag).
 const computeToday = unstable_cache(async () => {
@@ -59,11 +132,10 @@ const computeToday = unstable_cache(async () => {
       byMethod[m in byMethod ? m : "other"] += t;
     }
 
-    // Total still owed across ALL invoices — each bill's remaining BALANCE, so a
-    // part-paid invoice only adds what's still due (not its whole value).
-    let outstanding = 0;
-    for (const r of all) outstanding += Number(r.balance) || 0;
-    outstanding = Math.round(outstanding * 100) / 100;
+    // Total still owed across the whole book, defined like the Customers page
+    // (accountTotals): opening balance + billed − received, floored per account,
+    // plus walk-in bills — so the dashboard headline matches every other screen.
+    const outstanding = await accountReceivable(all);
 
     // Full collection today = today's paid sales + on-account (ledger) payments today.
     // The all-customer ledger scan is DISABLED by default for performance; set

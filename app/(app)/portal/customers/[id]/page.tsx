@@ -162,15 +162,18 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       if (t.phone) {
         const list = t.bills.map((b) => `• ${b.invoiceNo}: ${b.lines.map((l) => `${l.quantity}× ${l.title}`).join(", ")} = £${Number(b.total).toFixed(2)}${b.status === "COMPLETED" ? " (paid)" : ""}`).join("\n");
         const text = `Hi ${t.name}, today's summary from ${BUSINESS.name}:\n${list}\n\nToday's total: £${t.todayTotal.toFixed(2)}\nReceived today: £${t.todayPaid.toFixed(2)}\nToday's bills unpaid: £${t.todayOutstanding.toFixed(2)}\nTotal outstanding: £${t.accountOutstanding.toFixed(2)}`;
+        const waText = `${text}\n\nView / download: ${shareUrl}`;
+        let apiSent = false;
         if (waConfigured) {
-          const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: t.phone, message: `${text}\n\nView / download: ${shareUrl}` }) });
-          if (wr.ok) sent += "WhatsApp";
-        } else {
-          // No WhatsApp API yet → open WhatsApp click-to-send with the text + PDF link.
-          const digits = t.phone.replace(/[^0-9]/g, "");
-          window.open(`https://wa.me/${digits}?text=${encodeURIComponent(`${text}\n\nView / download: ${shareUrl}`)}`, "_blank");
-          sent += "WhatsApp";
+          const wr = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: t.phone, message: waText }) });
+          apiSent = wr.ok;
         }
+        // Not configured, or the Cloud API send failed → open WhatsApp
+        // click-to-send so the button never dead-ends.
+        if (!apiSent) {
+          window.open(`https://wa.me/${t.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(waText)}`, "_blank");
+        }
+        sent += "WhatsApp";
       }
       setTodayMsg(sent.trim() ? `Sent via ${sent.trim().replace(/\s+/, " + ")}.` : "No email or phone on file to send to.");
     } catch (e) { setTodayMsg(e instanceof Error ? e.message : "Failed."); } finally { setTodayBusy(""); }
