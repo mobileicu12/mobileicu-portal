@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getInvoiceDetail, completeInvoice, duplicateInvoice, sendInvoiceEmail, addInvoicePayment, removeInvoicePayment, setInvoicePaymentMethod, setSettlementMethod, voidInvoice } from "@/lib/billing";
+import { getInvoiceDetail, completeInvoice, duplicateInvoice, sendInvoiceEmail, removeInvoicePayment, setInvoicePaymentMethod, setSettlementMethod, voidInvoice } from "@/lib/billing";
+import { recordInvoicePayment, describeInvoicePayment } from "@/lib/payments";
 import { requirePermission } from "@/lib/guard";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
 import { audit } from "@/lib/audit";
@@ -48,14 +49,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (typeof body.amount !== "number" || body.amount <= 0) {
           return NextResponse.json({ error: "A positive payment amount is required." }, { status: 400 });
         }
-        const payments = await addInvoicePayment(decoded, {
+        // More money than this bill owes flows on to the customer's other open
+        // bills, oldest first — the same rule the customer's own payment box
+        // follows. It used to all stay on this one bill, settling nothing.
+        const result = await recordInvoicePayment(decoded, {
           date: body.date || new Date().toISOString(),
           amount: body.amount,
           method: body.method || "cash",
           note: body.note || "",
         });
-        await audit("invoice.payment.add", { ref: decoded, name: label, detail: `£${body.amount.toFixed(2)} ${body.method || "cash"}${body.note ? ` — ${body.note}` : ""}` });
-        return NextResponse.json({ ok: true, payments });
+        await audit("invoice.payment.add", {
+          ref: decoded,
+          name: label,
+          detail: `£${body.amount.toFixed(2)} ${body.method || "cash"}${body.note ? ` — ${body.note}` : ""}: ${describeInvoicePayment(result)}`,
+        });
+        const payments = (await getInvoiceDetail(decoded)).payments;
+        return NextResponse.json({ ok: true, payments, allocation: result, summary: describeInvoicePayment(result) });
       }
       case "removePayment": {
         if (typeof body.index !== "number") return NextResponse.json({ error: "index required." }, { status: 400 });

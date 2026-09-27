@@ -472,6 +472,8 @@ export type InvoiceDetail = {
   createdAt: string;
   note: string;
   currency: string;
+  /** The customer's gid, when the bill is on an account — null for a walk-in. */
+  customerId: string | null;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -511,7 +513,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
       taxExempt: boolean;
       subtotalPrice: string; totalTax: string; totalPrice: string;
       totalDiscountsSet: { presentmentMoney: { amount: string; currencyCode: string } } | null;
-      customer: { displayName: string | null; email: string | null; phone: string | null } | null;
+      customer: { id: string; displayName: string | null; email: string | null; phone: string | null } | null;
       email: string | null;
       payments: { value: string } | null;
       payMethod: { value: string } | null;
@@ -542,7 +544,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
         id name status createdAt note2 tags invoiceUrl taxExempt
         subtotalPrice totalTax totalPrice
         totalDiscountsSet { presentmentMoney { amount currencyCode } }
-        customer { displayName email phone }
+        customer { id displayName email phone }
         email
         payments: metafield(namespace: "portal", key: "payments") { value }
         payMethod: metafield(namespace: "portal", key: "pay_method") { value }
@@ -590,6 +592,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     createdAt: d.createdAt,
     note: d.note2 || "",
     currency,
+    customerId: d.customer?.id ?? null,
     customerName: d.customer?.displayName || d.custName?.value || (d.email ? d.email : "Walk-in customer"),
     customerEmail: d.customer?.email || d.email || "",
     customerPhone: d.customer?.phone || d.custPhone?.value || d.billingAddress?.phone || "",
@@ -616,6 +619,18 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail> {
     payMethod: d.payMethod?.value ?? null,
     paidMethod: d.paidMethod?.value ?? null,
   };
+}
+
+/**
+ * Replace an invoice's stored payments wholesale.
+ *
+ * Every other entry point here adds, removes or edits a single payment. This
+ * one is for repairs — trimming a bill that was recorded as holding more money
+ * than it was ever worth — so it is named for what it does and used nowhere
+ * else.
+ */
+export async function setInvoicePayments(id: string, payments: InvoicePayment[]): Promise<InvoicePayment[]> {
+  return writeInvoicePayments(id, payments);
 }
 
 async function writeInvoicePayments(id: string, payments: InvoicePayment[]): Promise<InvoicePayment[]> {

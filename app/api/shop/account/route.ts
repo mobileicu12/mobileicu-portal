@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getTradeCustomerId } from "@/lib/trade";
 import { getCustomer, updateCustomer } from "@/lib/customers";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { accountTotals } from "@/lib/account-totals";
 
 export const runtime = "nodejs";
 
@@ -12,9 +13,7 @@ export async function GET() {
   if (!id) return NextResponse.json({ account: null }, { status: 401 });
   try {
     const c = await getCustomer(id);
-    const invoiceDue = c.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
-    const ledgerPaid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const outstanding = Math.max(0, (c.openingBalance || 0) + invoiceDue - ledgerPaid);
+    const outstanding = accountTotals(c).owed;
     return NextResponse.json({
       account: {
         firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone, company: c.company,

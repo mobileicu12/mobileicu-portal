@@ -413,13 +413,18 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   const dd = await adminGraphQL<{
     draftOrders: {
       edges: {
-        node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; completedAt: string | null; invoiceUrl: string | null; payments: { value: string } | null };
+        node: { id: string; name: string; status: string; totalPrice: string; createdAt: string; completedAt: string | null; invoiceUrl: string | null; payments: { value: string } | null; paidMethod: { value: string } | null; payMethod: { value: string } | null };
       }[];
     };
   }>(
     `query($q: String!) {
       draftOrders(first: 100, reverse: true, query: $q) {
-        edges { node { id name status totalPrice createdAt completedAt invoiceUrl payments: metafield(namespace: "portal", key: "payments") { value } } }
+        edges { node {
+          id name status totalPrice createdAt completedAt invoiceUrl
+          payments: metafield(namespace: "portal", key: "payments") { value }
+          paidMethod: metafield(namespace: "portal", key: "paid_method") { value }
+          payMethod: metafield(namespace: "portal", key: "pay_method") { value }
+        } }
       }
     }`,
     { q: `customer_id:${numericId} AND -tag:voided AND -tag:deleted` },
@@ -481,7 +486,17 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
         // add a synthetic record for the remainder taken at completion.
         const recorded = paymentEntries.reduce((s, p) => s + p.amount, 0);
         if (recorded < total - 0.001) {
-          paymentEntries = [...paymentEntries, { date: e.node.completedAt || e.node.createdAt, amount: Math.round((total - recorded) * 100) / 100, method: "paid", note: "Marked paid" }];
+          // How it was actually settled, not the word "paid": this entry is what
+          // the customer's payment history shows and what its method filter
+          // filters on, so labelling every settled bill "paid" hid all of them
+          // from the cash and card views. The invoice list already dates and
+          // labels this entry from paid_method — same rule here.
+          paymentEntries = [...paymentEntries, {
+            date: e.node.completedAt || e.node.createdAt,
+            amount: Math.round((total - recorded) * 100) / 100,
+            method: e.node.paidMethod?.value || e.node.payMethod?.value || "paid",
+            note: "Marked paid",
+          }];
         }
       } else {
         amountPaid = paymentEntries.reduce((s, p) => s + p.amount, 0);

@@ -8,6 +8,7 @@ import { getSettings, saveSettings } from "./settings";
 import { sendEmail, emailConfigured } from "./email";
 import { waConfigured, sendWhatsApp } from "./whatsapp";
 import { BUSINESS } from "./business";
+import { accountTotals } from "./account-totals";
 
 const gbp = (n: number) => `£${(isNaN(n) ? 0 : n).toFixed(2)}`;
 const num = (s: string) => parseFloat(s) || 0;
@@ -59,9 +60,7 @@ export async function runDailyDigest(opts: { force?: boolean } = {}): Promise<Di
     try { detail = await getCustomer(cid); } catch (e) { errors.push(`load ${cid}: ${errMsg(e)}`); continue; }
 
     const todayTotal = rows.reduce((s, r) => s + num(r.total), 0);
-    const invoiceDue = detail.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
-    const ledgerPaid = detail.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const outstanding = Math.max(0, (detail.openingBalance || 0) + invoiceDue - ledgerPaid);
+    const outstanding = accountTotals(detail).owed;
     const custName = detail.name || detail.company || "Customer";
     ownerRows.push({ name: custName, bills: rows.length, today: todayTotal, outstanding });
 

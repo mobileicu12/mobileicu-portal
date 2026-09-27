@@ -6,6 +6,7 @@ import { mapLimit } from "@/lib/async";
 import { waConfigured } from "@/lib/whatsapp";
 import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { accountTotals } from "@/lib/account-totals";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -23,9 +24,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const c = await getCustomer(gid(id));
-    const invoiceDue = c.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
-    const ledgerPaid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const accountOutstanding = Math.max(0, (c.openingBalance || 0) + invoiceDue - ledgerPaid);
+    const accountOutstanding = accountTotals(c).owed;
 
     const start = new Date(); start.setHours(0, 0, 0, 0);
     const todaysInv = c.invoices.filter((i) => new Date(i.createdAt) >= start);

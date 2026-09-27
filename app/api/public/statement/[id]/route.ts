@@ -7,6 +7,7 @@ import { BUSINESS, type Business } from "@/lib/business";
 import { verifyStatementToken } from "@/lib/invoice-link";
 import { buildCustomerDayItemisedDoc } from "@/lib/report-pdf";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { accountTotals } from "@/lib/account-totals";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -24,9 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   try {
     const c = await getCustomer(`gid://shopify/Customer/${numId}`);
-    const invoiceDue = c.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
-    const ledgerPaid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const accountOutstanding = Math.max(0, (c.openingBalance || 0) + invoiceDue - ledgerPaid);
+    const accountOutstanding = accountTotals(c).owed;
 
     const day = new Date(`${date}T00:00:00`);
     const end = new Date(day); end.setDate(end.getDate() + 1);

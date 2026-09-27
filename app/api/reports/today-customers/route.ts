@@ -6,6 +6,7 @@ import { mapLimit } from "@/lib/async";
 import { waConfigured } from "@/lib/whatsapp";
 import { statementSharePath } from "@/lib/invoice-link";
 import { shopifyConfigured, ShopifyError } from "@/lib/shopify";
+import { accountTotals } from "@/lib/account-totals";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -37,9 +38,7 @@ export async function GET() {
     const built = await mapLimit(entries, 4, async ([cid, rows]) => {
       let detail;
       try { detail = await getCustomer(cid); } catch { return null; }
-      const invoiceDue = detail.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
-      const ledgerPaid = detail.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-      const accountOutstanding = Math.max(0, (detail.openingBalance || 0) + invoiceDue - ledgerPaid);
+      const accountOutstanding = accountTotals(detail).owed;
 
       const details = await mapLimit(rows, 4, (r) => getInvoiceDetail(r.id).catch(() => null));
       const bills = [];

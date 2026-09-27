@@ -18,6 +18,7 @@ import { FinanceLockBar } from "@/components/Finance";
 import { invoiceStatus } from "@/lib/invoice-status";
 import { BRAND_SLUG } from "@/lib/brand";
 import { BUSINESS } from "@/lib/business";
+import { accountTotals } from "@/lib/account-totals";
 
 type Payment = { date: string; amount: number; method: string; note: string };
 type Invoice = { id: string; name: string; status: string; total: string; createdAt: string; invoiceUrl: string | null; amountPaid: number; balance: number; paymentEntries: Payment[] };
@@ -228,15 +229,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (error) return <div className="px-8 py-7"><p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p></div>;
   if (!c) return null;
 
-  const invoiceTotal = c.invoices.reduce((s, i) => s + Number(i.total || 0), 0);
-  // Unpaid portion of invoices (completed invoices already count as fully paid).
-  const invoiceOutstanding = c.invoices.reduce((s, i) => s + Number(i.balance || 0), 0);
-  const ledgerPaid = c.ledger.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const billed = c.openingBalance + invoiceTotal;
-  // Paid = what's settled on invoices (completed + partial) + on-account payments.
-  const paid = invoiceTotal - invoiceOutstanding + ledgerPaid;
-  // Owed = old opening balance + still-unpaid invoices − on-account payments received.
-  const outstanding = c.openingBalance + invoiceOutstanding - ledgerPaid;
+  // The account totals, on the same basis as the PDF statement: everything
+  // charged, minus every pound received.
+  //
+  // They used to be built from each bill's own balance, which is floored at zero
+  // (`Math.max(0, total - amountPaid)`). Any money recorded on a bill above what
+  // that bill was worth therefore disappeared from the account: £200 taken
+  // against a £10 bill counted as £10 paid, left outstanding £190 too high, and
+  // disagreed with both the statement and the "Received" figure sitting next to
+  // it on this very page.
+  const { billed, received: paid, outstanding } = accountTotals(c);
 
   // --- Invoices: filter + search + sort ---
   const shownInvoices = c.invoices
@@ -278,6 +280,26 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     if (!confirm("Revoke (delete) this payment? The customer's outstanding will be recalculated.")) return;
     await paymentAction({ action: "removePayment", index });
   }
+  // Bills holding more money than they were ever worth. The surplus settled
+  // nothing when it was recorded, so it is still sitting there doing nothing —
+  // which is why "Received" can read higher than "Total paid" by exactly this.
+  const overpaid = c.invoices.filter((i) => {
+    if (i.status === "COMPLETED") return false;
+    const recorded = i.paymentEntries.reduce((s, p) => s + Number(p.amount || 0), 0);
+    return recorded > Number(i.total || 0) + 0.001;
+  });
+  const overpaidSurplus = overpaid.reduce(
+    (s, i) => s + (i.paymentEntries.reduce((t, p) => t + Number(p.amount || 0), 0) - Number(i.total || 0)),
+    0,
+  );
+
+  async function redistributeOverpayments() {
+    if (!confirm(
+      `£${overpaidSurplus.toFixed(2)} was recorded against ${overpaid.length} bill${overpaid.length === 1 ? "" : "s"} (${overpaid.map((i) => i.name).join(", ")}) for more than ${overpaid.length === 1 ? "it was" : "they were"} worth, so it settled nothing.\n\nTrim ${overpaid.length === 1 ? "that bill" : "those bills"} back to what ${overpaid.length === 1 ? "it" : "they"} actually owed, mark ${overpaid.length === 1 ? "it" : "them"} paid, and put the £${overpaidSurplus.toFixed(2)} onto the oldest open bills instead?`,
+    )) return;
+    await paymentAction({ action: "redistributeOverpayments" });
+  }
+
   async function reapplyCredits() {
     if (!confirm("Move all 'on account' credit onto this customer's open bills, oldest first? Bills it covers are marked paid; the oldest one it can't cover is part-paid. Outstanding total stays the same.")) return;
     await paymentAction({ action: "reapplyCredits" });
@@ -410,6 +432,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Payment history</h2>
               <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10">Received £{shownPaymentsTotal.toFixed(2)}</span>
             </div>
+            {overpaid.length > 0 && (
+              <button
+                onClick={redistributeOverpayments}
+                title="Money recorded on a bill for more than that bill owed — put the extra onto the customer's other open bills"
+                className="mt-2 block rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 dark:bg-red-500/10"
+              >
+                ⚠ £{overpaidSurplus.toFixed(2)} recorded on {overpaid.length} bill{overpaid.length === 1 ? "" : "s"} but applied to nothing — put it on the open bills
+              </button>
+            )}
             {c.ledger.payments.length > 0 && outstanding > 0.001 && (
               <button
                 onClick={reapplyCredits}
@@ -580,6 +611,7 @@ function buildOutstandingInvoiceDoc(c: Detail, outstanding: number, business: im
     invoiceNo: `BAL-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`,
     status: "OPEN",
     createdAt: today.toISOString(),
+    customerId: c.id,
     note: "This invoice reflects the total outstanding balance on the account. Please settle at your earliest convenience.",
     currency: "GBP",
     customerName: c.name || "Customer",
