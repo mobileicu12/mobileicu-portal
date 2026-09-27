@@ -80,6 +80,19 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setSaving(false); }
   }
 
+  async function uploadImage(file: File) {
+    setSaving(true); setError("");
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const up = await fetch("/api/upload", { method: "POST", body: fd });
+      const ud = (await up.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!up.ok || !ud.url) throw new Error(ud.error || "Upload failed");
+      const res = await fetch(`/api/products/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "addImage", url: ud.url }) });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed"); }
+      setTimeout(load, 1200);
+    } catch (e) { setError(e instanceof Error ? e.message : "Upload failed"); } finally { setSaving(false); }
+  }
+
   async function delImage(mediaId: string) {
     setSaving(true); setError("");
     try {
@@ -140,8 +153,18 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
               ))}
               {p.images.length === 0 && <p className="text-sm text-muted">No images yet.</p>}
             </div>
-            <div className="mt-3 flex gap-2">
-              <input className={input} placeholder="Paste image URL to add…" value={newImg} onChange={(e) => setNewImg(e.target.value)} />
+            <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line px-4 py-4 text-sm font-medium text-muted transition-colors hover:border-accent hover:text-ink">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={saving}
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadImage(f); }}
+              />
+              {saving ? "Uploading…" : "⬆ Upload photo"}
+            </label>
+            <div className="mt-2 flex gap-2">
+              <input className={input} placeholder="or paste an image URL…" value={newImg} onChange={(e) => setNewImg(e.target.value)} />
               <button onClick={addImage} disabled={saving || !newImg.trim()} className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accentfg disabled:opacity-50">Add</button>
             </div>
           </Card>

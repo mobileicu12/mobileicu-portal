@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isOwnerRequest } from "@/lib/guard";
 import { driveConfigured } from "@/lib/google-drive";
+import { r2Configured } from "@/lib/s3-backup";
 import { emailConfigured } from "@/lib/email";
 import { readBackupLog, healthFrom, STALE_HOURS } from "@/lib/backup-log";
 import { getSettings } from "@/lib/settings";
@@ -24,6 +25,7 @@ export async function GET() {
 
   return NextResponse.json({
     destinations: [
+      { name: "Cloudflare R2", configured: r2Configured() },
       { name: "Google Drive", configured: driveConfigured() },
       { name: "Email", configured: emailConfigured() && !!to, target: to },
     ],

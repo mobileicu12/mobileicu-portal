@@ -44,9 +44,21 @@ export default function NewProductPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [descPreview, setDescPreview] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   function set<K extends keyof Form>(k: K, v: Form[K]) {
     setForm((f) => ({ ...f, [k]: v }));
+  }
+
+  async function uploadImage(file: File) {
+    setUploading(true); setError("");
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const up = await fetch("/api/upload", { method: "POST", body: fd });
+      const ud = (await up.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!up.ok || !ud.url) throw new Error(ud.error || "Upload failed");
+      set("image", ud.url);
+    } catch (e) { setError(e instanceof Error ? e.message : "Upload failed"); } finally { setUploading(false); }
   }
 
   async function save(addAnother: boolean) {
@@ -151,8 +163,24 @@ export default function NewProductPage() {
           </select>
         </Field>
 
-        <Field label="Image URL" className="lg:col-span-2">
-          <input className={inputCls} value={form.image} onChange={(e) => set("image", e.target.value)} placeholder="https://… (Shopify downloads it)" />
+        <Field label="Image" className="lg:col-span-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-accent hover:text-ink">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadImage(f); }}
+              />
+              {uploading ? "Uploading…" : "⬆ Upload photo"}
+            </label>
+            {form.image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={form.image} alt="" className="h-10 w-10 rounded border border-line object-cover" />
+            )}
+          </div>
+          <input className={`${inputCls} mt-2`} value={form.image} onChange={(e) => set("image", e.target.value)} placeholder="or paste an image URL…" />
         </Field>
 
         <Field label="Shopify Product Type (optional)">
