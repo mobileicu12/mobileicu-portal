@@ -105,6 +105,16 @@ export default function InventoryPage() {
   const [flash, setFlash] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [channelDraft, setChannelDraft] = useState<string[]>([]);
+  // Whole-catalogue stock value + units (loaded separately; never blocks the table).
+  const [stockTotals, setStockTotals] = useState<{ stockUnits: number; stockValue: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/inventory/value", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d && typeof d.stockValue === "number") setStockTotals({ stockUnits: d.stockUnits, stockValue: d.stockValue }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   // Barcode label printing
   const [labelOpen, setLabelOpen] = useState(false);
   const [labelPreset, setLabelPreset] = useState<LabelPresetKey>("sheet-65");
@@ -368,6 +378,15 @@ export default function InventoryPage() {
             <h1 className="text-2xl font-semibold text-ink">Inventory</h1>
             <p className="text-sm text-muted">
               {stats.total} variants · <span className="text-amber-500">{stats.low} low</span> · <span className="text-red-500">{stats.out} out</span>
+              {stockTotals && (
+                <>
+                  {" · "}
+                  <span className="text-ink">{stockTotals.stockUnits.toLocaleString()} in stock</span>
+                  {" · "}
+                  <span className="font-semibold text-ink">£{stockTotals.stockValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="text-muted"> stock value</span>
+                </>
+              )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
